@@ -8,10 +8,10 @@
 
 ## 2. Tauri Commands
 
-- [ ] 2.1 增加 `query_gallery` command 和 DTO mapping.
-- [ ] 2.2 增加 `get_asset_detail` command 和 DTO mapping.
-- [ ] 2.3 扩展 `start_generation` 输入处理, 支持 `input_version_id` 和 recoverable capability error.
-- [ ] 2.4 为 command mapping 和错误映射添加测试或可验证覆盖.
+- [x] 2.1 增加 `query_gallery` command 和 DTO mapping.
+- [x] 2.2 增加 `get_asset_detail` command 和 DTO mapping.
+- [x] 2.3 扩展 `start_generation` 输入处理, 支持 `input_version_id` 和 recoverable capability error.
+- [x] 2.4 为 command mapping 和错误映射添加测试或可验证覆盖.
 
 ## 3. Frontend State and Commands
 

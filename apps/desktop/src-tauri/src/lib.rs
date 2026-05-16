@@ -1,9 +1,10 @@
 use imglab_core::{
     AlbumService, AssetId, AssetService, CreateLibraryRequest, CreateMetadataSuggestionRequest,
-    DomainError, ExportLibraryRequest, GenerateImageRequest, GenerationOperation,
-    GenerationParameters, GenerationService, ImageProvider, ImportAssetRequest, LibraryId,
-    LibraryService, LocalGenerationService, LocalLibraryService, MetadataReviewService,
-    MetadataSuggestionId, ReviewMetadataSuggestionRequest, SearchQuery, SearchService,
+    DomainError, ExportLibraryRequest, GalleryQuery, GalleryReadService, GallerySort,
+    GenerateImageRequest, GenerationOperation, GenerationParameters, GenerationService,
+    ImageProvider, ImportAssetRequest, LibraryId, LibraryService, LocalGenerationService,
+    LocalLibraryService, MetadataReviewService, MetadataSuggestionId,
+    ReviewMetadataSuggestionRequest, ReviewStatusFilter, SearchQuery, SearchService,
     UpdateAssetMetadataRequest,
 };
 use imglab_provider_codex::CodexCliImageProvider;
@@ -71,6 +72,26 @@ struct GalleryItemView {
     mime_type: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GalleryAssetView {
+    id: String,
+    title: Option<String>,
+    category: Option<String>,
+    rating: Option<u8>,
+    status: String,
+    provider: Option<String>,
+    model_label: Option<String>,
+    tags: Vec<String>,
+    review_pending_count: u32,
+    current_version_id: Option<String>,
+    image_path: Option<PathBuf>,
+    version_label: Option<String>,
+    version_count: u32,
+    created_at: String,
+    updated_at: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct VersionView {
@@ -85,10 +106,68 @@ struct VersionView {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct LineageEntryView {
+    version: VersionView,
+    generation_event: Option<GenerationEventView>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GenerationEventView {
+    id: String,
+    asset_id: Option<String>,
+    output_version_id: Option<String>,
+    provider: String,
+    provider_model: String,
+    operation_type: String,
+    prompt: String,
+    parameters_json: String,
+    status: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct AlbumView {
     id: String,
     name: String,
     kind: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FileContextView {
+    filename: String,
+    relative_location: PathBuf,
+    mime_type: String,
+    size_bytes: Option<u64>,
+    width: Option<u32>,
+    height: Option<u32>,
+    checksum: String,
+    integrity_status: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AssetDetailView {
+    id: String,
+    title: Option<String>,
+    description: Option<String>,
+    category: Option<String>,
+    rating: Option<u8>,
+    status: String,
+    created_at: String,
+    updated_at: String,
+    prompt: Option<String>,
+    negative_prompt: Option<String>,
+    provider: Option<String>,
+    model_label: Option<String>,
+    parameters_json: Option<String>,
+    tags: Vec<String>,
+    albums: Vec<AlbumView>,
+    review_pending_count: u32,
+    versions: Vec<VersionView>,
+    lineage: Vec<LineageEntryView>,
+    file: Option<FileContextView>,
 }
 
 #[derive(Debug, Serialize)]
@@ -164,6 +243,27 @@ struct SearchInput {
 #[serde(rename_all = "camelCase")]
 struct GalleryItemsInput {
     library_path: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QueryGalleryInput {
+    library_path: PathBuf,
+    text: Option<String>,
+    providers: Option<Vec<String>>,
+    min_rating: Option<u8>,
+    review_status: Option<String>,
+    tags: Option<Vec<String>>,
+    album_id: Option<String>,
+    sort: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AssetDetailInput {
+    library_path: PathBuf,
+    asset_id: String,
+    current_version_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -380,6 +480,36 @@ fn gallery_items(input: GalleryItemsInput) -> Result<Vec<GalleryItemView>, Comma
 }
 
 #[tauri::command]
+fn query_gallery(input: QueryGalleryInput) -> Result<Vec<GalleryAssetView>, CommandError> {
+    let library_path = input.library_path.clone();
+    service()
+        .query_gallery(&library_path, gallery_query_from_input(input)?)
+        .map(|items| {
+            items
+                .into_iter()
+                .map(|item| gallery_asset_view(&library_path, item))
+                .collect()
+        })
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+fn get_asset_detail(input: AssetDetailInput) -> Result<AssetDetailView, CommandError> {
+    let current_version_id = input
+        .current_version_id
+        .as_ref()
+        .map(|id| imglab_core::AssetVersionId(id.clone()));
+    service()
+        .get_asset_detail(
+            &input.library_path,
+            &AssetId(input.asset_id),
+            current_version_id.as_ref(),
+        )
+        .map(asset_detail_view)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
 fn generate_image(input: GenerateImageInput) -> Result<Vec<VersionView>, CommandError> {
     execute_generation(input, None)
 }
@@ -461,16 +591,7 @@ fn execute_generation(
     } else {
         GenerationOperation::TextToImage
     };
-    let input_bytes = input
-        .input_file
-        .as_ref()
-        .map(|path| {
-            fs::read(path).map_err(|error| DomainError::Io {
-                path: path.display().to_string(),
-                message: error.to_string(),
-            })
-        })
-        .transpose()?;
+    let input_bytes = generation_input_bytes(&input)?;
     let parameters = GenerationParameters {
         library_path: Some(input.library_path.clone()),
         provider: input.provider.clone(),
@@ -501,6 +622,39 @@ fn execute_generation(
             recoverable: true,
         }),
     }
+}
+
+fn generation_input_bytes(input: &GenerateImageInput) -> Result<Option<Vec<u8>>, DomainError> {
+    if let Some(path) = input.input_file.as_ref() {
+        return fs::read(path).map(Some).map_err(|error| DomainError::Io {
+            path: path.display().to_string(),
+            message: error.to_string(),
+        });
+    }
+
+    if let Some(version_id) = input.input_version_id.as_ref() {
+        let database_path = LocalLibraryService::database_path(&input.library_path);
+        let connection =
+            Connection::open(&database_path).map_err(|error| DomainError::Database {
+                message: error.to_string(),
+            })?;
+        let relative_path: String = connection
+            .query_row(
+                "SELECT file_path FROM asset_versions WHERE id = ?1",
+                [version_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| DomainError::Database {
+                message: error.to_string(),
+            })?;
+        let path = input.library_path.join(relative_path);
+        return fs::read(&path).map(Some).map_err(|error| DomainError::Io {
+            path: path.display().to_string(),
+            message: error.to_string(),
+        });
+    }
+
+    Ok(None)
 }
 
 fn codex_provider(library_path: &PathBuf, log_path: Option<PathBuf>) -> CodexCliImageProvider {
@@ -656,6 +810,70 @@ fn asset_view(summary: imglab_core::AssetSummary) -> AssetView {
     }
 }
 
+fn gallery_query_from_input(input: QueryGalleryInput) -> Result<GalleryQuery, CommandError> {
+    Ok(GalleryQuery {
+        text: input.text,
+        providers: input.providers.unwrap_or_default(),
+        min_rating: input.min_rating,
+        review_status: review_status_from_input(input.review_status.as_deref())?,
+        tags: input.tags.unwrap_or_default(),
+        album_id: input.album_id.map(imglab_core::AlbumId),
+        sort: gallery_sort_from_input(input.sort.as_deref())?,
+    })
+}
+
+fn review_status_from_input(value: Option<&str>) -> Result<ReviewStatusFilter, CommandError> {
+    match value.unwrap_or("any") {
+        "any" => Ok(ReviewStatusFilter::Any),
+        "pending" | "pending_review" => Ok(ReviewStatusFilter::Pending),
+        other => Err(CommandError {
+            code: "InvalidGalleryQuery".to_string(),
+            message: format!("unsupported review status filter: {other}"),
+            recoverable: true,
+        }),
+    }
+}
+
+fn gallery_sort_from_input(value: Option<&str>) -> Result<GallerySort, CommandError> {
+    match value.unwrap_or("newest") {
+        "newest" => Ok(GallerySort::Newest),
+        "oldest" => Ok(GallerySort::Oldest),
+        "rating_desc" | "ratingDesc" => Ok(GallerySort::RatingDesc),
+        "title_asc" | "titleAsc" => Ok(GallerySort::TitleAsc),
+        "provider_asc" | "providerAsc" => Ok(GallerySort::ProviderAsc),
+        other => Err(CommandError {
+            code: "InvalidGalleryQuery".to_string(),
+            message: format!("unsupported gallery sort: {other}"),
+            recoverable: true,
+        }),
+    }
+}
+
+fn gallery_asset_view(
+    library_path: &Path,
+    summary: imglab_core::GalleryAssetView,
+) -> GalleryAssetView {
+    GalleryAssetView {
+        id: summary.id.0,
+        title: summary.title,
+        category: summary.category,
+        rating: summary.rating,
+        status: summary.status,
+        provider: summary.provider,
+        model_label: summary.model_label,
+        tags: summary.tags,
+        review_pending_count: summary.review_pending_count,
+        current_version_id: summary.current_version_id.map(|id| id.0),
+        image_path: summary
+            .image_path
+            .map(|path| absolutize_library_path(library_path, path)),
+        version_label: summary.version_label,
+        version_count: summary.version_count,
+        created_at: summary.created_at,
+        updated_at: summary.updated_at,
+    }
+}
+
 fn version_view(summary: imglab_core::VersionSummary) -> VersionView {
     VersionView {
         id: summary.id.0,
@@ -665,6 +883,84 @@ fn version_view(summary: imglab_core::VersionSummary) -> VersionView {
         file_path: summary.file_path,
         sha256: summary.sha256,
         mime_type: summary.mime_type,
+    }
+}
+
+fn generation_event_view(summary: imglab_core::GenerationEventSummary) -> GenerationEventView {
+    GenerationEventView {
+        id: summary.id.0,
+        asset_id: summary.asset_id.map(|id| id.0),
+        output_version_id: summary.output_version_id.map(|id| id.0),
+        provider: summary.provider,
+        provider_model: summary.provider_model,
+        operation_type: match summary.operation_type {
+            GenerationOperation::TextToImage => "text_to_image",
+            GenerationOperation::ImageToImage => "image_to_image",
+        }
+        .to_string(),
+        prompt: summary.prompt,
+        parameters_json: summary.parameters_json,
+        status: summary.status,
+    }
+}
+
+fn asset_detail_view(summary: imglab_core::AssetDetailView) -> AssetDetailView {
+    AssetDetailView {
+        id: summary.id.0,
+        title: summary.title,
+        description: summary.description,
+        category: summary.category,
+        rating: summary.rating,
+        status: summary.status,
+        created_at: summary.created_at,
+        updated_at: summary.updated_at,
+        prompt: summary.prompt,
+        negative_prompt: summary.negative_prompt,
+        provider: summary.provider,
+        model_label: summary.model_label,
+        parameters_json: summary.parameters_json,
+        tags: summary.tags,
+        albums: summary
+            .albums
+            .into_iter()
+            .map(|album| AlbumView {
+                id: album.id.0,
+                name: album.name,
+                kind: match album.kind {
+                    imglab_core::AlbumKind::Manual => "manual",
+                    imglab_core::AlbumKind::Smart => "smart",
+                }
+                .to_string(),
+            })
+            .collect(),
+        review_pending_count: summary.review_pending_count,
+        versions: summary.versions.into_iter().map(version_view).collect(),
+        lineage: summary
+            .lineage
+            .into_iter()
+            .map(|entry| LineageEntryView {
+                version: version_view(entry.version),
+                generation_event: entry.generation_event.map(generation_event_view),
+            })
+            .collect(),
+        file: summary.file.map(|file| FileContextView {
+            filename: file.filename,
+            relative_location: file.relative_location,
+            mime_type: file.mime_type,
+            size_bytes: file.size_bytes,
+            width: file.width,
+            height: file.height,
+            checksum: file.checksum,
+            integrity_status: file.integrity_status,
+        }),
+    }
+}
+
+fn absolutize_library_path(library_path: &Path, path: PathBuf) -> PathBuf {
+    if path.is_absolute() {
+        path
+    } else {
+        library_path.join(path)
     }
 }
 
@@ -736,6 +1032,8 @@ pub fn run() {
             export_library,
             search_assets,
             gallery_items,
+            query_gallery,
+            get_asset_detail,
             generate_image,
             start_generation,
             get_generation_job,
@@ -750,4 +1048,32 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("failed to run desktop application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_gallery_sort_input() {
+        assert!(matches!(
+            gallery_sort_from_input(Some("ratingDesc")).expect("sort"),
+            GallerySort::RatingDesc
+        ));
+        let error = gallery_sort_from_input(Some("unknown")).expect_err("invalid sort");
+        assert_eq!(error.code, "InvalidGalleryQuery");
+        assert!(error.recoverable);
+    }
+
+    #[test]
+    fn maps_provider_capability_error_as_recoverable() {
+        let error: CommandError = DomainError::UnsupportedProviderCapability {
+            provider: "codex-cli".to_string(),
+            capability: "image_to_image".to_string(),
+        }
+        .into();
+
+        assert_eq!(error.code, "UnsupportedProviderCapability");
+        assert!(error.recoverable);
+    }
 }
