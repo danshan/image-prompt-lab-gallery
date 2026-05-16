@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   acceptSuggestionState,
+  beginDetailLoad,
+  completeDetailLoad,
+  defaultGalleryQuery,
+  failDetailLoad,
   rejectSuggestionState,
+  resetGalleryQuery,
+  toggleGalleryProvider,
+  toggleGalleryTag,
   updateQueueJobStatus,
 } from "../.test-dist/workbench-state.js";
 
@@ -70,4 +77,43 @@ test("updateQueueJobStatus updates only the targeted job", () => {
 
   assert.equal(next[0].status, "completed");
   assert.equal(next[1].status, "queued");
+});
+
+test("gallery query helpers toggle providers and tags", () => {
+  const withProvider = toggleGalleryProvider(defaultGalleryQuery, "fake");
+  assert.deepEqual(withProvider.providers, ["fake"]);
+  assert.deepEqual(toggleGalleryProvider(withProvider, "fake").providers, []);
+
+  const withTag = toggleGalleryTag(defaultGalleryQuery, "neon");
+  assert.deepEqual(withTag.tags, ["neon"]);
+  assert.deepEqual(toggleGalleryTag(withTag, "neon").tags, []);
+});
+
+test("resetGalleryQuery returns independent arrays", () => {
+  const first = resetGalleryQuery();
+  const second = resetGalleryQuery();
+  first.providers.push("fake");
+
+  assert.deepEqual(second.providers, []);
+});
+
+test("detail load helpers model loading lifecycle", () => {
+  assert.deepEqual(beginDetailLoad("asset-1"), {
+    assetId: "asset-1",
+    detail: null,
+    loading: true,
+    error: null,
+  });
+  assert.deepEqual(completeDetailLoad("asset-1", { id: "asset-1" }), {
+    assetId: "asset-1",
+    detail: { id: "asset-1" },
+    loading: false,
+    error: null,
+  });
+  assert.deepEqual(failDetailLoad("asset-1", "boom"), {
+    assetId: "asset-1",
+    detail: null,
+    loading: false,
+    error: "boom",
+  });
 });

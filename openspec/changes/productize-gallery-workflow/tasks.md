@@ -15,18 +15,18 @@
 
 ## 3. Frontend State and Commands
 
-- [ ] 3.1 拆分 Gallery query state, selected asset state, detail loading state 和 recoverable error state.
-- [ ] 3.2 接入 `query_gallery` 和 `get_asset_detail`, 替换 Gallery 主流程中的前端拼装逻辑.
-- [ ] 3.3 接入 variation action, 在 provider 不支持时展示 inline recoverable error.
-- [ ] 3.4 更新或新增 frontend state 测试.
+- [x] 3.1 拆分 Gallery query state, selected asset state, detail loading state 和 recoverable error state.
+- [x] 3.2 接入 `query_gallery` 和 `get_asset_detail`, 替换 Gallery 主流程中的前端拼装逻辑.
+- [x] 3.3 接入 variation action, 在 provider 不支持时展示 inline recoverable error.
+- [x] 3.4 更新或新增 frontend state 测试.
 
 ## 4. Productized Workbench UI
 
-- [ ] 4.1 重构 sidebar, library switcher, navigation badges 和 library status panel.
-- [ ] 4.2 重构 workspace search bar, Generate split button, filters, sort 和 item count.
-- [ ] 4.3 重构 Gallery cards, 包含 thumbnail, provider/model, rating, review badge, tags 和 version 摘要.
-- [ ] 4.4 重构 Inspector sections, 包含 header preview, prompt, provider/model, tags, albums, lineage 和 file.
-- [ ] 4.5 实现 desktop, medium 和 narrow viewport 的 responsive behavior.
+- [x] 4.1 重构 sidebar, library switcher, navigation badges 和 library status panel.
+- [x] 4.2 重构 workspace search bar, Generate split button, filters, sort 和 item count.
+- [x] 4.3 重构 Gallery cards, 包含 thumbnail, provider/model, rating, review badge, tags 和 version 摘要.
+- [x] 4.4 重构 Inspector sections, 包含 header preview, prompt, provider/model, tags, albums, lineage 和 file.
+- [x] 4.5 实现 desktop, medium 和 narrow viewport 的 responsive behavior.
 
 ## 5. Verification and Commits
 
