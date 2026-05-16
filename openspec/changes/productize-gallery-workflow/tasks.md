@@ -30,7 +30,7 @@
 
 ## 5. Verification and Commits
 
-- [ ] 5.1 运行 Rust 测试并修复失败.
-- [ ] 5.2 运行 desktop/frontend 测试并修复失败.
-- [ ] 5.3 启动本地桌面前端并用浏览器检查宽屏和窄屏布局.
-- [ ] 5.4 按 spec, core, Tauri, frontend UI, verification fixes 的稳定边界提交代码.
+- [x] 5.1 运行 Rust 测试并修复失败.
+- [x] 5.2 运行 desktop/frontend 测试并修复失败.
+- [x] 5.3 启动本地桌面前端并用浏览器检查宽屏和窄屏布局.
+- [x] 5.4 按 spec, core, Tauri, frontend UI, verification fixes 的稳定边界提交代码.
