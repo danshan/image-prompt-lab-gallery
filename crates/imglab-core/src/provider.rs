@@ -72,6 +72,10 @@ impl ImageProvider for FakeImageProvider {
         self.name
     }
 
+    fn supports_operation(&self, _operation: crate::GenerationOperation) -> bool {
+        true
+    }
+
     fn validate_parameters(&self, parameters: &GenerationParameters) -> DomainResult<()> {
         if parameters.prompt.trim().is_empty() {
             return Err(DomainError::InvalidGenerationParameters {

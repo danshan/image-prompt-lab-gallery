@@ -174,6 +174,107 @@ pub struct LineageEntry {
     pub generation_event: Option<GenerationEventSummary>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GallerySort {
+    Newest,
+    Oldest,
+    RatingDesc,
+    TitleAsc,
+    ProviderAsc,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReviewStatusFilter {
+    Any,
+    Pending,
+}
+
+#[derive(Debug, Clone)]
+pub struct GalleryQuery {
+    pub text: Option<String>,
+    pub providers: Vec<String>,
+    pub min_rating: Option<u8>,
+    pub review_status: ReviewStatusFilter,
+    pub tags: Vec<String>,
+    pub album_id: Option<AlbumId>,
+    pub sort: GallerySort,
+}
+
+impl Default for GalleryQuery {
+    fn default() -> Self {
+        Self {
+            text: None,
+            providers: Vec::new(),
+            min_rating: None,
+            review_status: ReviewStatusFilter::Any,
+            tags: Vec::new(),
+            album_id: None,
+            sort: GallerySort::Newest,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GalleryAssetView {
+    pub id: AssetId,
+    pub title: Option<String>,
+    pub category: Option<String>,
+    pub rating: Option<u8>,
+    pub status: String,
+    pub provider: Option<String>,
+    pub model_label: Option<String>,
+    pub tags: Vec<String>,
+    pub review_pending_count: u32,
+    pub current_version_id: Option<AssetVersionId>,
+    pub image_path: Option<PathBuf>,
+    pub version_label: Option<String>,
+    pub version_count: u32,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlbumMembershipView {
+    pub id: AlbumId,
+    pub name: String,
+    pub kind: AlbumKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileContextView {
+    pub filename: String,
+    pub relative_location: PathBuf,
+    pub mime_type: String,
+    pub size_bytes: Option<u64>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub checksum: String,
+    pub integrity_status: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct AssetDetailView {
+    pub id: AssetId,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub category: Option<String>,
+    pub rating: Option<u8>,
+    pub status: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub prompt: Option<String>,
+    pub negative_prompt: Option<String>,
+    pub provider: Option<String>,
+    pub model_label: Option<String>,
+    pub parameters_json: Option<String>,
+    pub tags: Vec<String>,
+    pub albums: Vec<AlbumMembershipView>,
+    pub review_pending_count: u32,
+    pub versions: Vec<VersionSummary>,
+    pub lineage: Vec<LineageEntry>,
+    pub file: Option<FileContextView>,
+}
+
 #[derive(Debug, Clone)]
 pub struct MetadataSuggestion {
     pub id: MetadataSuggestionId,

@@ -68,8 +68,25 @@ pub trait SearchService {
         -> DomainResult<Vec<AssetSummary>>;
 }
 
+pub trait GalleryReadService {
+    fn query_gallery(
+        &self,
+        library_path: &std::path::Path,
+        query: GalleryQuery,
+    ) -> DomainResult<Vec<GalleryAssetView>>;
+    fn get_asset_detail(
+        &self,
+        library_path: &std::path::Path,
+        asset_id: &AssetId,
+        current_version_id: Option<&AssetVersionId>,
+    ) -> DomainResult<AssetDetailView>;
+}
+
 pub trait ImageProvider {
     fn name(&self) -> &'static str;
+    fn supports_operation(&self, operation: GenerationOperation) -> bool {
+        matches!(operation, GenerationOperation::TextToImage)
+    }
     fn validate_parameters(&self, parameters: &GenerationParameters) -> DomainResult<()>;
     fn generate_from_text(
         &self,

@@ -5,20 +5,59 @@ pub type DomainResult<T> = Result<T, DomainError>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DomainError {
-    LibraryNotFound { path: String },
-    SchemaMismatch { expected: u32, found: u32 },
-    ProviderUnavailable { provider: String },
-    CredentialMissing { provider: String },
-    GenerationFailed { provider: String, message: String },
-    InvalidAssetReference { id: String },
-    FileIntegrityMismatch { version_id: String, message: String },
-    ConcurrentWriteConflict { message: String },
-    InvalidSmartAlbumQuery { message: String },
-    UnsupportedProvider { provider: String },
-    InvalidGenerationParameters { message: String },
-    Io { path: String, message: String },
-    Database { message: String },
-    Serialization { message: String },
+    LibraryNotFound {
+        path: String,
+    },
+    SchemaMismatch {
+        expected: u32,
+        found: u32,
+    },
+    ProviderUnavailable {
+        provider: String,
+    },
+    CredentialMissing {
+        provider: String,
+    },
+    GenerationFailed {
+        provider: String,
+        message: String,
+    },
+    InvalidAssetReference {
+        id: String,
+    },
+    FileIntegrityMismatch {
+        version_id: String,
+        message: String,
+    },
+    ConcurrentWriteConflict {
+        message: String,
+    },
+    InvalidSmartAlbumQuery {
+        message: String,
+    },
+    InvalidGalleryQuery {
+        message: String,
+    },
+    UnsupportedProvider {
+        provider: String,
+    },
+    UnsupportedProviderCapability {
+        provider: String,
+        capability: String,
+    },
+    InvalidGenerationParameters {
+        message: String,
+    },
+    Io {
+        path: String,
+        message: String,
+    },
+    Database {
+        message: String,
+    },
+    Serialization {
+        message: String,
+    },
 }
 
 impl DomainError {
@@ -33,7 +72,9 @@ impl DomainError {
             Self::FileIntegrityMismatch { .. } => "FileIntegrityMismatch",
             Self::ConcurrentWriteConflict { .. } => "ConcurrentWriteConflict",
             Self::InvalidSmartAlbumQuery { .. } => "InvalidSmartAlbumQuery",
+            Self::InvalidGalleryQuery { .. } => "InvalidGalleryQuery",
             Self::UnsupportedProvider { .. } => "UnsupportedProvider",
+            Self::UnsupportedProviderCapability { .. } => "UnsupportedProviderCapability",
             Self::InvalidGenerationParameters { .. } => "InvalidGenerationParameters",
             Self::Io { .. } => "Io",
             Self::Database { .. } => "Database",
@@ -74,7 +115,19 @@ impl Display for DomainError {
             Self::InvalidSmartAlbumQuery { message } => {
                 write!(f, "invalid smart album query: {message}")
             }
+            Self::InvalidGalleryQuery { message } => {
+                write!(f, "invalid gallery query: {message}")
+            }
             Self::UnsupportedProvider { provider } => write!(f, "unsupported provider: {provider}"),
+            Self::UnsupportedProviderCapability {
+                provider,
+                capability,
+            } => {
+                write!(
+                    f,
+                    "unsupported provider capability for {provider}: {capability}"
+                )
+            }
             Self::InvalidGenerationParameters { message } => {
                 write!(f, "invalid generation parameters: {message}")
             }

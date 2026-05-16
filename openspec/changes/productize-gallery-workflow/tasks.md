@@ -1,10 +1,10 @@
 ## 1. Core Read Models
 
-- [ ] 1.1 增加 Gallery query, sort, card view 和 asset detail view DTO.
-- [ ] 1.2 实现 core Gallery query service, 支持 text, provider, rating, review status, tags, album 和 sort.
-- [ ] 1.3 实现 asset detail 聚合, 返回 prompt, provider/model, tags, albums, versions, lineage 和 file context.
-- [ ] 1.4 增加 provider capability 检查, 对不支持的 image-to-image 请求返回 `UnsupportedProviderCapability`.
-- [ ] 1.5 为 Gallery query, asset detail 和 provider capability 添加 Rust 测试.
+- [x] 1.1 增加 Gallery query, sort, card view 和 asset detail view DTO.
+- [x] 1.2 实现 core Gallery query service, 支持 text, provider, rating, review status, tags, album 和 sort.
+- [x] 1.3 实现 asset detail 聚合, 返回 prompt, provider/model, tags, albums, versions, lineage 和 file context.
+- [x] 1.4 增加 provider capability 检查, 对不支持的 image-to-image 请求返回 `UnsupportedProviderCapability`.
+- [x] 1.5 为 Gallery query, asset detail 和 provider capability 添加 Rust 测试.
 
 ## 2. Tauri Commands
 
