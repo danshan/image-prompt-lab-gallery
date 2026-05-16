@@ -1,0 +1,624 @@
+use imglab_core::{
+    AlbumService, AssetService, GenerationService, LibraryService, MetadataReviewService,
+    SearchService,
+};
+use imglab_core::{
+    AssetId, CreateLibraryRequest, CreateMetadataSuggestionRequest, DomainError,
+    ExportLibraryRequest, GenerateImageRequest, GenerationOperation, GenerationParameters,
+    ImageProvider, ImportAssetRequest, LocalGenerationService, LocalLibraryService,
+    MetadataSuggestionId, ReviewMetadataSuggestionRequest, SearchQuery,
+};
+use imglab_provider_codex::CodexCliImageProvider;
+use serde_json::json;
+use std::fs;
+use std::path::PathBuf;
+
+fn main() {
+    if let Err(error) = run(std::env::args().skip(1).collect()) {
+        print_error(&error);
+        std::process::exit(exit_code(&error));
+    }
+}
+
+fn run(args: Vec<String>) -> Result<(), DomainError> {
+    let Some(command) = args.first().map(String::as_str) else {
+        print_help();
+        return Ok(());
+    };
+
+    let service = LocalLibraryService::new(default_registry_path());
+    match command {
+        "help" | "--help" | "-h" => {
+            print_help();
+            Ok(())
+        }
+        "init" => init(&service, &args[1..]),
+        "library" => library(&service, &args[1..]),
+        "import" => import(&service, &args[1..]),
+        "export" => export(&service, &args[1..]),
+        "search" => search(&service, &args[1..]),
+        "generate" => generate(&args[1..]),
+        "tag" => tag(&service, &args[1..]),
+        "rate" => rate(&service, &args[1..]),
+        "album" => album(&service, &args[1..]),
+        "suggestion" => suggestion(&service, &args[1..]),
+        _ => Err(DomainError::InvalidGenerationParameters {
+            message: format!("unsupported command: {command}"),
+        }),
+    }
+}
+
+fn init(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+    let path = positional(args, 0, "library path")?;
+    let name = option_value(args, "--name").unwrap_or_else(|| "Image Prompt Lab".to_string());
+    let dry_run = has_flag(args, "--dry-run");
+    if dry_run {
+        print_json(json!({"dry_run": true, "path": path, "name": name}));
+        return Ok(());
+    }
+
+    let summary = service.create_library(CreateLibraryRequest {
+        root_path: PathBuf::from(path),
+        name,
+    })?;
+    print_json(json!({
+        "id": summary.id.0,
+        "name": summary.name,
+        "root_path": summary.root_path,
+        "hidden": summary.hidden,
+        "schema_version": summary.schema_version
+    }));
+    Ok(())
+}
+
+fn library(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+    let Some(subcommand) = args.first().map(String::as_str) else {
+        return Err(DomainError::InvalidGenerationParameters {
+            message: "library subcommand is required".to_string(),
+        });
+    };
+
+    match subcommand {
+        "list" => {
+            let include_hidden = has_flag(args, "--include-hidden");
+            let libraries = service.list_libraries(include_hidden)?;
+            print_json(json!({
+                "libraries": libraries.into_iter().map(|library| {
+                    json!({
+                        "id": library.id.0,
+                        "name": library.name,
+                        "root_path": library.root_path,
+                        "hidden": library.hidden,
+                        "schema_version": library.schema_version
+                    })
+                }).collect::<Vec<_>>()
+            }));
+            Ok(())
+        }
+        "open" => {
+            let path = positional(&args[1..], 0, "library path")?;
+            let summary = service.open_library(&PathBuf::from(path))?;
+            print_json(
+                json!({"id": summary.id.0, "name": summary.name, "root_path": summary.root_path}),
+            );
+            Ok(())
+        }
+        "hide" => {
+            let id = positional(&args[1..], 0, "library id")?;
+            if has_flag(args, "--dry-run") {
+                print_json(json!({"dry_run": true, "id": id, "hidden": true}));
+                return Ok(());
+            }
+
+            service.hide_library(&imglab_core::LibraryId(id))?;
+            print_json(json!({"hidden": true}));
+            Ok(())
+        }
+        _ => Err(DomainError::InvalidGenerationParameters {
+            message: format!("unsupported library subcommand: {subcommand}"),
+        }),
+    }
+}
+
+fn import(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+    let library_path =
+        option_value(args, "--library").ok_or_else(|| DomainError::LibraryNotFound {
+            path: "--library".to_string(),
+        })?;
+    let file = positional(args, 0, "file path")?;
+
+    if has_flag(args, "--dry-run") {
+        print_json(json!({"dry_run": true, "library": library_path, "files": [file]}));
+        return Ok(());
+    }
+
+    let (asset, version) = service.import_asset(ImportAssetRequest {
+        library_path: PathBuf::from(library_path),
+        source_path: PathBuf::from(file),
+    })?;
+    print_json(json!({
+        "asset_id": asset.id.0,
+        "version_id": version.id.0,
+        "file_path": version.file_path,
+        "sha256": version.sha256
+    }));
+    Ok(())
+}
+
+fn export(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+    let library_path = required_option(args, "--library")?;
+    let output_path = required_option(args, "--out")?;
+    let album_id = option_value(args, "--album").map(imglab_core::AlbumId);
+    if has_flag(args, "--dry-run") {
+        print_json(json!({
+            "dry_run": true,
+            "library": library_path,
+            "output": output_path,
+            "album_id": album_id.map(|id| id.0)
+        }));
+        return Ok(());
+    }
+
+    let summary = service.export_library(ExportLibraryRequest {
+        library_path: PathBuf::from(library_path),
+        output_path: PathBuf::from(output_path),
+        album_id,
+    })?;
+    print_json(
+        json!({"exported_files": summary.exported_files, "exported_sidecars": summary.exported_sidecars}),
+    );
+    Ok(())
+}
+
+fn search(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+    let library_path = required_option(args, "--library")?;
+    let query_text = option_value(args, "--query");
+    let library = service.open_library(&PathBuf::from(library_path))?;
+    let results = service.search(
+        &library.id,
+        SearchQuery {
+            text: query_text,
+            tags: vec![],
+            min_rating: None,
+            provider: None,
+            status: None,
+            category: None,
+        },
+    )?;
+    print_json(json!({
+        "assets": results.into_iter().map(|asset| {
+            json!({"id": asset.id.0, "title": asset.title, "category": asset.category, "rating": asset.rating, "status": asset.status})
+        }).collect::<Vec<_>>()
+    }));
+    Ok(())
+}
+
+fn generate(args: &[String]) -> Result<(), DomainError> {
+    let library_path = required_option(args, "--library")?;
+    let prompt = required_option(args, "--prompt")?;
+    let provider_name = option_value(args, "--provider").unwrap_or_else(|| "codex-cli".to_string());
+    let input_file = option_value(args, "--input-file");
+    let input_version_id = option_value(args, "--input-version").map(imglab_core::AssetVersionId);
+    let operation = if input_file.is_some() || input_version_id.is_some() {
+        GenerationOperation::ImageToImage
+    } else {
+        GenerationOperation::TextToImage
+    };
+
+    if operation == GenerationOperation::ImageToImage
+        && (input_file.is_none() || input_version_id.is_none())
+    {
+        return Err(DomainError::InvalidGenerationParameters {
+            message: "image-to-image generation requires --input-file and --input-version"
+                .to_string(),
+        });
+    }
+
+    let input_bytes = input_file
+        .as_ref()
+        .map(|path| {
+            fs::read(path).map_err(|error| DomainError::Io {
+                path: path.clone(),
+                message: error.to_string(),
+            })
+        })
+        .transpose()?;
+    let parameters = GenerationParameters {
+        library_path: Some(PathBuf::from(&library_path)),
+        provider: provider_name.clone(),
+        model: "imagegen-skill".to_string(),
+        prompt,
+        negative_prompt: option_value(args, "--negative-prompt"),
+        operation,
+        input_version_id,
+        parameters_json: option_value(args, "--parameters").unwrap_or_else(|| "{}".to_string()),
+    };
+
+    if has_flag(args, "--dry-run") {
+        print_json(json!({
+            "dry_run": true,
+            "library": library_path,
+            "provider": provider_name,
+            "operation": operation_name(operation),
+            "prompt": parameters.prompt
+        }));
+        return Ok(());
+    }
+
+    match provider_name.as_str() {
+        "codex" | "codex-cli" => generate_with_provider(
+            CodexCliImageProvider::new("codex", &library_path),
+            library_path,
+            parameters,
+            input_bytes,
+        ),
+        "fake" => generate_with_provider(
+            imglab_core::FakeImageProvider::success("fake"),
+            library_path,
+            parameters,
+            input_bytes,
+        ),
+        _ => Err(DomainError::InvalidGenerationParameters {
+            message: format!("unsupported provider: {provider_name}"),
+        }),
+    }
+}
+
+fn generate_with_provider<P>(
+    provider: P,
+    library_path: String,
+    parameters: GenerationParameters,
+    input_bytes: Option<Vec<u8>>,
+) -> Result<(), DomainError>
+where
+    P: ImageProvider,
+{
+    let service = LocalGenerationService::new(provider);
+    let versions = service.generate(GenerateImageRequest {
+        library_path: PathBuf::from(library_path),
+        parameters,
+        input_bytes,
+    })?;
+    print_json(json!({
+        "versions": versions.into_iter().map(|version| {
+            json!({
+                "id": version.id.0,
+                "asset_id": version.asset_id.0,
+                "parent_version_id": version.parent_version_id.map(|id| id.0),
+                "generation_event_id": version.generation_event_id.map(|id| id.0),
+                "file_path": version.file_path,
+                "sha256": version.sha256,
+                "mime_type": version.mime_type
+            })
+        }).collect::<Vec<_>>()
+    }));
+    Ok(())
+}
+
+fn rate(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+    let library_path = required_option(args, "--library")?;
+    let asset_id = positional(args, 0, "asset id")?;
+    let rating = positional(args, 1, "rating")?
+        .parse::<u8>()
+        .map_err(|error| DomainError::InvalidGenerationParameters {
+            message: format!("invalid rating: {error}"),
+        })?;
+    if has_flag(args, "--dry-run") {
+        print_json(json!({"dry_run": true, "asset_id": asset_id, "rating": rating}));
+        return Ok(());
+    }
+
+    let asset = service.update_asset_metadata(imglab_core::UpdateAssetMetadataRequest {
+        library_path: PathBuf::from(library_path),
+        asset_id: imglab_core::AssetId(asset_id),
+        rating: Some(rating),
+        category: None,
+        status: None,
+    })?;
+    print_json(json!({"id": asset.id.0, "rating": asset.rating}));
+    Ok(())
+}
+
+fn tag(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+    let Some(subcommand) = args.first().map(String::as_str) else {
+        return Err(DomainError::InvalidGenerationParameters {
+            message: "tag subcommand is required".to_string(),
+        });
+    };
+
+    match subcommand {
+        "add" => {
+            let library_path = required_option(args, "--library")?;
+            let asset_id = positional(&args[1..], 0, "asset id")?;
+            let tag = positional(&args[1..], 1, "tag")?;
+            if has_flag(args, "--dry-run") {
+                print_json(json!({"dry_run": true, "asset_id": asset_id, "tag": tag}));
+                return Ok(());
+            }
+
+            service.add_tag_to_asset(
+                &PathBuf::from(library_path),
+                &AssetId(asset_id.clone()),
+                &tag,
+            )?;
+            print_json(json!({"asset_id": asset_id, "tag": tag}));
+            Ok(())
+        }
+        _ => Err(DomainError::InvalidGenerationParameters {
+            message: format!("unsupported tag subcommand: {subcommand}"),
+        }),
+    }
+}
+
+fn album(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+    let Some(subcommand) = args.first().map(String::as_str) else {
+        return Err(DomainError::InvalidGenerationParameters {
+            message: "album subcommand is required".to_string(),
+        });
+    };
+
+    match subcommand {
+        "create" => {
+            let library_path = required_option(args, "--library")?;
+            let name = positional(&args[1..], 0, "album name")?;
+            let library = service.open_library(&PathBuf::from(library_path))?;
+            if has_flag(args, "--dry-run") {
+                print_json(json!({"dry_run": true, "name": name}));
+                return Ok(());
+            }
+
+            let album = service.create_manual_album(&library.id, &name)?;
+            print_json(json!({"id": album.id.0, "name": album.name, "kind": "manual"}));
+            Ok(())
+        }
+        "add" => {
+            let album_id = positional(&args[1..], 0, "album id")?;
+            let asset_id = positional(&args[1..], 1, "asset id")?;
+            if has_flag(args, "--dry-run") {
+                print_json(json!({"dry_run": true, "album_id": album_id, "asset_id": asset_id}));
+                return Ok(());
+            }
+
+            service.add_asset(
+                &imglab_core::AlbumId(album_id.clone()),
+                &AssetId(asset_id.clone()),
+            )?;
+            print_json(json!({"album_id": album_id, "asset_id": asset_id}));
+            Ok(())
+        }
+        _ => Err(DomainError::InvalidGenerationParameters {
+            message: format!("unsupported album subcommand: {subcommand}"),
+        }),
+    }
+}
+
+fn suggestion(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+    let Some(subcommand) = args.first().map(String::as_str) else {
+        return Err(DomainError::InvalidGenerationParameters {
+            message: "suggestion subcommand is required".to_string(),
+        });
+    };
+
+    match subcommand {
+        "list" => {
+            let library_path = required_option(args, "--library")?;
+            let library = service.open_library(&PathBuf::from(&library_path))?;
+            let suggestions = service.list_pending(&PathBuf::from(library_path), &library.id)?;
+            print_json(json!({
+                "suggestions": suggestions.into_iter().map(|suggestion| {
+                    json!({
+                        "id": suggestion.id.0,
+                        "asset_id": suggestion.asset_id.0,
+                        "title": suggestion.suggested_title,
+                        "description": suggestion.suggested_description,
+                        "tags": suggestion.suggested_tags,
+                        "category": suggestion.suggested_category,
+                        "status": suggestion.status
+                    })
+                }).collect::<Vec<_>>()
+            }));
+            Ok(())
+        }
+        "create" => {
+            let library_path = required_option(args, "--library")?;
+            let asset_id = positional(&args[1..], 0, "asset id")?;
+            let tags = option_values(args, "--tag");
+            if has_flag(args, "--dry-run") {
+                print_json(json!({
+                    "dry_run": true,
+                    "asset_id": asset_id,
+                    "title": option_value(args, "--title"),
+                    "description": option_value(args, "--description"),
+                    "tags": tags,
+                    "category": option_value(args, "--category")
+                }));
+                return Ok(());
+            }
+
+            let suggestion = service.create_suggestion(CreateMetadataSuggestionRequest {
+                library_path: PathBuf::from(library_path),
+                asset_id: AssetId(asset_id),
+                source: "cli".to_string(),
+                suggested_title: option_value(args, "--title"),
+                suggested_description: option_value(args, "--description"),
+                suggested_tags: tags,
+                suggested_category: option_value(args, "--category"),
+                confidence_json: option_value(args, "--confidence")
+                    .unwrap_or_else(|| "{}".to_string()),
+            })?;
+            print_json(json!({"id": suggestion.id.0, "status": suggestion.status}));
+            Ok(())
+        }
+        "accept" => {
+            let library_path = required_option(args, "--library")?;
+            let suggestion_id = positional(&args[1..], 0, "suggestion id")?;
+            let tags = option_values(args, "--tag");
+            if has_flag(args, "--dry-run") {
+                print_json(json!({
+                    "dry_run": true,
+                    "suggestion_id": suggestion_id,
+                    "title": option_value(args, "--title"),
+                    "description": option_value(args, "--description"),
+                    "tags": tags,
+                    "category": option_value(args, "--category")
+                }));
+                return Ok(());
+            }
+
+            let asset = service.accept(ReviewMetadataSuggestionRequest {
+                library_path: PathBuf::from(library_path),
+                suggestion_id: MetadataSuggestionId(suggestion_id),
+                title: option_value(args, "--title"),
+                description: option_value(args, "--description"),
+                tags,
+                category: option_value(args, "--category"),
+            })?;
+            print_json(json!({
+                "id": asset.id.0,
+                "title": asset.title,
+                "category": asset.category,
+                "rating": asset.rating,
+                "status": asset.status
+            }));
+            Ok(())
+        }
+        "reject" => {
+            let library_path = required_option(args, "--library")?;
+            let suggestion_id = positional(&args[1..], 0, "suggestion id")?;
+            if has_flag(args, "--dry-run") {
+                print_json(json!({"dry_run": true, "id": suggestion_id, "status": "rejected"}));
+                return Ok(());
+            }
+
+            service.reject(
+                &PathBuf::from(library_path),
+                &MetadataSuggestionId(suggestion_id.clone()),
+            )?;
+            print_json(json!({"id": suggestion_id, "status": "rejected"}));
+            Ok(())
+        }
+        _ => Err(DomainError::InvalidGenerationParameters {
+            message: format!("unsupported suggestion subcommand: {subcommand}"),
+        }),
+    }
+}
+
+fn default_registry_path() -> PathBuf {
+    std::env::var_os("IMGLAB_REGISTRY")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("imglab-registry.sqlite"))
+}
+
+fn option_value(args: &[String], name: &str) -> Option<String> {
+    args.windows(2)
+        .find(|pair| pair[0] == name)
+        .map(|pair| pair[1].clone())
+}
+
+fn option_values(args: &[String], name: &str) -> Vec<String> {
+    args.windows(2)
+        .filter(|pair| pair[0] == name)
+        .map(|pair| pair[1].clone())
+        .collect()
+}
+
+fn required_option(args: &[String], name: &str) -> Result<String, DomainError> {
+    option_value(args, name).ok_or_else(|| DomainError::InvalidGenerationParameters {
+        message: format!("{name} is required"),
+    })
+}
+
+fn has_flag(args: &[String], name: &str) -> bool {
+    args.iter().any(|arg| arg == name)
+}
+
+fn positional(args: &[String], index: usize, label: &str) -> Result<String, DomainError> {
+    positional_values(args)
+        .into_iter()
+        .nth(index)
+        .cloned()
+        .ok_or_else(|| DomainError::InvalidGenerationParameters {
+            message: format!("{label} is required"),
+        })
+}
+
+fn positional_values(args: &[String]) -> Vec<&String> {
+    let mut values = Vec::new();
+    let mut index = 0;
+    while index < args.len() {
+        let arg = &args[index];
+        if arg.starts_with("--") {
+            if option_takes_value(arg) {
+                index += 2;
+            } else {
+                index += 1;
+            }
+            continue;
+        }
+
+        values.push(arg);
+        index += 1;
+    }
+    values
+}
+
+fn option_takes_value(name: &str) -> bool {
+    matches!(
+        name,
+        "--name"
+            | "--library"
+            | "--out"
+            | "--album"
+            | "--query"
+            | "--provider"
+            | "--prompt"
+            | "--negative-prompt"
+            | "--parameters"
+            | "--input-file"
+            | "--input-version"
+            | "--title"
+            | "--description"
+            | "--tag"
+            | "--category"
+            | "--confidence"
+    )
+}
+
+fn operation_name(operation: GenerationOperation) -> &'static str {
+    match operation {
+        GenerationOperation::TextToImage => "text-to-image",
+        GenerationOperation::ImageToImage => "image-to-image",
+    }
+}
+
+fn print_json(value: serde_json::Value) {
+    println!("{value}");
+}
+
+fn print_error(error: &DomainError) {
+    eprintln!(
+        "{}",
+        json!({
+            "code": error.code(),
+            "message": error.to_string(),
+            "details": {},
+            "recoverable": error.recoverable()
+        })
+    );
+}
+
+fn exit_code(error: &DomainError) -> i32 {
+    match error {
+        DomainError::LibraryNotFound { .. } => 3,
+        DomainError::SchemaMismatch { .. } => 4,
+        DomainError::InvalidGenerationParameters { .. } => 2,
+        _ => 1,
+    }
+}
+
+fn print_help() {
+    println!("imglab: local AI image prompt lab CLI");
+    println!(
+        "commands: init, library, import, export, search, generate, tag, rate, album, suggestion"
+    );
+}

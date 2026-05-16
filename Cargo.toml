@@ -1,0 +1,22 @@
+[workspace]
+members = [
+    "crates/imglab-core",
+    "crates/imglab-cli",
+    "crates/imglab-provider-codex",
+    "crates/imglab-provider-grok",
+    "apps/desktop/src-tauri",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/shanhonghao/image-prompt-lab-gallery"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"

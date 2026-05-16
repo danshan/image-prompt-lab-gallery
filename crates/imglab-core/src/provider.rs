@@ -1,0 +1,179 @@
+use crate::{
+    DomainError, DomainResult, GeneratedImage, GenerationParameters, GenerationResult,
+    ImageProvider,
+};
+
+#[derive(Debug, Clone)]
+pub enum FakeProviderMode {
+    Success,
+    Failure { message: String },
+    Timeout,
+    InvalidParameters { message: String },
+}
+
+#[derive(Debug, Clone)]
+pub struct FakeImageProvider {
+    name: &'static str,
+    mode: FakeProviderMode,
+}
+
+impl FakeImageProvider {
+    pub fn success(name: &'static str) -> Self {
+        Self {
+            name,
+            mode: FakeProviderMode::Success,
+        }
+    }
+
+    pub fn failure(name: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            name,
+            mode: FakeProviderMode::Failure {
+                message: message.into(),
+            },
+        }
+    }
+
+    pub fn timeout(name: &'static str) -> Self {
+        Self {
+            name,
+            mode: FakeProviderMode::Timeout,
+        }
+    }
+
+    pub fn invalid_parameters(name: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            name,
+            mode: FakeProviderMode::InvalidParameters {
+                message: message.into(),
+            },
+        }
+    }
+
+    fn generate_success(
+        &self,
+        parameters: &GenerationParameters,
+    ) -> DomainResult<GenerationResult> {
+        self.validate_parameters(parameters)?;
+        Ok(GenerationResult {
+            images: vec![GeneratedImage {
+                bytes: b"fake image bytes".to_vec(),
+                mime_type: "image/png".to_string(),
+                provider_metadata_json: "{\"fake\":true}".to_string(),
+            }],
+            raw_request_json: format!("{{\"prompt\":{:?}}}", parameters.prompt),
+            raw_response_json: "{\"images\":1}".to_string(),
+        })
+    }
+}
+
+impl ImageProvider for FakeImageProvider {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn validate_parameters(&self, parameters: &GenerationParameters) -> DomainResult<()> {
+        if parameters.prompt.trim().is_empty() {
+            return Err(DomainError::InvalidGenerationParameters {
+                message: "prompt must not be empty".to_string(),
+            });
+        }
+
+        match &self.mode {
+            FakeProviderMode::InvalidParameters { message } => {
+                Err(DomainError::InvalidGenerationParameters {
+                    message: message.clone(),
+                })
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn generate_from_text(
+        &self,
+        parameters: &GenerationParameters,
+    ) -> DomainResult<GenerationResult> {
+        match &self.mode {
+            FakeProviderMode::Success => self.generate_success(parameters),
+            FakeProviderMode::Failure { message } => Err(DomainError::GenerationFailed {
+                provider: self.name.to_string(),
+                message: message.clone(),
+            }),
+            FakeProviderMode::Timeout => Err(DomainError::ProviderUnavailable {
+                provider: self.name.to_string(),
+            }),
+            FakeProviderMode::InvalidParameters { message } => {
+                Err(DomainError::InvalidGenerationParameters {
+                    message: message.clone(),
+                })
+            }
+        }
+    }
+
+    fn generate_from_image(
+        &self,
+        parameters: &GenerationParameters,
+        input: &[u8],
+    ) -> DomainResult<GenerationResult> {
+        if input.is_empty() {
+            return Err(DomainError::InvalidGenerationParameters {
+                message: "input image must not be empty".to_string(),
+            });
+        }
+
+        self.generate_from_text(parameters)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::GenerationOperation;
+
+    fn parameters(prompt: &str) -> GenerationParameters {
+        GenerationParameters {
+            library_path: None,
+            provider: "fake".to_string(),
+            model: "fake-image".to_string(),
+            prompt: prompt.to_string(),
+            negative_prompt: None,
+            operation: GenerationOperation::TextToImage,
+            input_version_id: None,
+            parameters_json: "{}".to_string(),
+        }
+    }
+
+    #[test]
+    fn fake_provider_returns_successful_image() {
+        let provider = FakeImageProvider::success("fake");
+        let result = provider
+            .generate_from_text(&parameters("make a test image"))
+            .expect("generate");
+
+        assert_eq!(result.images.len(), 1);
+        assert_eq!(result.images[0].mime_type, "image/png");
+    }
+
+    #[test]
+    fn fake_provider_can_fail() {
+        let provider = FakeImageProvider::failure("fake", "boom");
+        let error = provider
+            .generate_from_text(&parameters("make a test image"))
+            .expect_err("should fail");
+
+        assert!(matches!(error, DomainError::GenerationFailed { .. }));
+    }
+
+    #[test]
+    fn fake_provider_rejects_empty_prompt() {
+        let provider = FakeImageProvider::success("fake");
+        let error = provider
+            .generate_from_text(&parameters(" "))
+            .expect_err("should reject prompt");
+
+        assert!(matches!(
+            error,
+            DomainError::InvalidGenerationParameters { .. }
+        ));
+    }
+}

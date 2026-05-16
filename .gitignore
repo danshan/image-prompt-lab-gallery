@@ -7,3 +7,8 @@ DerivedData/
 *.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
 
+**/node_modules/
+**/dist/
+**/.test-dist/
+
+apps/desktop/src-tauri/gen/
