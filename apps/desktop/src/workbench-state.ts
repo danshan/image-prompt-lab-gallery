@@ -32,6 +32,19 @@ export type GalleryQueryState = {
   sort: GallerySort;
 };
 
+export type GalleryFilterAsset = {
+  title: string | null;
+  category: string | null;
+  rating: number | null;
+  status: string;
+  provider: string | null;
+  modelLabel: string | null;
+  tags: string[];
+  reviewPendingCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type DetailLoadState<TDetail> = {
   assetId: string | null;
   detail: TDetail | null;
@@ -145,4 +158,72 @@ export function failDetailLoad<TDetail>(
     loading: false,
     error,
   };
+}
+
+export function applyGalleryQuery<TAsset extends GalleryFilterAsset>(
+  assets: TAsset[],
+  query: GalleryQueryState,
+): TAsset[] {
+  const text = query.text.trim().toLocaleLowerCase();
+  const filtered = assets.filter((asset) => {
+    if (text.length > 0 && !assetMatchesText(asset, text)) {
+      return false;
+    }
+    if (
+      query.providers.length > 0 &&
+      (!asset.provider || !query.providers.includes(asset.provider))
+    ) {
+      return false;
+    }
+    if (query.minRating !== null && (asset.rating ?? 0) < query.minRating) {
+      return false;
+    }
+    if (query.reviewStatus === "pending" && asset.reviewPendingCount === 0) {
+      return false;
+    }
+    if (!query.tags.every((tag) => asset.tags.includes(tag))) {
+      return false;
+    }
+    return true;
+  });
+
+  return filtered.sort((left, right) => compareGalleryAssets(left, right, query.sort));
+}
+
+function assetMatchesText(asset: GalleryFilterAsset, text: string): boolean {
+  return [
+    asset.title,
+    asset.category,
+    asset.status,
+    asset.provider,
+    asset.modelLabel,
+    ...asset.tags,
+  ].some((value) => value?.toLocaleLowerCase().includes(text));
+}
+
+function compareGalleryAssets(
+  left: GalleryFilterAsset,
+  right: GalleryFilterAsset,
+  sort: GallerySort,
+): number {
+  switch (sort) {
+    case "oldest":
+      return compareText(left.createdAt, right.createdAt);
+    case "ratingDesc":
+      return (right.rating ?? 0) - (left.rating ?? 0) || compareNullableText(left.title, right.title);
+    case "titleAsc":
+      return compareNullableText(left.title, right.title);
+    case "providerAsc":
+      return compareNullableText(left.provider, right.provider);
+    case "newest":
+      return compareText(right.updatedAt, left.updatedAt) || compareText(right.createdAt, left.createdAt);
+  }
+}
+
+function compareNullableText(left: string | null, right: string | null): number {
+  return compareText(left ?? "", right ?? "");
+}
+
+function compareText(left: string, right: string): number {
+  return left.localeCompare(right);
 }

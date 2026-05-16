@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   acceptSuggestionState,
+  applyGalleryQuery,
   beginDetailLoad,
   completeDetailLoad,
   defaultGalleryQuery,
@@ -116,4 +117,80 @@ test("detail load helpers model loading lifecycle", () => {
     loading: false,
     error: "boom",
   });
+});
+
+test("applyGalleryQuery filters by text, tags, review status, and rating", () => {
+  const assets = [
+    {
+      title: "Neon Botanical Study",
+      category: "study",
+      rating: 5,
+      status: "generated",
+      provider: "Midjourney",
+      modelLabel: "v6",
+      tags: ["botanical", "neon"],
+      reviewPendingCount: 1,
+      createdAt: "1",
+      updatedAt: "2",
+    },
+    {
+      title: "Rainy Tokyo Night",
+      category: "city",
+      rating: 4,
+      status: "curated",
+      provider: "DALL-E 3",
+      modelLabel: "standard",
+      tags: ["city", "rain"],
+      reviewPendingCount: 0,
+      createdAt: "2",
+      updatedAt: "3",
+    },
+  ];
+
+  const results = applyGalleryQuery(assets, {
+    ...defaultGalleryQuery,
+    text: "botanical",
+    minRating: 5,
+    reviewStatus: "pending",
+    tags: ["neon"],
+  });
+
+  assert.equal(results.length, 1);
+  assert.equal(results[0].title, "Neon Botanical Study");
+});
+
+test("applyGalleryQuery sorts by rating descending", () => {
+  const assets = [
+    {
+      title: "Lower",
+      category: null,
+      rating: 2,
+      status: "generated",
+      provider: "fake",
+      modelLabel: null,
+      tags: [],
+      reviewPendingCount: 0,
+      createdAt: "1",
+      updatedAt: "1",
+    },
+    {
+      title: "Higher",
+      category: null,
+      rating: 5,
+      status: "generated",
+      provider: "fake",
+      modelLabel: null,
+      tags: [],
+      reviewPendingCount: 0,
+      createdAt: "2",
+      updatedAt: "2",
+    },
+  ];
+
+  const results = applyGalleryQuery(assets, {
+    ...defaultGalleryQuery,
+    sort: "ratingDesc",
+  });
+
+  assert.equal(results[0].title, "Higher");
 });

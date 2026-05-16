@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { convertFileSrc, invoke as tauriInvoke } from "@tauri-apps/api/core";
 import {
   acceptSuggestionState,
+  applyGalleryQuery,
   beginDetailLoad,
   completeDetailLoad,
   defaultGalleryQuery,
@@ -400,12 +401,19 @@ function App() {
   const [libraryPathInput, setLibraryPathInput] = useState("");
   const [libraryNameInput, setLibraryNameInput] = useState("Image Prompt Lab");
 
+  const displayedGallery = useMemo(
+    () => (runningInTauri ? gallery : applyGalleryQuery(mockGallery, query)),
+    [runningInTauri, gallery, query],
+  );
   const selectedAsset = useMemo(
-    () => gallery.find((asset) => asset.id === selectedAssetId) ?? gallery[0] ?? null,
-    [gallery, selectedAssetId],
+    () => displayedGallery.find((asset) => asset.id === selectedAssetId) ?? displayedGallery[0] ?? null,
+    [displayedGallery, selectedAssetId],
   );
   const pendingSuggestions = suggestions.filter((suggestion) => suggestion.status === "pending_review");
-  const availableTags = useMemo(() => Array.from(new Set(gallery.flatMap((asset) => asset.tags))).sort(), [gallery]);
+  const availableTags = useMemo(
+    () => Array.from(new Set((runningInTauri ? gallery : mockGallery).flatMap((asset) => asset.tags))).sort(),
+    [runningInTauri, gallery],
+  );
 
   useEffect(() => {
     if (runningInTauri) {
@@ -690,7 +698,7 @@ function App() {
         <WorkspaceToolbar
           activeView={activeView}
           query={query}
-          itemCount={gallery.length}
+          itemCount={displayedGallery.length}
           status={status}
           composerOpen={composerOpen}
           onComposerOpenChange={setComposerOpen}
@@ -716,7 +724,7 @@ function App() {
 
         {activeView === "gallery" && (
           <GalleryView
-            assets={gallery}
+            assets={displayedGallery}
             selectedAssetId={selectedAsset?.id ?? ""}
             query={query}
             availableTags={availableTags}
@@ -724,7 +732,7 @@ function App() {
             onQueryChange={setQuery}
           />
         )}
-        {activeView === "albums" && <AlbumsView gallery={gallery} />}
+        {activeView === "albums" && <AlbumsView gallery={displayedGallery} />}
         {activeView === "review" && (
           <ReviewInbox suggestions={pendingSuggestions} onAccept={acceptSuggestion} onReject={rejectSuggestion} />
         )}
