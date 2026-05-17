@@ -42,4 +42,4 @@
 - [x] 5.5 Add repair tests covering dry run, legacy path moves, checksum repair, dimension backfill, missing file issues, and CLI output.
 - [x] 5.6 Run Rust unit tests for `imglab-core` and CLI tests affected by DTO changes.
 - [x] 5.7 Run desktop build or typecheck and verify no TypeScript regressions.
-- [ ] 5.8 Manually verify the Tauri window shows only one set of window controls and supports drag, minimize, maximize or restore, and close.
+- [x] 5.8 Manually verify the Tauri window shows only one set of window controls and supports drag, minimize, maximize or restore, and close.
