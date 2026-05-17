@@ -1,24 +1,28 @@
 use crate::{
-    hash::sha256_reader, AlbumId, AlbumKind, AlbumService, AlbumSummary, AssetId, AssetService,
-    AssetSummary, AssetVersionId, CreateChildVersionRequest, CreateGenerationEventRequest,
-    CreateLibraryRequest, DomainError, DomainResult, ExportLibraryRequest, ExportSummary,
-    FileContextView, GalleryAssetView, GalleryQuery, GalleryReadService, GallerySort,
-    GenerateImageRequest, GenerationEventId, GenerationEventSummary, GenerationOperation,
-    ImageProvider, ImportAssetRequest, IntegrityIssue, IntegrityIssueKind, LibraryId,
-    LibraryService, LibrarySummary, LineageEntry, MetadataReviewService, MetadataSuggestion,
-    MetadataSuggestionId, ReviewMetadataSuggestionRequest, ReviewStatusFilter, SearchQuery,
-    SearchService, UpdateAssetMetadataRequest, VersionSummary,
+    hash::{md5_reader, sha256_reader},
+    AlbumId, AlbumKind, AlbumService, AlbumSummary, AssetId, AssetService, AssetSummary,
+    AssetVersionId, CreateChildVersionRequest, CreateGenerationEventRequest, CreateLibraryRequest,
+    DomainError, DomainResult, ExportLibraryRequest, ExportSummary, FileContextView,
+    GalleryAssetView, GalleryQuery, GalleryReadService, GallerySort, GenerateImageRequest,
+    GenerationEventId, GenerationEventSummary, GenerationOperation, ImageProvider,
+    ImportAssetRequest, IntegrityIssue, IntegrityIssueKind, LibraryId, LibraryService,
+    LibraryStatusView, LibrarySummary, LineageEntry, MetadataReviewService, MetadataSuggestion,
+    MetadataSuggestionId, RepairIssue, RepairLibraryRequest, RepairSummary,
+    ReviewMetadataSuggestionRequest, ReviewStatusFilter, SearchQuery, SearchService,
+    UpdateAssetMetadataRequest, VersionSummary,
 };
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::fs::{self, File};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 1;
+pub const CURRENT_SCHEMA_VERSION: u32 = 2;
+const CHECKSUM_MD5: &str = "MD5";
+const CHECKSUM_SHA256: &str = "SHA-256";
 
 const MANIFEST_FILE: &str = "manifest.json";
 const DATABASE_FILE: &str = "library.sqlite";
@@ -499,6 +503,8 @@ impl LibraryService for LocalLibraryService {
                         "id": version.version_id,
                         "file_path": version.file_path.to_string_lossy(),
                         "sha256": version.sha256,
+                        "checksum_algorithm": version.checksum_algorithm,
+                        "checksum": version.checksum,
                         "mime_type": version.mime_type,
                     })
                 }).collect::<Vec<_>>()
@@ -518,10 +524,135 @@ impl LibraryService for LocalLibraryService {
         })
     }
 
+    fn repair_library(&self, request: RepairLibraryRequest) -> DomainResult<RepairSummary> {
+        let connection = Self::open_library_database(&request.library_path)?;
+        let rows = load_repair_versions(&connection)?;
+        let mut summary = RepairSummary {
+            dry_run: request.dry_run,
+            scanned_versions: rows.len(),
+            files_moved: 0,
+            paths_updated: 0,
+            checksums_updated: 0,
+            dimensions_updated: 0,
+            issues: Vec::new(),
+        };
+
+        for row in rows {
+            let extension = normalized_extension(&row.file_path);
+            let canonical_path =
+                managed_original_path(&row.version_id, &extension, &row.created_at);
+            if !row.file_path.is_absolute() && !is_safe_relative_path(&row.file_path) {
+                summary.issues.push(RepairIssue {
+                    version_id: row.version_id,
+                    path: row.file_path,
+                    message: "recorded relative file path escapes the library root".to_string(),
+                });
+                continue;
+            }
+            let current_path = if row.file_path.is_absolute() {
+                row.file_path.clone()
+            } else {
+                request.library_path.join(&row.file_path)
+            };
+            let canonical_absolute_path = request.library_path.join(&canonical_path);
+
+            if current_path.is_absolute() && !current_path.starts_with(&request.library_path) {
+                summary.issues.push(RepairIssue {
+                    version_id: row.version_id,
+                    path: row.file_path,
+                    message: "recorded file path is outside the library root".to_string(),
+                });
+                continue;
+            }
+
+            let source_path = if current_path.is_file() {
+                current_path
+            } else if canonical_absolute_path.is_file() {
+                canonical_absolute_path.clone()
+            } else {
+                summary.issues.push(RepairIssue {
+                    version_id: row.version_id,
+                    path: row.file_path,
+                    message: "managed file is missing".to_string(),
+                });
+                continue;
+            };
+
+            let target_differs = row.file_path != canonical_path;
+            let needs_move = target_differs && source_path != canonical_absolute_path;
+            if needs_move && canonical_absolute_path.exists() {
+                summary.issues.push(RepairIssue {
+                    version_id: row.version_id,
+                    path: canonical_path,
+                    message: "canonical target path already exists".to_string(),
+                });
+                continue;
+            }
+
+            let checksum = file_digest(&source_path, CHECKSUM_MD5)?;
+            let checksum_differs = row.checksum_algorithm != CHECKSUM_MD5
+                || row.checksum.as_deref() != Some(checksum.as_str())
+                || row.sha256 != checksum;
+            let dimensions = image_dimensions(&source_path)?;
+            let dimensions_differ = match dimensions {
+                (Some(width), Some(height)) => {
+                    row.width != Some(width) || row.height != Some(height)
+                }
+                _ => false,
+            };
+
+            if needs_move {
+                summary.files_moved += 1;
+            }
+            if target_differs {
+                summary.paths_updated += 1;
+            }
+            if checksum_differs {
+                summary.checksums_updated += 1;
+            }
+            if dimensions_differ {
+                summary.dimensions_updated += 1;
+            }
+
+            if request.dry_run
+                || (!needs_move && !target_differs && !checksum_differs && !dimensions_differ)
+            {
+                continue;
+            }
+
+            if needs_move {
+                if let Some(parent) = canonical_absolute_path.parent() {
+                    fs::create_dir_all(parent).map_err(|error| io_error(parent, error))?;
+                }
+                fs::rename(&source_path, &canonical_absolute_path)
+                    .map_err(|error| io_error(&canonical_absolute_path, error))?;
+            }
+
+            let update_result = update_repaired_version(
+                &connection,
+                &row.version_id,
+                &canonical_path,
+                &checksum,
+                dimensions,
+            );
+
+            if let Err(error) = update_result {
+                if needs_move {
+                    let _ = fs::rename(&canonical_absolute_path, &source_path);
+                }
+                return Err(error);
+            }
+        }
+
+        Ok(summary)
+    }
+
     fn check_integrity(&self, root_path: &Path) -> DomainResult<Vec<IntegrityIssue>> {
         let connection = Self::open_library_database(root_path)?;
         let mut statement = connection
-            .prepare("SELECT id, file_path, sha256 FROM asset_versions ORDER BY created_at")
+            .prepare(
+                "SELECT id, file_path, checksum_algorithm, COALESCE(checksum, sha256) FROM asset_versions ORDER BY created_at",
+            )
             .map_err(database_error)?;
         let rows = statement
             .query_map([], |row| {
@@ -529,13 +660,15 @@ impl LibraryService for LocalLibraryService {
                     row.get::<_, String>(0)?,
                     PathBuf::from(row.get::<_, String>(1)?),
                     row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
                 ))
             })
             .map_err(database_error)?;
 
         let mut issues = Vec::new();
         for row in rows {
-            let (version_id, relative_path, expected_sha256) = row.map_err(database_error)?;
+            let (version_id, relative_path, checksum_algorithm, expected_checksum) =
+                row.map_err(database_error)?;
             let path = root_path.join(&relative_path);
             if !path.is_file() {
                 issues.push(IntegrityIssue {
@@ -547,20 +680,34 @@ impl LibraryService for LocalLibraryService {
                 continue;
             }
 
-            let actual_sha256 =
-                sha256_reader(File::open(&path).map_err(|error| io_error(&path, error))?)
-                    .map_err(|error| io_error(&path, error))?;
-            if actual_sha256 != expected_sha256 {
+            let actual_checksum = file_digest(&path, &checksum_algorithm)?;
+            if actual_checksum != expected_checksum {
                 issues.push(IntegrityIssue {
                     version_id: AssetVersionId(version_id),
                     path: relative_path,
                     kind: IntegrityIssueKind::HashMismatch,
-                    message: format!("expected sha256 {expected_sha256}, found {actual_sha256}"),
+                    message: format!(
+                        "expected {checksum_algorithm} {expected_checksum}, found {actual_checksum}"
+                    ),
                 });
             }
         }
 
         Ok(issues)
+    }
+
+    fn library_status(&self, root_path: &Path) -> DomainResult<LibraryStatusView> {
+        Self::validate_layout(root_path)?;
+        let issues = self.check_integrity(root_path)?;
+        Ok(LibraryStatusView {
+            storage_size_bytes: managed_storage_size(root_path)?,
+            integrity_status: if issues.is_empty() {
+                "healthy".to_string()
+            } else {
+                "issues_found".to_string()
+            },
+            integrity_issue_count: issues.len() as u32,
+        })
     }
 }
 
@@ -582,9 +729,8 @@ impl AssetService for LocalLibraryService {
         let asset_id = AssetId(Uuid::new_v4().to_string());
         let version_id = AssetVersionId(Uuid::new_v4().to_string());
         let extension = normalized_extension(&request.source_path);
-        let relative_path = PathBuf::from("originals")
-            .join("imported")
-            .join(format!("{}.{}", version_id.0, extension));
+        let now = timestamp_string();
+        let relative_path = managed_original_path(&version_id, &extension, &now);
         let destination_path = request.library_path.join(&relative_path);
 
         if let Some(parent) = destination_path.parent() {
@@ -597,12 +743,9 @@ impl AssetService for LocalLibraryService {
         fs::rename(&temporary_path, &destination_path)
             .map_err(|error| io_error(&destination_path, error))?;
 
-        let sha256 = sha256_reader(
-            File::open(&destination_path).map_err(|error| io_error(&destination_path, error))?,
-        )
-        .map_err(|error| io_error(&destination_path, error))?;
+        let checksum = file_digest(&destination_path, CHECKSUM_MD5)?;
+        let (width, height) = image_dimensions(&destination_path)?;
         let mime_type = mime_type_for_extension(&extension).to_string();
-        let now = timestamp_string();
 
         let transaction = connection.unchecked_transaction().map_err(database_error)?;
         transaction
@@ -622,15 +765,18 @@ impl AssetService for LocalLibraryService {
                 "
                 INSERT INTO asset_versions (
                     id, asset_id, parent_version_id, generation_event_id,
-                    file_path, sha256, width, height, mime_type, version_label, created_at
+                    file_path, sha256, checksum_algorithm, checksum, width, height, mime_type, version_label, created_at
                 )
-                VALUES (?1, ?2, NULL, NULL, ?3, ?4, NULL, NULL, ?5, ?6, ?7)
+                VALUES (?1, ?2, NULL, NULL, ?3, ?4, ?5, ?4, ?6, ?7, ?8, ?9, ?10)
                 ",
                 params![
                     version_id.0,
                     asset_id.0,
                     relative_path.to_string_lossy(),
-                    sha256,
+                    checksum,
+                    CHECKSUM_MD5,
+                    width,
+                    height,
                     mime_type,
                     "import",
                     now
@@ -653,7 +799,9 @@ impl AssetService for LocalLibraryService {
                 parent_version_id: None,
                 generation_event_id: None,
                 file_path: relative_path,
-                sha256,
+                sha256: checksum.clone(),
+                checksum_algorithm: CHECKSUM_MD5.to_string(),
+                checksum,
                 mime_type,
             },
         ))
@@ -676,9 +824,8 @@ impl AssetService for LocalLibraryService {
 
         let version_id = AssetVersionId(Uuid::new_v4().to_string());
         let extension = normalized_extension(&request.source_path);
-        let relative_path = PathBuf::from("originals")
-            .join("generated")
-            .join(format!("{}.{}", version_id.0, extension));
+        let now = timestamp_string();
+        let relative_path = managed_original_path(&version_id, &extension, &now);
         let destination_path = request.library_path.join(&relative_path);
 
         if let Some(parent) = destination_path.parent() {
@@ -691,20 +838,17 @@ impl AssetService for LocalLibraryService {
         fs::rename(&temporary_path, &destination_path)
             .map_err(|error| io_error(&destination_path, error))?;
 
-        let sha256 = sha256_reader(
-            File::open(&destination_path).map_err(|error| io_error(&destination_path, error))?,
-        )
-        .map_err(|error| io_error(&destination_path, error))?;
-        let now = timestamp_string();
+        let checksum = file_digest(&destination_path, CHECKSUM_MD5)?;
+        let (width, height) = image_dimensions(&destination_path)?;
 
         connection
             .execute(
                 "
                 INSERT INTO asset_versions (
                     id, asset_id, parent_version_id, generation_event_id,
-                    file_path, sha256, width, height, mime_type, version_label, created_at
+                    file_path, sha256, checksum_algorithm, checksum, width, height, mime_type, version_label, created_at
                 )
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, NULL, ?7, ?8, ?9)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?6, ?8, ?9, ?10, ?11, ?12)
                 ",
                 params![
                     version_id.0,
@@ -712,7 +856,10 @@ impl AssetService for LocalLibraryService {
                     request.parent_version_id.0,
                     request.generation_event_id.as_ref().map(|id| id.0.as_str()),
                     relative_path.to_string_lossy(),
-                    sha256,
+                    checksum,
+                    CHECKSUM_MD5,
+                    width,
+                    height,
                     request.mime_type,
                     request.version_label.as_deref(),
                     now
@@ -730,7 +877,9 @@ impl AssetService for LocalLibraryService {
             parent_version_id: Some(request.parent_version_id),
             generation_event_id: request.generation_event_id,
             file_path: relative_path,
-            sha256,
+            sha256: checksum.clone(),
+            checksum_algorithm: CHECKSUM_MD5.to_string(),
+            checksum,
             mime_type: request.mime_type,
         })
     }
@@ -1314,6 +1463,8 @@ pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
                 generation_event_id TEXT,
                 file_path TEXT NOT NULL,
                 sha256 TEXT NOT NULL,
+                checksum_algorithm TEXT NOT NULL DEFAULT 'SHA-256',
+                checksum TEXT,
                 width INTEGER,
                 height INTEGER,
                 mime_type TEXT NOT NULL,
@@ -1390,12 +1541,49 @@ pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
                 PRIMARY KEY(album_id, asset_id)
             );
 
-            PRAGMA user_version = 1;
             ",
         )
         .map_err(database_error)?;
 
+    if !column_exists(connection, "asset_versions", "checksum_algorithm")? {
+        connection
+            .execute(
+                "ALTER TABLE asset_versions ADD COLUMN checksum_algorithm TEXT NOT NULL DEFAULT 'SHA-256'",
+                [],
+            )
+            .map_err(database_error)?;
+    }
+    if !column_exists(connection, "asset_versions", "checksum")? {
+        connection
+            .execute("ALTER TABLE asset_versions ADD COLUMN checksum TEXT", [])
+            .map_err(database_error)?;
+    }
+    connection
+        .execute(
+            "UPDATE asset_versions SET checksum = sha256 WHERE checksum IS NULL",
+            [],
+        )
+        .map_err(database_error)?;
+    connection
+        .pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
+        .map_err(database_error)?;
+
     Ok(())
+}
+
+fn column_exists(connection: &Connection, table: &str, column: &str) -> DomainResult<bool> {
+    let mut statement = connection
+        .prepare(&format!("PRAGMA table_info({table})"))
+        .map_err(database_error)?;
+    let rows = statement
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(database_error)?;
+    for row in rows {
+        if row.map_err(database_error)? == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn timestamp_string() -> String {
@@ -1404,6 +1592,181 @@ fn timestamp_string() -> String {
         .map(|duration| duration.as_millis())
         .unwrap_or_default();
     millis.to_string()
+}
+
+fn managed_original_path(version_id: &AssetVersionId, extension: &str, timestamp: &str) -> PathBuf {
+    let millis = timestamp.parse::<u128>().unwrap_or_default();
+    let days = (millis / 86_400_000) as i64;
+    let (year, month, _) = civil_from_days(days);
+    PathBuf::from("originals")
+        .join(format!("{year:04}"))
+        .join(format!("{month:02}"))
+        .join(format!("{}.{}", version_id.0, extension))
+}
+
+fn civil_from_days(days_since_unix_epoch: i64) -> (i32, u32, u32) {
+    let z = days_since_unix_epoch + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = mp + if mp < 10 { 3 } else { -9 };
+    let year = y + if month <= 2 { 1 } else { 0 };
+    (year as i32, month as u32, day as u32)
+}
+
+fn file_digest(path: &Path, algorithm: &str) -> DomainResult<String> {
+    let file = File::open(path).map_err(|error| io_error(path, error))?;
+    match algorithm {
+        CHECKSUM_MD5 => md5_reader(file).map_err(|error| io_error(path, error)),
+        CHECKSUM_SHA256 => sha256_reader(file).map_err(|error| io_error(path, error)),
+        other => Err(DomainError::Database {
+            message: format!("unsupported checksum algorithm: {other}"),
+        }),
+    }
+}
+
+fn image_dimensions(path: &Path) -> DomainResult<(Option<u32>, Option<u32>)> {
+    let bytes = fs::read(path).map_err(|error| io_error(path, error))?;
+    Ok(parse_image_dimensions(&bytes).unwrap_or((None, None)))
+}
+
+fn parse_image_dimensions(bytes: &[u8]) -> Option<(Option<u32>, Option<u32>)> {
+    parse_png_dimensions(bytes)
+        .or_else(|| parse_jpeg_dimensions(bytes))
+        .or_else(|| parse_webp_dimensions(bytes))
+        .map(|(width, height)| (Some(width), Some(height)))
+}
+
+fn parse_png_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
+    const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+    if bytes.len() < 24 || &bytes[0..8] != PNG_SIGNATURE || &bytes[12..16] != b"IHDR" {
+        return None;
+    }
+    let width = u32::from_be_bytes(bytes[16..20].try_into().ok()?);
+    let height = u32::from_be_bytes(bytes[20..24].try_into().ok()?);
+    non_zero_dimensions(width, height)
+}
+
+fn parse_jpeg_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
+    if bytes.len() < 4 || bytes[0] != 0xff || bytes[1] != 0xd8 {
+        return None;
+    }
+    let mut index = 2usize;
+    while index + 3 < bytes.len() {
+        while index < bytes.len() && bytes[index] != 0xff {
+            index += 1;
+        }
+        while index < bytes.len() && bytes[index] == 0xff {
+            index += 1;
+        }
+        if index >= bytes.len() {
+            return None;
+        }
+        let marker = bytes[index];
+        index += 1;
+        if marker == 0xd9 || marker == 0xda {
+            return None;
+        }
+        if index + 2 > bytes.len() {
+            return None;
+        }
+        let length = u16::from_be_bytes(bytes[index..index + 2].try_into().ok()?) as usize;
+        if length < 2 || index + length > bytes.len() {
+            return None;
+        }
+        let payload = index + 2;
+        if is_jpeg_sof_marker(marker) {
+            if length < 7 {
+                return None;
+            }
+            let height =
+                u16::from_be_bytes(bytes[payload + 1..payload + 3].try_into().ok()?) as u32;
+            let width = u16::from_be_bytes(bytes[payload + 3..payload + 5].try_into().ok()?) as u32;
+            return non_zero_dimensions(width, height);
+        }
+        index += length;
+    }
+    None
+}
+
+fn is_jpeg_sof_marker(marker: u8) -> bool {
+    matches!(
+        marker,
+        0xc0 | 0xc1 | 0xc2 | 0xc3 | 0xc5 | 0xc6 | 0xc7 | 0xc9 | 0xca | 0xcb | 0xcd | 0xce | 0xcf
+    )
+}
+
+fn parse_webp_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
+    if bytes.len() < 30 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WEBP" {
+        return None;
+    }
+    match &bytes[12..16] {
+        b"VP8X" if bytes.len() >= 30 => {
+            let width = 1 + u32::from_le_bytes([bytes[24], bytes[25], bytes[26], 0]);
+            let height = 1 + u32::from_le_bytes([bytes[27], bytes[28], bytes[29], 0]);
+            non_zero_dimensions(width, height)
+        }
+        b"VP8L" if bytes.len() >= 25 && bytes[20] == 0x2f => {
+            let b1 = bytes[21] as u32;
+            let b2 = bytes[22] as u32;
+            let b3 = bytes[23] as u32;
+            let b4 = bytes[24] as u32;
+            let width = 1 + (((b2 & 0x3f) << 8) | b1);
+            let height = 1 + (((b4 & 0x0f) << 10) | (b3 << 2) | ((b2 & 0xc0) >> 6));
+            non_zero_dimensions(width, height)
+        }
+        b"VP8 " if bytes.len() >= 30 && bytes[23..26] == [0x9d, 0x01, 0x2a] => {
+            let width = (u16::from_le_bytes(bytes[26..28].try_into().ok()?) & 0x3fff) as u32;
+            let height = (u16::from_le_bytes(bytes[28..30].try_into().ok()?) & 0x3fff) as u32;
+            non_zero_dimensions(width, height)
+        }
+        _ => None,
+    }
+}
+
+fn non_zero_dimensions(width: u32, height: u32) -> Option<(u32, u32)> {
+    if width == 0 || height == 0 {
+        None
+    } else {
+        Some((width, height))
+    }
+}
+
+fn is_safe_relative_path(path: &Path) -> bool {
+    path.components()
+        .all(|component| matches!(component, Component::Normal(_)))
+}
+
+fn managed_storage_size(root_path: &Path) -> DomainResult<u64> {
+    REQUIRED_DIRS
+        .iter()
+        .filter(|relative| !relative.contains('/'))
+        .try_fold(0u64, |total, relative| {
+            directory_size(&root_path.join(relative)).map(|size| total + size)
+        })
+}
+
+fn directory_size(path: &Path) -> DomainResult<u64> {
+    if !path.exists() {
+        return Ok(0);
+    }
+    let mut total = 0u64;
+    for entry in fs::read_dir(path).map_err(|error| io_error(path, error))? {
+        let entry = entry.map_err(|error| io_error(path, error))?;
+        let metadata = entry
+            .metadata()
+            .map_err(|error| io_error(&entry.path(), error))?;
+        if metadata.is_dir() {
+            total += directory_size(&entry.path())?;
+        } else if metadata.is_file() {
+            total += metadata.len();
+        }
+    }
+    Ok(total)
 }
 
 fn io_error(path: &Path, error: std::io::Error) -> DomainError {
@@ -1494,7 +1857,8 @@ fn load_version(
     connection
         .query_row(
             "
-            SELECT id, asset_id, parent_version_id, generation_event_id, file_path, sha256, mime_type
+            SELECT id, asset_id, parent_version_id, generation_event_id, file_path,
+                   sha256, checksum_algorithm, COALESCE(checksum, sha256), mime_type
             FROM asset_versions
             WHERE id = ?1
             ",
@@ -1507,7 +1871,9 @@ fn load_version(
                     generation_event_id: row.get::<_, Option<String>>(3)?.map(GenerationEventId),
                     file_path: PathBuf::from(row.get::<_, String>(4)?),
                     sha256: row.get(5)?,
-                    mime_type: row.get(6)?,
+                    checksum_algorithm: row.get(6)?,
+                    checksum: row.get(7)?,
+                    mime_type: row.get(8)?,
                 })
             },
         )
@@ -1882,6 +2248,11 @@ fn load_gallery_asset_views(connection: &Connection) -> DomainResult<Vec<Gallery
         let version_label = current_version
             .as_ref()
             .and_then(|version| load_version_label(connection, &version.id).ok().flatten());
+        let (width, height) = current_version
+            .as_ref()
+            .map(|version| load_version_dimensions(connection, &version.id))
+            .transpose()?
+            .unwrap_or((None, None));
 
         items.push(GalleryAssetView {
             id: id.clone(),
@@ -1898,6 +2269,8 @@ fn load_gallery_asset_views(connection: &Connection) -> DomainResult<Vec<Gallery
             image_path: current_version
                 .as_ref()
                 .map(|version| version.file_path.clone()),
+            width,
+            height,
             version_label,
             version_count,
             created_at,
@@ -2041,7 +2414,8 @@ fn load_asset_versions(
     let mut statement = connection
         .prepare(
             "
-            SELECT id, asset_id, parent_version_id, generation_event_id, file_path, sha256, mime_type
+            SELECT id, asset_id, parent_version_id, generation_event_id, file_path,
+                   sha256, checksum_algorithm, COALESCE(checksum, sha256), mime_type
             FROM asset_versions
             WHERE asset_id = ?1
             ORDER BY created_at DESC
@@ -2057,7 +2431,9 @@ fn load_asset_versions(
                 generation_event_id: row.get::<_, Option<String>>(3)?.map(GenerationEventId),
                 file_path: PathBuf::from(row.get::<_, String>(4)?),
                 sha256: row.get(5)?,
-                mime_type: row.get(6)?,
+                checksum_algorithm: row.get(6)?,
+                checksum: row.get(7)?,
+                mime_type: row.get(8)?,
             })
         })
         .map_err(database_error)?;
@@ -2110,6 +2486,19 @@ fn load_version_label(
             "SELECT version_label FROM asset_versions WHERE id = ?1",
             params![version_id.0],
             |row| row.get(0),
+        )
+        .map_err(database_error)
+}
+
+fn load_version_dimensions(
+    connection: &Connection,
+    version_id: &AssetVersionId,
+) -> DomainResult<(Option<u32>, Option<u32>)> {
+    connection
+        .query_row(
+            "SELECT width, height FROM asset_versions WHERE id = ?1",
+            params![version_id.0],
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .map_err(database_error)
 }
@@ -2206,11 +2595,8 @@ fn load_file_context(
     let absolute_path = library_path.join(&version.file_path);
     let size_bytes = absolute_path.metadata().ok().map(|metadata| metadata.len());
     let integrity_status = if absolute_path.is_file() {
-        let actual_sha256 = sha256_reader(
-            File::open(&absolute_path).map_err(|error| io_error(&absolute_path, error))?,
-        )
-        .map_err(|error| io_error(&absolute_path, error))?;
-        if actual_sha256 == version.sha256 {
+        let actual_checksum = file_digest(&absolute_path, &version.checksum_algorithm)?;
+        if actual_checksum == version.checksum {
             "verified"
         } else {
             "hash_mismatch"
@@ -2238,7 +2624,8 @@ fn load_file_context(
         size_bytes,
         width,
         height,
-        checksum: version.sha256.clone(),
+        checksum_algorithm: version.checksum_algorithm.clone(),
+        checksum: version.checksum.clone(),
         integrity_status: integrity_status.to_string(),
     })
 }
@@ -2292,7 +2679,80 @@ struct ExportVersionRow {
     version_id: String,
     file_path: PathBuf,
     sha256: String,
+    checksum_algorithm: String,
+    checksum: String,
     mime_type: String,
+}
+
+#[derive(Debug, Clone)]
+struct RepairVersionRow {
+    version_id: AssetVersionId,
+    file_path: PathBuf,
+    sha256: String,
+    checksum_algorithm: String,
+    checksum: Option<String>,
+    width: Option<u32>,
+    height: Option<u32>,
+    created_at: String,
+}
+
+fn load_repair_versions(connection: &Connection) -> DomainResult<Vec<RepairVersionRow>> {
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT id, file_path, sha256, checksum_algorithm, checksum, width, height, created_at
+            FROM asset_versions
+            ORDER BY created_at
+            ",
+        )
+        .map_err(database_error)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok(RepairVersionRow {
+                version_id: AssetVersionId(row.get(0)?),
+                file_path: PathBuf::from(row.get::<_, String>(1)?),
+                sha256: row.get(2)?,
+                checksum_algorithm: row.get(3)?,
+                checksum: row.get(4)?,
+                width: row.get(5)?,
+                height: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        })
+        .map_err(database_error)?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(database_error)
+}
+
+fn update_repaired_version(
+    connection: &Connection,
+    version_id: &AssetVersionId,
+    file_path: &Path,
+    checksum: &str,
+    dimensions: (Option<u32>, Option<u32>),
+) -> DomainResult<()> {
+    connection
+        .execute(
+            "
+            UPDATE asset_versions
+            SET file_path = ?1,
+                sha256 = ?2,
+                checksum_algorithm = ?3,
+                checksum = ?2,
+                width = COALESCE(?4, width),
+                height = COALESCE(?5, height)
+            WHERE id = ?6
+            ",
+            params![
+                file_path.to_string_lossy(),
+                checksum,
+                CHECKSUM_MD5,
+                dimensions.0,
+                dimensions.1,
+                version_id.0
+            ],
+        )
+        .map_err(database_error)?;
+    Ok(())
 }
 
 fn load_export_versions(
@@ -2301,7 +2761,8 @@ fn load_export_versions(
 ) -> DomainResult<Vec<ExportVersionRow>> {
     let sql = if album_id.is_some() {
         "
-        SELECT av.asset_id, av.id, av.file_path, av.sha256, av.mime_type
+        SELECT av.asset_id, av.id, av.file_path, av.sha256,
+               av.checksum_algorithm, COALESCE(av.checksum, av.sha256), av.mime_type
         FROM asset_versions av
         INNER JOIN album_items ai ON ai.asset_id = av.asset_id
         WHERE ai.album_id = ?1
@@ -2309,7 +2770,8 @@ fn load_export_versions(
         "
     } else {
         "
-        SELECT av.asset_id, av.id, av.file_path, av.sha256, av.mime_type
+        SELECT av.asset_id, av.id, av.file_path, av.sha256,
+               av.checksum_algorithm, COALESCE(av.checksum, av.sha256), av.mime_type
         FROM asset_versions av
         ORDER BY av.created_at
         "
@@ -2335,7 +2797,9 @@ fn export_version_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ExportVe
         version_id: row.get(1)?,
         file_path: PathBuf::from(row.get::<_, String>(2)?),
         sha256: row.get(3)?,
-        mime_type: row.get(4)?,
+        checksum_algorithm: row.get(4)?,
+        checksum: row.get(5)?,
+        mime_type: row.get(6)?,
     })
 }
 
@@ -2354,6 +2818,48 @@ mod tests {
             fs::remove_dir_all(&root).expect("remove old test directory");
         }
         root
+    }
+
+    fn png_bytes(width: u32, height: u32) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"\x89PNG\r\n\x1a\n");
+        bytes.extend_from_slice(&13u32.to_be_bytes());
+        bytes.extend_from_slice(b"IHDR");
+        bytes.extend_from_slice(&width.to_be_bytes());
+        bytes.extend_from_slice(&height.to_be_bytes());
+        bytes.extend_from_slice(&[8, 2, 0, 0, 0]);
+        bytes.extend_from_slice(&0u32.to_be_bytes());
+        bytes
+    }
+
+    fn move_version_to_legacy_state(
+        root: &Path,
+        version_id: &AssetVersionId,
+        current_relative: &Path,
+        legacy_relative: &Path,
+    ) {
+        let current = root.join(current_relative);
+        let legacy = root.join(legacy_relative);
+        fs::create_dir_all(legacy.parent().expect("legacy parent")).expect("create legacy parent");
+        fs::rename(&current, &legacy).expect("move to legacy path");
+        let sha256 = file_digest(&legacy, CHECKSUM_SHA256).expect("sha256");
+        let connection =
+            Connection::open(LocalLibraryService::database_path(root)).expect("open db");
+        connection
+            .execute(
+                "
+                UPDATE asset_versions
+                SET file_path = ?1,
+                    sha256 = ?2,
+                    checksum_algorithm = 'SHA-256',
+                    checksum = ?2,
+                    width = NULL,
+                    height = NULL
+                WHERE id = ?3
+                ",
+                params![legacy_relative.to_string_lossy(), sha256, version_id.0],
+            )
+            .expect("update legacy version");
     }
 
     #[test]
@@ -2451,10 +2957,19 @@ mod tests {
         assert_eq!(version.mime_type, "image/png");
         assert!(version.generation_event_id.is_none());
         assert!(root.join(&version.file_path).is_file());
-        assert_eq!(
-            version.sha256,
-            "e90137d39de304eefbbe788bc535c7e82f27abbf8069505fbbd8a9dcdc4f2024"
-        );
+        assert_eq!(version.checksum_algorithm, CHECKSUM_MD5);
+        assert_eq!(version.checksum, "a4f84feadf4cad85108478e074357b33");
+        assert_eq!(version.sha256, version.checksum);
+        let path_parts = version
+            .file_path
+            .iter()
+            .map(|part| part.to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(path_parts[0], "originals");
+        assert_eq!(path_parts[1].len(), 4);
+        assert_eq!(path_parts[2].len(), 2);
+        assert!(path_parts[3].ends_with(".png"));
+        assert!(Uuid::parse_str(path_parts[3].trim_end_matches(".png")).is_ok());
 
         let connection =
             Connection::open(LocalLibraryService::database_path(&root)).expect("open db");
@@ -2466,6 +2981,256 @@ mod tests {
             .expect("version count");
         assert_eq!(asset_count, 1);
         assert_eq!(version_count, 1);
+    }
+
+    #[test]
+    fn duplicate_source_filenames_get_distinct_uuid_paths() {
+        let root = test_root("duplicate-filenames");
+        let registry = test_root("duplicate-filenames-registry").join("registry.sqlite");
+        let first_dir = test_root("duplicate-source-a");
+        let second_dir = test_root("duplicate-source-b");
+        fs::create_dir_all(&first_dir).expect("create first source dir");
+        fs::create_dir_all(&second_dir).expect("create second source dir");
+        let first = first_dir.join("input.png");
+        let second = second_dir.join("input.png");
+        fs::write(&first, b"first").expect("write first");
+        fs::write(&second, b"second").expect("write second");
+
+        let service = LocalLibraryService::new(registry);
+        service
+            .create_library(CreateLibraryRequest {
+                root_path: root.clone(),
+                name: "Duplicates".to_string(),
+            })
+            .expect("create library");
+
+        let (_, first_version) = service
+            .import_asset(ImportAssetRequest {
+                library_path: root.clone(),
+                source_path: first,
+            })
+            .expect("import first");
+        let (_, second_version) = service
+            .import_asset(ImportAssetRequest {
+                library_path: root.clone(),
+                source_path: second,
+            })
+            .expect("import second");
+
+        assert_ne!(first_version.file_path, second_version.file_path);
+        assert!(root.join(first_version.file_path).is_file());
+        assert!(root.join(second_version.file_path).is_file());
+    }
+
+    #[test]
+    fn imports_png_dimensions_into_file_context() {
+        let root = test_root("import-dimensions");
+        let registry = test_root("import-dimensions-registry").join("registry.sqlite");
+        let source_dir = test_root("import-dimensions-source");
+        fs::create_dir_all(&source_dir).expect("create source dir");
+        let source = source_dir.join("input.png");
+        fs::write(&source, png_bytes(640, 480)).expect("write source");
+
+        let service = LocalLibraryService::new(registry);
+        service
+            .create_library(CreateLibraryRequest {
+                root_path: root.clone(),
+                name: "Dimensions".to_string(),
+            })
+            .expect("create library");
+        let (asset, version) = service
+            .import_asset(ImportAssetRequest {
+                library_path: root.clone(),
+                source_path: source,
+            })
+            .expect("import asset");
+
+        let detail = service
+            .get_asset_detail(&root, &asset.id, Some(&version.id))
+            .expect("detail");
+        let file = detail.file.expect("file");
+        assert_eq!(file.width, Some(640));
+        assert_eq!(file.height, Some(480));
+
+        let gallery = service
+            .query_gallery(&root, GalleryQuery::default())
+            .expect("gallery");
+        assert_eq!(gallery[0].width, Some(640));
+        assert_eq!(gallery[0].height, Some(480));
+    }
+
+    #[test]
+    fn unknown_binary_keeps_dimensions_empty() {
+        let root = test_root("unknown-dimensions");
+        let registry = test_root("unknown-dimensions-registry").join("registry.sqlite");
+        let source_dir = test_root("unknown-dimensions-source");
+        fs::create_dir_all(&source_dir).expect("create source dir");
+        let source = source_dir.join("input.png");
+        fs::write(&source, b"not really a png").expect("write source");
+
+        let service = LocalLibraryService::new(registry);
+        service
+            .create_library(CreateLibraryRequest {
+                root_path: root.clone(),
+                name: "Unknown Dimensions".to_string(),
+            })
+            .expect("create library");
+        let (asset, version) = service
+            .import_asset(ImportAssetRequest {
+                library_path: root.clone(),
+                source_path: source,
+            })
+            .expect("import asset");
+
+        let detail = service
+            .get_asset_detail(&root, &asset.id, Some(&version.id))
+            .expect("detail");
+        let file = detail.file.expect("file");
+        assert_eq!(file.width, None);
+        assert_eq!(file.height, None);
+    }
+
+    #[test]
+    fn repair_library_dry_run_reports_legacy_path_checksum_and_dimensions() {
+        let root = test_root("repair-dry-run");
+        let registry = test_root("repair-dry-run-registry").join("registry.sqlite");
+        let source_dir = test_root("repair-dry-run-source");
+        fs::create_dir_all(&source_dir).expect("create source dir");
+        let source = source_dir.join("input.png");
+        fs::write(&source, png_bytes(640, 480)).expect("write source");
+
+        let service = LocalLibraryService::new(registry);
+        service
+            .create_library(CreateLibraryRequest {
+                root_path: root.clone(),
+                name: "Repair".to_string(),
+            })
+            .expect("create library");
+        let (_, version) = service
+            .import_asset(ImportAssetRequest {
+                library_path: root.clone(),
+                source_path: source,
+            })
+            .expect("import asset");
+        let old_relative = PathBuf::from("originals")
+            .join("imported")
+            .join(format!("{}.png", version.id.0));
+        move_version_to_legacy_state(&root, &version.id, &version.file_path, &old_relative);
+
+        let summary = service
+            .repair_library(RepairLibraryRequest {
+                library_path: root.clone(),
+                dry_run: true,
+            })
+            .expect("repair dry run");
+
+        assert_eq!(summary.scanned_versions, 1);
+        assert_eq!(summary.files_moved, 1);
+        assert_eq!(summary.paths_updated, 1);
+        assert_eq!(summary.checksums_updated, 1);
+        assert_eq!(summary.dimensions_updated, 1);
+        assert!(summary.issues.is_empty());
+        assert!(root.join(&old_relative).is_file());
+        assert!(!root.join(&version.file_path).is_file());
+    }
+
+    #[test]
+    fn repair_library_applies_legacy_path_checksum_and_dimensions() {
+        let root = test_root("repair-apply");
+        let registry = test_root("repair-apply-registry").join("registry.sqlite");
+        let source_dir = test_root("repair-apply-source");
+        fs::create_dir_all(&source_dir).expect("create source dir");
+        let source = source_dir.join("input.png");
+        fs::write(&source, png_bytes(800, 600)).expect("write source");
+
+        let service = LocalLibraryService::new(registry);
+        service
+            .create_library(CreateLibraryRequest {
+                root_path: root.clone(),
+                name: "Repair".to_string(),
+            })
+            .expect("create library");
+        let (asset, version) = service
+            .import_asset(ImportAssetRequest {
+                library_path: root.clone(),
+                source_path: source,
+            })
+            .expect("import asset");
+        let old_relative = PathBuf::from("originals")
+            .join("generated")
+            .join(format!("{}.png", version.id.0));
+        move_version_to_legacy_state(&root, &version.id, &version.file_path, &old_relative);
+
+        let summary = service
+            .repair_library(RepairLibraryRequest {
+                library_path: root.clone(),
+                dry_run: false,
+            })
+            .expect("repair apply");
+
+        assert_eq!(summary.files_moved, 1);
+        assert_eq!(summary.paths_updated, 1);
+        assert_eq!(summary.checksums_updated, 1);
+        assert_eq!(summary.dimensions_updated, 1);
+        assert!(summary.issues.is_empty());
+        assert!(!root.join(&old_relative).exists());
+        assert!(root.join(&version.file_path).is_file());
+
+        let detail = service
+            .get_asset_detail(&root, &asset.id, Some(&version.id))
+            .expect("detail");
+        let file = detail.file.expect("file");
+        assert_eq!(file.relative_location, version.file_path);
+        assert_eq!(file.checksum_algorithm, CHECKSUM_MD5);
+        assert_eq!(file.width, Some(800));
+        assert_eq!(file.height, Some(600));
+        assert!(service
+            .check_integrity(&root)
+            .expect("integrity")
+            .is_empty());
+    }
+
+    #[test]
+    fn repair_library_reports_missing_files_without_deleting_records() {
+        let root = test_root("repair-missing");
+        let registry = test_root("repair-missing-registry").join("registry.sqlite");
+        let source_dir = test_root("repair-missing-source");
+        fs::create_dir_all(&source_dir).expect("create source dir");
+        let source = source_dir.join("input.png");
+        fs::write(&source, png_bytes(16, 16)).expect("write source");
+
+        let service = LocalLibraryService::new(registry);
+        service
+            .create_library(CreateLibraryRequest {
+                root_path: root.clone(),
+                name: "Repair Missing".to_string(),
+            })
+            .expect("create library");
+        let (_, version) = service
+            .import_asset(ImportAssetRequest {
+                library_path: root.clone(),
+                source_path: source,
+            })
+            .expect("import asset");
+        fs::remove_file(root.join(&version.file_path)).expect("remove managed file");
+
+        let summary = service
+            .repair_library(RepairLibraryRequest {
+                library_path: root.clone(),
+                dry_run: false,
+            })
+            .expect("repair apply");
+
+        assert_eq!(summary.scanned_versions, 1);
+        assert_eq!(summary.issues.len(), 1);
+        assert_eq!(summary.issues[0].version_id, version.id);
+
+        let connection =
+            Connection::open(LocalLibraryService::database_path(&root)).expect("open db");
+        let count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM asset_versions", [], |row| row.get(0))
+            .expect("count versions");
+        assert_eq!(count, 1);
     }
 
     #[test]
@@ -2541,6 +3306,88 @@ mod tests {
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].version_id, version.id);
         assert_eq!(issues[0].kind, IntegrityIssueKind::MissingFile);
+    }
+
+    #[test]
+    fn reports_md5_mismatch_for_modified_file() {
+        let root = test_root("integrity-md5-mismatch");
+        let registry = test_root("integrity-md5-mismatch-registry").join("registry.sqlite");
+        let source_dir = test_root("integrity-md5-mismatch-source");
+        fs::create_dir_all(&source_dir).expect("create source dir");
+        let source = source_dir.join("input.webp");
+        fs::write(&source, b"webp bytes").expect("write source");
+
+        let service = LocalLibraryService::new(registry);
+        service
+            .create_library(CreateLibraryRequest {
+                root_path: root.clone(),
+                name: "Integrity".to_string(),
+            })
+            .expect("create library");
+        let (_, version) = service
+            .import_asset(ImportAssetRequest {
+                library_path: root.clone(),
+                source_path: source,
+            })
+            .expect("import asset");
+
+        fs::write(root.join(&version.file_path), b"changed").expect("modify managed file");
+
+        let issues = service.check_integrity(&root).expect("check integrity");
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].version_id, version.id);
+        assert_eq!(issues[0].kind, IntegrityIssueKind::HashMismatch);
+        assert!(issues[0].message.contains(CHECKSUM_MD5));
+    }
+
+    #[test]
+    fn legacy_sha256_versions_remain_readable() {
+        let root = test_root("legacy-sha256");
+        let registry = test_root("legacy-sha256-registry").join("registry.sqlite");
+        let source_dir = test_root("legacy-sha256-source");
+        fs::create_dir_all(&source_dir).expect("create source dir");
+        let source = source_dir.join("input.png");
+        fs::write(&source, b"legacy bytes").expect("write source");
+
+        let service = LocalLibraryService::new(registry);
+        service
+            .create_library(CreateLibraryRequest {
+                root_path: root.clone(),
+                name: "Legacy".to_string(),
+            })
+            .expect("create library");
+        let (asset, version) = service
+            .import_asset(ImportAssetRequest {
+                library_path: root.clone(),
+                source_path: source,
+            })
+            .expect("import asset");
+        let sha256 = file_digest(&root.join(&version.file_path), CHECKSUM_SHA256).expect("sha256");
+        let connection =
+            Connection::open(LocalLibraryService::database_path(&root)).expect("open db");
+        connection
+            .execute(
+                "
+                UPDATE asset_versions
+                SET sha256 = ?1,
+                    checksum_algorithm = 'SHA-256',
+                    checksum = ?1
+                WHERE id = ?2
+                ",
+                params![sha256, version.id.0],
+            )
+            .expect("make legacy row");
+
+        let detail = service
+            .get_asset_detail(&root, &asset.id, Some(&version.id))
+            .expect("detail");
+        let file = detail.file.expect("file context");
+        assert_eq!(file.checksum_algorithm, CHECKSUM_SHA256);
+        assert_eq!(file.integrity_status, "verified");
+        assert!(service
+            .check_integrity(&root)
+            .expect("integrity")
+            .is_empty());
     }
 
     #[test]
@@ -2681,6 +3528,83 @@ mod tests {
         assert_eq!(detail.model_label.as_deref(), Some("fake-image"));
         assert_eq!(detail.prompt.as_deref(), Some("make a test image"));
         assert_eq!(detail.parameters_json.as_deref(), Some("{}"));
+    }
+
+    #[derive(Debug, Clone)]
+    struct PngProvider;
+
+    impl ImageProvider for PngProvider {
+        fn name(&self) -> &'static str {
+            "png-provider"
+        }
+
+        fn validate_parameters(
+            &self,
+            _parameters: &crate::GenerationParameters,
+        ) -> DomainResult<()> {
+            Ok(())
+        }
+
+        fn generate_from_text(
+            &self,
+            _parameters: &crate::GenerationParameters,
+        ) -> DomainResult<GenerationResult> {
+            Ok(GenerationResult {
+                images: vec![GeneratedImage {
+                    bytes: png_bytes(320, 240),
+                    mime_type: "image/png".to_string(),
+                    provider_metadata_json: "{}".to_string(),
+                }],
+                raw_request_json: "{}".to_string(),
+                raw_response_json: "{}".to_string(),
+            })
+        }
+
+        fn generate_from_image(
+            &self,
+            _parameters: &crate::GenerationParameters,
+            _input: &[u8],
+        ) -> DomainResult<GenerationResult> {
+            self.generate_from_text(_parameters)
+        }
+    }
+
+    #[test]
+    fn generation_service_persists_output_dimensions() {
+        let root = test_root("generation-dimensions");
+        let registry = test_root("generation-dimensions-registry").join("registry.sqlite");
+        let library = LocalLibraryService::new(registry);
+        library
+            .create_library(CreateLibraryRequest {
+                root_path: root.clone(),
+                name: "Generation Dimensions".to_string(),
+            })
+            .expect("create library");
+
+        let generation = LocalGenerationService::new(PngProvider);
+        let versions = generation
+            .generate(GenerateImageRequest {
+                library_path: root.clone(),
+                input_bytes: None,
+                parameters: crate::GenerationParameters {
+                    library_path: Some(root.clone()),
+                    provider: "png-provider".to_string(),
+                    model: "png-image".to_string(),
+                    prompt: "make a png".to_string(),
+                    negative_prompt: None,
+                    operation: GenerationOperation::TextToImage,
+                    input_version_id: None,
+                    parameters_json: "{}".to_string(),
+                },
+            })
+            .expect("generate");
+
+        let detail = library
+            .get_asset_detail(&root, &versions[0].asset_id, Some(&versions[0].id))
+            .expect("detail");
+        let file = detail.file.expect("file");
+        assert_eq!(file.width, Some(320));
+        assert_eq!(file.height, Some(240));
     }
 
     #[test]

@@ -4,6 +4,7 @@ import {
   acceptSuggestionState,
   applyGalleryQuery,
   beginDetailLoad,
+  clearSelectionForLibrarySwitch,
   completeDetailLoad,
   defaultGalleryQuery,
   failDetailLoad,
@@ -116,6 +117,27 @@ test("detail load helpers model loading lifecycle", () => {
     detail: null,
     loading: false,
     error: "boom",
+  });
+});
+
+test("library switching clears stale detail while preserving query object", () => {
+  const query = {
+    ...defaultGalleryQuery,
+    text: "botanical",
+    providers: ["fake"],
+  };
+  const detail = clearSelectionForLibrarySwitch();
+
+  assert.deepEqual(detail, {
+    assetId: null,
+    detail: null,
+    loading: false,
+    error: null,
+  });
+  assert.deepEqual(query, {
+    ...defaultGalleryQuery,
+    text: "botanical",
+    providers: ["fake"],
   });
 });
 

@@ -7,7 +7,9 @@ pub trait LibraryService {
     fn list_libraries(&self, include_hidden: bool) -> DomainResult<Vec<LibrarySummary>>;
     fn hide_library(&self, library_id: &LibraryId) -> DomainResult<()>;
     fn export_library(&self, request: ExportLibraryRequest) -> DomainResult<ExportSummary>;
+    fn repair_library(&self, request: RepairLibraryRequest) -> DomainResult<RepairSummary>;
     fn check_integrity(&self, root_path: &std::path::Path) -> DomainResult<Vec<IntegrityIssue>>;
+    fn library_status(&self, root_path: &std::path::Path) -> DomainResult<LibraryStatusView>;
 }
 
 pub trait AssetService {

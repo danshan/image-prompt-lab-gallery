@@ -9,8 +9,15 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+}
+
 body {
   margin: 0;
+  overflow: hidden;
 }
 
 button,
@@ -48,8 +55,60 @@ select {
 .workbench {
   display: grid;
   grid-template-columns: 286px minmax(520px, 1fr) 380px;
-  min-height: 100vh;
+  grid-template-rows: 48px minmax(0, 1fr);
+  height: 100vh;
   overflow: hidden;
+}
+
+.app-topbar {
+  align-items: center;
+  background: #fbfaf7;
+  border-bottom: 1px solid #ddd8cf;
+  display: grid;
+  gap: 12px;
+  grid-column: 1 / -1;
+  grid-template-columns: 82px minmax(0, 1fr) 82px;
+  min-height: 48px;
+  padding: 0 14px;
+  user-select: none;
+}
+
+.app-title {
+  align-items: center;
+  display: flex;
+  font-size: 13px;
+  justify-content: flex-start;
+  min-width: 0;
+}
+
+.window-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.window-controls button {
+  border: 0;
+  border-radius: 999px;
+  height: 13px;
+  min-height: 13px;
+  min-width: 13px;
+  padding: 0;
+  width: 13px;
+}
+
+.window-control.close {
+  background: #ff5f57;
+  box-shadow: inset 0 0 0 1px rgba(120, 0, 0, 0.14);
+}
+
+.window-control.minimize {
+  background: #febc2e;
+  box-shadow: inset 0 0 0 1px rgba(120, 72, 0, 0.14);
+}
+
+.window-control.maximize {
+  background: #28c840;
+  box-shadow: inset 0 0 0 1px rgba(0, 90, 20, 0.14);
 }
 
 .sidebar,
@@ -63,8 +122,10 @@ select {
   border-width: 0 1px 0 0;
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 18px 14px;
+  gap: 12px;
+  min-height: 0;
+  overflow: hidden;
+  padding: 12px 14px;
 }
 
 .inspector {
@@ -108,9 +169,60 @@ select {
   align-items: center;
   display: grid;
   gap: 12px;
-  grid-template-columns: 32px 1fr 16px;
-  min-height: 70px;
+  grid-template-columns: 32px minmax(0, 1fr) 24px;
+  min-height: 58px;
   text-align: left;
+}
+
+.library-selector-card {
+  background: #fffdfa;
+  border-color: #ddd8cf;
+  cursor: pointer;
+  position: relative;
+}
+
+.library-selector-card .library-picker {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  height: 100%;
+  inset: 0;
+  opacity: 0;
+  position: absolute;
+  width: 100%;
+}
+
+.library-card strong,
+.library-card small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-chevron {
+  align-items: center;
+  background: #f4f1eb;
+  border: 1px solid #ded8ce;
+  border-radius: 999px;
+  display: flex;
+  height: 24px;
+  justify-content: center;
+  pointer-events: none;
+  width: 24px;
+}
+
+.library-chevron::before {
+  border-color: #455052;
+  border-style: solid;
+  border-width: 0 1.5px 1.5px 0;
+  content: "";
+  height: 6px;
+  margin-top: -3px;
+  transform: rotate(45deg);
+  width: 6px;
 }
 
 .library-card strong,
@@ -182,15 +294,20 @@ select {
   text-align: center;
 }
 
+.asset-sidebar-summary,
 .library-status {
   border: 1px solid #ddd8cf;
   border-radius: 8px;
   display: grid;
-  gap: 10px;
-  margin-top: auto;
-  padding: 14px;
+  gap: 8px;
+  padding: 10px;
 }
 
+.library-status {
+  margin-top: auto;
+}
+
+.asset-sidebar-summary div,
 .library-status div {
   align-items: center;
   display: flex;
@@ -201,16 +318,8 @@ select {
   color: #11812d;
 }
 
-.meter {
-  background: #ece8df;
-  border-radius: 999px;
-  height: 7px;
-  overflow: hidden;
-}
-
-.meter span {
-  background: #07545a;
-  height: 100%;
+.warning {
+  color: #b36b00;
 }
 
 .app-version {
@@ -280,6 +389,24 @@ select {
 
 .sort-select + strong {
   margin-left: 12px;
+}
+
+.select-control {
+  appearance: none;
+  background:
+    linear-gradient(45deg, transparent 50%, #566164 50%) calc(100% - 15px) 52% / 6px 6px no-repeat,
+    linear-gradient(135deg, #566164 50%, transparent 50%) calc(100% - 10px) 52% / 6px 6px no-repeat,
+    #fffdfa;
+  border-color: #cfc8bd;
+  color: #273033;
+  min-height: 34px;
+  padding-right: 30px;
+}
+
+.select-control:focus {
+  border-color: #0b8589;
+  box-shadow: 0 0 0 2px rgba(11, 133, 137, 0.16);
+  outline: none;
 }
 
 .chip-button.active,
@@ -636,6 +763,10 @@ select {
     grid-template-columns: 250px minmax(0, 1fr);
   }
 
+  .app-topbar {
+    grid-template-columns: 82px minmax(0, 1fr) 82px;
+  }
+
   .inspector {
     display: none;
   }
@@ -644,6 +775,11 @@ select {
 @media (max-width: 760px) {
   .workbench {
     grid-template-columns: 1fr;
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+
+  .app-topbar {
+    grid-template-columns: 82px minmax(0, 1fr);
   }
 
   .sidebar {

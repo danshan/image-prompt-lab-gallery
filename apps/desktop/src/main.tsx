@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { convertFileSrc, invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   acceptSuggestionState,
   applyGalleryQuery,
   beginDetailLoad,
+  clearSelectionForLibrarySwitch,
   completeDetailLoad,
   defaultGalleryQuery,
   failDetailLoad,
@@ -38,6 +40,12 @@ type Library = {
   schemaVersion: number;
 };
 
+type LibraryStatus = {
+  storageSizeBytes: number;
+  integrityStatus: string;
+  integrityIssueCount: number;
+};
+
 type GalleryAsset = {
   id: string;
   title: string | null;
@@ -51,6 +59,8 @@ type GalleryAsset = {
   reviewPendingCount: number;
   currentVersionId: string | null;
   imagePath: string | null;
+  width: number | null;
+  height: number | null;
   versionLabel: string | null;
   versionCount: number;
   createdAt: string;
@@ -72,6 +82,8 @@ type Version = {
   generationEventId: string | null;
   filePath: string;
   sha256: string;
+  checksumAlgorithm: string;
+  checksum: string;
   mimeType: string;
 };
 
@@ -106,6 +118,7 @@ type FileContext = {
   sizeBytes: number | null;
   width: number | null;
   height: number | null;
+  checksumAlgorithm: string;
   checksum: string;
   integrityStatus: string;
 };
@@ -176,6 +189,23 @@ const mockLibrary: Library = {
   schemaVersion: 1,
 };
 
+const mockLibraries: Library[] = [
+  mockLibrary,
+  {
+    id: "library-reference",
+    name: "Reference Sets",
+    rootPath: "/Users/demo/ReferenceSets",
+    hidden: false,
+    schemaVersion: 1,
+  },
+];
+
+const mockLibraryStatus: LibraryStatus = {
+  storageSizeBytes: 153223987,
+  integrityStatus: "healthy",
+  integrityIssueCount: 0,
+};
+
 const mockGallery: GalleryAsset[] = [
   {
     id: "asset-botanical",
@@ -191,6 +221,8 @@ const mockGallery: GalleryAsset[] = [
     reviewPendingCount: 1,
     currentVersionId: "version-botanical-3",
     imagePath: null,
+    width: 1024,
+    height: 1024,
     versionLabel: "v3",
     versionCount: 3,
     createdAt: "Today, 9:15 AM",
@@ -209,6 +241,8 @@ const mockGallery: GalleryAsset[] = [
     reviewPendingCount: 1,
     currentVersionId: "version-alpine-2",
     imagePath: null,
+    width: 1792,
+    height: 1024,
     versionLabel: "v2",
     versionCount: 2,
     createdAt: "Today, 9:10 AM",
@@ -227,6 +261,8 @@ const mockGallery: GalleryAsset[] = [
     reviewPendingCount: 0,
     currentVersionId: "version-atrium-4",
     imagePath: null,
+    width: 1344,
+    height: 1024,
     versionLabel: "v4",
     versionCount: 4,
     createdAt: "Yesterday, 7:45 PM",
@@ -245,6 +281,8 @@ const mockGallery: GalleryAsset[] = [
     reviewPendingCount: 0,
     currentVersionId: "version-canyon-1",
     imagePath: null,
+    width: null,
+    height: null,
     versionLabel: "v1",
     versionCount: 1,
     createdAt: "Yesterday, 5:32 PM",
@@ -263,6 +301,8 @@ const mockGallery: GalleryAsset[] = [
     reviewPendingCount: 1,
     currentVersionId: "version-orbital-2",
     imagePath: null,
+    width: 1024,
+    height: 1024,
     versionLabel: "v2",
     versionCount: 2,
     createdAt: "Monday, 2:18 PM",
@@ -281,6 +321,8 @@ const mockGallery: GalleryAsset[] = [
     reviewPendingCount: 0,
     currentVersionId: "version-tokyo-3",
     imagePath: null,
+    width: 1024,
+    height: 1536,
     versionLabel: "v3",
     versionCount: 3,
     createdAt: "Monday, 1:03 PM",
@@ -315,8 +357,10 @@ const mockDetail: AssetDetail = {
       assetId: "asset-botanical",
       parentVersionId: "version-botanical-2",
       generationEventId: "event-botanical-3",
-      filePath: "originals/generated/neon-botanical-study-v3.png",
-      sha256: "9c7b2e4a31f6b4e8d9c0a7f2d",
+      filePath: "originals/2026/05/0f18b4ef-8d2d-49bc-a2ef-8d8582386a20.png",
+      sha256: "4f72bd81d8c5f1a7f4e4d5e9c4a1b258",
+      checksumAlgorithm: "MD5",
+      checksum: "4f72bd81d8c5f1a7f4e4d5e9c4a1b258",
       mimeType: "image/png",
     },
     {
@@ -324,8 +368,10 @@ const mockDetail: AssetDetail = {
       assetId: "asset-botanical",
       parentVersionId: "version-botanical-1",
       generationEventId: "event-botanical-2",
-      filePath: "originals/generated/neon-botanical-study-v2.png",
-      sha256: "2c7b2e4a31f6b4e8d9c0a7f2d",
+      filePath: "originals/2026/05/3f2f8444-8cc2-4e35-91a7-806d24213b10.png",
+      sha256: "97290b8d8c5f1a7f4e4d5e9c4a1b258",
+      checksumAlgorithm: "MD5",
+      checksum: "97290b8d8c5f1a7f4e4d5e9c4a1b258",
       mimeType: "image/png",
     },
   ],
@@ -336,8 +382,10 @@ const mockDetail: AssetDetail = {
         assetId: "asset-botanical",
         parentVersionId: "version-botanical-2",
         generationEventId: "event-botanical-3",
-        filePath: "originals/generated/neon-botanical-study-v3.png",
-        sha256: "9c7b2e4a31f6b4e8d9c0a7f2d",
+        filePath: "originals/2026/05/0f18b4ef-8d2d-49bc-a2ef-8d8582386a20.png",
+        sha256: "4f72bd81d8c5f1a7f4e4d5e9c4a1b258",
+        checksumAlgorithm: "MD5",
+        checksum: "4f72bd81d8c5f1a7f4e4d5e9c4a1b258",
         mimeType: "image/png",
       },
       generationEvent: {
@@ -354,13 +402,14 @@ const mockDetail: AssetDetail = {
     },
   ],
   file: {
-    filename: "neon-botanical-study-v3.png",
-    relativeLocation: "originals/generated/neon-botanical-study-v3.png",
+    filename: "0f18b4ef-8d2d-49bc-a2ef-8d8582386a20.png",
+    relativeLocation: "originals/2026/05/0f18b4ef-8d2d-49bc-a2ef-8d8582386a20.png",
     mimeType: "image/png",
     sizeBytes: 1240000,
     width: 1024,
     height: 1024,
-    checksum: "9c7b2e4a31f6b4e8d9c0a7f2d",
+    checksumAlgorithm: "MD5",
+    checksum: "4f72bd81d8c5f1a7f4e4d5e9c4a1b258",
     integrityStatus: "verified",
   },
 };
@@ -389,7 +438,11 @@ const mockQueue: QueueJob[] = [
 function App() {
   const runningInTauri = hasTauriRuntime();
   const [activeView, setActiveView] = useState<View>("gallery");
+  const [libraries, setLibraries] = useState<Library[]>(runningInTauri ? [] : mockLibraries);
   const [library, setLibrary] = useState<Library | null>(runningInTauri ? null : mockLibrary);
+  const [libraryStatus, setLibraryStatus] = useState<LibraryStatus | null>(
+    runningInTauri ? null : mockLibraryStatus,
+  );
   const [gallery, setGallery] = useState<GalleryAsset[]>(runningInTauri ? [] : mockGallery);
   const [query, setQuery] = useState<GalleryQueryState>(defaultGalleryQuery);
   const [selectedAssetId, setSelectedAssetId] = useState(runningInTauri ? "" : mockGallery[0].id);
@@ -451,11 +504,41 @@ function App() {
     try {
       const libraries = await invokeCommand<Library[]>("list_libraries", { includeHidden: false });
       const nextLibrary = libraries[0] ?? null;
+      setLibraries(libraries);
       setLibrary(nextLibrary);
       setLibraryPathInput(nextLibrary?.rootPath ?? libraryPathInput);
       setStatus(nextLibrary ? "Library opened" : "No library registered");
+      if (nextLibrary) {
+        void refreshLibraryStatus(nextLibrary.rootPath);
+      }
     } catch (error) {
       setStatus(errorMessage(error));
+    }
+  }
+
+  async function refreshLibraryStatus(rootPath: string) {
+    try {
+      const nextStatus = await invokeCommand<LibraryStatus>("library_status", { rootPath });
+      setLibraryStatus(nextStatus);
+    } catch (error) {
+      setLibraryStatus(null);
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
+  function switchLibrary(libraryId: string) {
+    const nextLibrary = libraries.find((item) => item.id === libraryId) ?? null;
+    setLibrary(nextLibrary);
+    setSelectedAssetId("");
+    setDetailState(clearSelectionForLibrarySwitch());
+    setGallery([]);
+    setRecoverableError(null);
+    setLibraryPathInput(nextLibrary?.rootPath ?? "");
+    setStatus(nextLibrary ? "Library switched" : "No library selected");
+    if (runningInTauri && nextLibrary) {
+      void refreshLibraryStatus(nextLibrary.rootPath);
+    } else {
+      setLibraryStatus(nextLibrary ? mockLibraryStatus : null);
     }
   }
 
@@ -507,7 +590,9 @@ function App() {
           name: libraryNameInput.trim() || "Image Prompt Lab",
         },
       });
+      setLibraries((current) => [created, ...current.filter((item) => item.id !== created.id)]);
       setLibrary(created);
+      setLibraryStatus(null);
       setGallery([]);
       setSelectedAssetId("");
       setStatus("Library created");
@@ -525,7 +610,9 @@ function App() {
       const opened = await invokeCommand<Library>("open_library", {
         rootPath: libraryPathInput,
       });
+      setLibraries((current) => [opened, ...current.filter((item) => item.id !== opened.id)]);
       setLibrary(opened);
+      setLibraryStatus(null);
       setStatus("Library opened");
     } catch (error) {
       setStatus(errorMessage(error));
@@ -743,13 +830,19 @@ function App() {
 
   return (
     <main className="workbench">
+      <AppTopBar
+        runningInTauri={runningInTauri}
+      />
       <Sidebar
         library={library}
+        libraries={libraries}
+        libraryStatus={libraryStatus}
+        selectedAsset={selectedAsset}
         activeView={activeView}
         reviewCount={pendingSuggestions.length}
         queueCount={queue.filter((job) => job.status === "queued" || job.status === "running").length}
         onViewChange={setActiveView}
-        onRefresh={refreshLibraries}
+        onLibraryChange={switchLibrary}
       />
 
       <section className="workspace">
@@ -798,6 +891,7 @@ function App() {
         {activeView === "settings" && (
           <SettingsView
             library={library}
+            libraries={libraries}
             libraryPath={libraryPathInput}
             libraryName={libraryNameInput}
             onLibraryPathChange={setLibraryPathInput}
@@ -823,37 +917,79 @@ function App() {
   );
 }
 
+function AppTopBar({
+  runningInTauri,
+}: {
+  runningInTauri: boolean;
+}) {
+  const appWindow = runningInTauri ? getCurrentWindow() : null;
+  return (
+    <header className="app-topbar" data-tauri-drag-region>
+      <div className="window-controls">
+        <button className="window-control close" aria-label="Close window" onClick={() => void appWindow?.close()} />
+        <button className="window-control minimize" aria-label="Minimize window" onClick={() => void appWindow?.minimize()} />
+        <button className="window-control maximize" aria-label="Maximize window" onClick={() => void appWindow?.toggleMaximize()} />
+      </div>
+      <div className="app-title" data-tauri-drag-region>
+        <strong>Image Prompt Lab</strong>
+      </div>
+    </header>
+  );
+}
+
 function Sidebar({
   library,
+  libraries,
+  libraryStatus,
+  selectedAsset,
   activeView,
   reviewCount,
   queueCount,
   onViewChange,
-  onRefresh,
+  onLibraryChange,
 }: {
   library: Library | null;
+  libraries: Library[];
+  libraryStatus: LibraryStatus | null;
+  selectedAsset: GalleryAsset | null;
   activeView: View;
   reviewCount: number;
   queueCount: number;
   onViewChange: (view: View) => void;
-  onRefresh: () => void;
+  onLibraryChange: (libraryId: string) => void;
 }) {
   return (
     <aside className="sidebar">
-      <div className="window-dots">
-        <span className="dot red" />
-        <span className="dot yellow" />
-        <span className="dot green" />
-        <strong>Image Prompt Lab</strong>
-      </div>
-      <button className="library-card" onClick={onRefresh}>
+      <label className="library-card library-selector-card">
         <span className="database-icon">DB</span>
         <span>
           <strong>{library?.name ?? "No library"}</strong>
-          <small>{library?.rootPath ?? "Create or open a library"}</small>
+          <small>Library</small>
         </span>
-        <span>v</span>
-      </button>
+        <select
+          className="library-picker"
+          aria-label="Switch library"
+          value={library?.id ?? ""}
+          onChange={(event) => onLibraryChange(event.target.value)}
+        >
+          {libraries.length === 0 ? (
+            <option value="">No library registered</option>
+          ) : (
+            libraries.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))
+          )}
+        </select>
+        <span className="library-chevron" aria-hidden="true" />
+      </label>
+      <section className="asset-sidebar-summary">
+        <div>
+          <span>Resolution</span>
+          <strong>{formatResolution(selectedAsset?.width ?? null, selectedAsset?.height ?? null)}</strong>
+        </div>
+      </section>
       <nav className="nav">
         <NavButton active={activeView === "gallery"} label="Gallery" onClick={() => onViewChange("gallery")} />
         <NavButton active={activeView === "albums"} label="Albums" onClick={() => onViewChange("albums")} />
@@ -878,16 +1014,14 @@ function Sidebar({
         </div>
         <div>
           <span>Storage</span>
-          <span>142.7 GB / 500 GB</span>
-        </div>
-        <div className="meter">
-          <span style={{ width: "28%" }} />
+          <span>{formatBytes(libraryStatus?.storageSizeBytes ?? null)}</span>
         </div>
         <div>
           <span>Integrity Check</span>
-          <strong className="healthy">All good</strong>
+          <strong className={libraryStatus?.integrityIssueCount ? "warning" : "healthy"}>
+            {libraryStatus?.integrityIssueCount ? `${libraryStatus.integrityIssueCount} issue(s)` : "All good"}
+          </strong>
         </div>
-        <small>Last checked: Today, 9:32 AM</small>
         <button>Run Integrity Check</button>
       </section>
       <small className="app-version">Image Prompt Lab 1.2.0</small>
@@ -959,6 +1093,7 @@ function WorkspaceToolbar({
           onClick={() => onQueryChange(toggleGalleryProvider(query, "fake"))}
         />
         <select
+          className="select-control"
           value={query.minRating ?? ""}
           onChange={(event) =>
             onQueryChange(
@@ -974,6 +1109,7 @@ function WorkspaceToolbar({
           <option value="3">3+ stars</option>
         </select>
         <select
+          className="select-control"
           value={query.reviewStatus}
           onChange={(event) =>
             onQueryChange(updateGalleryQuery(query, { reviewStatus: event.target.value as ReviewStatusFilter }))
@@ -987,7 +1123,7 @@ function WorkspaceToolbar({
         {activeView === "gallery" && (
           <>
             <select
-              className="sort-select"
+              className="select-control sort-select"
               value={query.sort}
               onChange={(event) => onQueryChange(updateGalleryQuery(query, { sort: event.target.value as GallerySort }))}
             >
@@ -1036,7 +1172,7 @@ function GenerationComposer({
 }) {
   return (
     <section className="composer">
-      <select value={provider} onChange={(event) => onProviderChange(event.target.value)}>
+      <select className="select-control" value={provider} onChange={(event) => onProviderChange(event.target.value)}>
         <option value="codex-cli">codex-cli</option>
         <option value="fake">fake</option>
       </select>
@@ -1183,6 +1319,7 @@ function GenerationQueue({ queue }: { queue: QueueJob[] }) {
 
 function SettingsView({
   library,
+  libraries,
   libraryPath,
   libraryName,
   onLibraryPathChange,
@@ -1191,6 +1328,7 @@ function SettingsView({
   onOpen,
 }: {
   library: Library | null;
+  libraries: Library[];
   libraryPath: string;
   libraryName: string;
   onLibraryPathChange: (value: string) => void;
@@ -1203,6 +1341,10 @@ function SettingsView({
       <div>
         <h3>Library</h3>
         <p>{library?.rootPath ?? "Not opened"}</p>
+      </div>
+      <div>
+        <h3>Registered Libraries</h3>
+        <p>{libraries.length}</p>
       </div>
       <div>
         <h3>Schema</h3>
@@ -1402,7 +1544,7 @@ function Inspector({
             <MetaRow label="Size" value={formatBytes(detail.file.sizeBytes)} />
             <MetaRow label="Dimensions" value={formatDimensions(detail.file)} />
             <MetaRow label="Integrity" value={detail.file.integrityStatus} />
-            <MetaRow label="Checksum" value={detail.file.checksum} />
+            <MetaRow label="Checksum" value={formatChecksum(detail.file)} />
           </>
         ) : (
           <p>File context is unavailable.</p>
@@ -1486,6 +1628,13 @@ function mockDetailFor(asset: GalleryAsset): AssetDetail {
     modelLabel: asset.modelLabel,
     tags: asset.tags,
     reviewPendingCount: asset.reviewPendingCount,
+    file: mockDetail.file
+      ? {
+          ...mockDetail.file,
+          width: asset.width,
+          height: asset.height,
+        }
+      : null,
   };
 }
 
@@ -1554,6 +1703,9 @@ function formatBytes(value: number | null) {
   if (!value) {
     return "-";
   }
+  if (value >= 1024 * 1024 * 1024) {
+    return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
+  }
   if (value > 1024 * 1024) {
     return `${(value / 1024 / 1024).toFixed(1)} MB`;
   }
@@ -1561,10 +1713,18 @@ function formatBytes(value: number | null) {
 }
 
 function formatDimensions(file: FileContext) {
-  if (!file.width || !file.height) {
-    return "-";
+  return formatResolution(file.width, file.height);
+}
+
+function formatResolution(width: number | null, height: number | null) {
+  if (!width || !height) {
+    return "Unavailable";
   }
-  return `${file.width} x ${file.height}`;
+  return `${width} x ${height}`;
+}
+
+function formatChecksum(file: FileContext) {
+  return `${file.checksumAlgorithm}: ${file.checksum}`;
 }
 
 function groupByProvider(gallery: GalleryAsset[]) {

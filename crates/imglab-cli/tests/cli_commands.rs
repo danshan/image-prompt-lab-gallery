@@ -85,6 +85,8 @@ fn init_import_search_and_rate_emit_json() {
         .assert_success();
     let asset_id = imported["asset_id"].as_str().expect("asset id");
     assert!(imported["sha256"].as_str().is_some());
+    assert_eq!(imported["checksum_algorithm"], "MD5");
+    assert!(imported["checksum"].as_str().is_some());
 
     let search = workspace
         .run(&["search", "--library", path(&library), "--json"])
@@ -95,6 +97,13 @@ fn init_import_search_and_rate_emit_json() {
         .run(&["rate", "--library", path(&library), asset_id, "5", "--json"])
         .assert_success();
     assert_eq!(rated["rating"], 5);
+
+    let repair = workspace
+        .run(&["library", "repair", "--library", path(&library), "--json"])
+        .assert_success();
+    assert_eq!(repair["dry_run"], true);
+    assert_eq!(repair["scanned_versions"], 1);
+    assert!(repair["issues"].as_array().expect("issues").is_empty());
 }
 
 #[test]

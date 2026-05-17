@@ -46,6 +46,30 @@ pub struct ExportLibraryRequest {
     pub album_id: Option<AlbumId>,
 }
 
+#[derive(Debug, Clone)]
+pub struct RepairLibraryRequest {
+    pub library_path: PathBuf,
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepairIssue {
+    pub version_id: AssetVersionId,
+    pub path: PathBuf,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepairSummary {
+    pub dry_run: bool,
+    pub scanned_versions: usize,
+    pub files_moved: usize,
+    pub paths_updated: usize,
+    pub checksums_updated: usize,
+    pub dimensions_updated: usize,
+    pub issues: Vec<RepairIssue>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExportSummary {
     pub exported_files: usize,
@@ -122,6 +146,8 @@ pub struct VersionSummary {
     pub generation_event_id: Option<GenerationEventId>,
     pub file_path: PathBuf,
     pub sha256: String,
+    pub checksum_algorithm: String,
+    pub checksum: String,
     pub mime_type: String,
 }
 
@@ -228,6 +254,8 @@ pub struct GalleryAssetView {
     pub review_pending_count: u32,
     pub current_version_id: Option<AssetVersionId>,
     pub image_path: Option<PathBuf>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
     pub version_label: Option<String>,
     pub version_count: u32,
     pub created_at: String,
@@ -249,8 +277,16 @@ pub struct FileContextView {
     pub size_bytes: Option<u64>,
     pub width: Option<u32>,
     pub height: Option<u32>,
+    pub checksum_algorithm: String,
     pub checksum: String,
     pub integrity_status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibraryStatusView {
+    pub storage_size_bytes: u64,
+    pub integrity_status: String,
+    pub integrity_issue_count: u32,
 }
 
 #[derive(Debug, Clone)]

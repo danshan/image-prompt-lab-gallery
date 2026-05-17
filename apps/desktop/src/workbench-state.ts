@@ -161,6 +161,15 @@ export function failDetailLoad<TDetail>(
   };
 }
 
+export function clearSelectionForLibrarySwitch<TDetail>(): DetailLoadState<TDetail> {
+  return {
+    assetId: null,
+    detail: null,
+    loading: false,
+    error: null,
+  };
+}
+
 export function applyGalleryQuery<TAsset extends GalleryFilterAsset>(
   assets: TAsset[],
   query: GalleryQueryState,

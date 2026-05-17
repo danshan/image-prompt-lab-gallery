@@ -3,7 +3,7 @@ use imglab_core::{
     DomainError, ExportLibraryRequest, GalleryQuery, GalleryReadService, GallerySort,
     GenerateImageRequest, GenerationOperation, GenerationParameters, GenerationService,
     ImageProvider, ImportAssetRequest, LibraryId, LibraryService, LocalGenerationService,
-    LocalLibraryService, MetadataReviewService, MetadataSuggestionId,
+    LocalLibraryService, MetadataReviewService, MetadataSuggestionId, RepairLibraryRequest,
     ReviewMetadataSuggestionRequest, ReviewStatusFilter, SearchQuery, SearchService,
     UpdateAssetMetadataRequest,
 };
@@ -51,6 +51,34 @@ struct LibraryView {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct LibraryStatusView {
+    storage_size_bytes: u64,
+    integrity_status: String,
+    integrity_issue_count: u32,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RepairIssueView {
+    version_id: String,
+    path: PathBuf,
+    message: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RepairSummaryView {
+    dry_run: bool,
+    scanned_versions: usize,
+    files_moved: usize,
+    paths_updated: usize,
+    checksums_updated: usize,
+    dimensions_updated: usize,
+    issues: Vec<RepairIssueView>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct AssetView {
     id: String,
     title: Option<String>,
@@ -87,6 +115,8 @@ struct GalleryAssetView {
     review_pending_count: u32,
     current_version_id: Option<String>,
     image_path: Option<PathBuf>,
+    width: Option<u32>,
+    height: Option<u32>,
     version_label: Option<String>,
     version_count: u32,
     created_at: String,
@@ -102,6 +132,8 @@ struct VersionView {
     generation_event_id: Option<String>,
     file_path: PathBuf,
     sha256: String,
+    checksum_algorithm: String,
+    checksum: String,
     mime_type: String,
 }
 
@@ -143,6 +175,7 @@ struct FileContextView {
     size_bytes: Option<u64>,
     width: Option<u32>,
     height: Option<u32>,
+    checksum_algorithm: String,
     checksum: String,
     integrity_status: String,
 }
@@ -226,6 +259,13 @@ struct ExportLibraryInput {
     library_path: PathBuf,
     output_path: PathBuf,
     album_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RepairLibraryInput {
+    library_path: PathBuf,
+    dry_run: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -365,6 +405,25 @@ fn open_library(root_path: PathBuf) -> Result<LibraryView, CommandError> {
     service()
         .open_library(&root_path)
         .map(library_view)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+fn library_status(root_path: PathBuf) -> Result<LibraryStatusView, CommandError> {
+    service()
+        .library_status(&root_path)
+        .map(library_status_view)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+fn repair_library(input: RepairLibraryInput) -> Result<RepairSummaryView, CommandError> {
+    service()
+        .repair_library(RepairLibraryRequest {
+            library_path: input.library_path,
+            dry_run: input.dry_run,
+        })
+        .map(repair_summary_view)
         .map_err(Into::into)
 }
 
@@ -873,6 +932,8 @@ fn gallery_asset_view(
         image_path: summary
             .image_path
             .map(|path| absolutize_library_path(library_path, path)),
+        width: summary.width,
+        height: summary.height,
         version_label: summary.version_label,
         version_count: summary.version_count,
         created_at: summary.created_at,
@@ -888,6 +949,8 @@ fn version_view(summary: imglab_core::VersionSummary) -> VersionView {
         generation_event_id: summary.generation_event_id.map(|id| id.0),
         file_path: summary.file_path,
         sha256: summary.sha256,
+        checksum_algorithm: summary.checksum_algorithm,
+        checksum: summary.checksum,
         mime_type: summary.mime_type,
     }
 }
@@ -956,9 +1019,38 @@ fn asset_detail_view(summary: imglab_core::AssetDetailView) -> AssetDetailView {
             size_bytes: file.size_bytes,
             width: file.width,
             height: file.height,
+            checksum_algorithm: file.checksum_algorithm,
             checksum: file.checksum,
             integrity_status: file.integrity_status,
         }),
+    }
+}
+
+fn library_status_view(summary: imglab_core::LibraryStatusView) -> LibraryStatusView {
+    LibraryStatusView {
+        storage_size_bytes: summary.storage_size_bytes,
+        integrity_status: summary.integrity_status,
+        integrity_issue_count: summary.integrity_issue_count,
+    }
+}
+
+fn repair_summary_view(summary: imglab_core::RepairSummary) -> RepairSummaryView {
+    RepairSummaryView {
+        dry_run: summary.dry_run,
+        scanned_versions: summary.scanned_versions,
+        files_moved: summary.files_moved,
+        paths_updated: summary.paths_updated,
+        checksums_updated: summary.checksums_updated,
+        dimensions_updated: summary.dimensions_updated,
+        issues: summary
+            .issues
+            .into_iter()
+            .map(|issue| RepairIssueView {
+                version_id: issue.version_id.0,
+                path: issue.path,
+                message: issue.message,
+            })
+            .collect(),
     }
 }
 
@@ -1033,6 +1125,8 @@ pub fn run() {
             create_library,
             list_libraries,
             open_library,
+            library_status,
+            repair_library,
             hide_library,
             import_asset,
             export_library,

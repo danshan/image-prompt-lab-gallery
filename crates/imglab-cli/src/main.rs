@@ -6,7 +6,7 @@ use imglab_core::{
     AssetId, CreateLibraryRequest, CreateMetadataSuggestionRequest, DomainError,
     ExportLibraryRequest, GenerateImageRequest, GenerationOperation, GenerationParameters,
     ImageProvider, ImportAssetRequest, LocalGenerationService, LocalLibraryService,
-    MetadataSuggestionId, ReviewMetadataSuggestionRequest, SearchQuery,
+    MetadataSuggestionId, RepairLibraryRequest, ReviewMetadataSuggestionRequest, SearchQuery,
 };
 use imglab_provider_codex::CodexCliImageProvider;
 use serde_json::json;
@@ -114,6 +114,30 @@ fn library(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainE
             print_json(json!({"hidden": true}));
             Ok(())
         }
+        "repair" => {
+            let library_path = required_option(args, "--library")?;
+            let dry_run = !has_flag(args, "--apply");
+            let summary = service.repair_library(RepairLibraryRequest {
+                library_path: PathBuf::from(library_path),
+                dry_run,
+            })?;
+            print_json(json!({
+                "dry_run": summary.dry_run,
+                "scanned_versions": summary.scanned_versions,
+                "files_moved": summary.files_moved,
+                "paths_updated": summary.paths_updated,
+                "checksums_updated": summary.checksums_updated,
+                "dimensions_updated": summary.dimensions_updated,
+                "issues": summary.issues.into_iter().map(|issue| {
+                    json!({
+                        "version_id": issue.version_id.0,
+                        "path": issue.path,
+                        "message": issue.message
+                    })
+                }).collect::<Vec<_>>()
+            }));
+            Ok(())
+        }
         _ => Err(DomainError::InvalidGenerationParameters {
             message: format!("unsupported library subcommand: {subcommand}"),
         }),
@@ -140,7 +164,9 @@ fn import(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainEr
         "asset_id": asset.id.0,
         "version_id": version.id.0,
         "file_path": version.file_path,
-        "sha256": version.sha256
+        "sha256": version.sha256,
+        "checksum_algorithm": version.checksum_algorithm,
+        "checksum": version.checksum
     }));
     Ok(())
 }
@@ -288,6 +314,8 @@ where
                 "generation_event_id": version.generation_event_id.map(|id| id.0),
                 "file_path": version.file_path,
                 "sha256": version.sha256,
+                "checksum_algorithm": version.checksum_algorithm,
+                "checksum": version.checksum,
                 "mime_type": version.mime_type
             })
         }).collect::<Vec<_>>()
