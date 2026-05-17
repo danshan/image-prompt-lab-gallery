@@ -223,12 +223,19 @@ pub enum GallerySort {
     RatingDesc,
     TitleAsc,
     ProviderAsc,
+    AlbumOrder,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReviewStatusFilter {
     Any,
     Pending,
+}
+
+impl Default for ReviewStatusFilter {
+    fn default() -> Self {
+        Self::Any
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -340,6 +347,8 @@ pub struct MetadataSuggestion {
     pub suggested_category: Option<String>,
     pub confidence_json: String,
     pub status: String,
+    pub created_at: Option<String>,
+    pub reviewed_at: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -367,6 +376,22 @@ pub struct ReviewMetadataSuggestionRequest {
 }
 
 #[derive(Debug, Clone)]
+pub struct BatchReviewMetadataSuggestionRequest {
+    pub library_path: PathBuf,
+    pub suggestions: Vec<ReviewMetadataSuggestionRequest>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConfidenceScoreView {
+    pub overall: Option<u8>,
+    pub title: Option<u8>,
+    pub description: Option<u8>,
+    pub schema_prompt: Option<u8>,
+    pub tags: Option<u8>,
+    pub category: Option<u8>,
+}
+
+#[derive(Debug, Clone)]
 pub struct AlbumSummary {
     pub id: AlbumId,
     pub name: String,
@@ -379,6 +404,7 @@ pub struct AlbumListItem {
     pub name: String,
     pub kind: AlbumKind,
     pub item_count: u32,
+    pub sort_order: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -386,6 +412,38 @@ pub struct CreateSmartAlbumRequest {
     pub library_path: PathBuf,
     pub name: String,
     pub smart_query_json: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReorderAlbumsRequest {
+    pub library_path: PathBuf,
+    pub album_ids: Vec<AlbumId>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReorderAlbumItemsRequest {
+    pub album_id: AlbumId,
+    pub asset_ids: Vec<AssetId>,
+}
+
+#[derive(Debug, Clone)]
+pub struct BatchAddAssetsToAlbumRequest {
+    pub album_id: AlbumId,
+    pub asset_ids: Vec<AssetId>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SmartAlbumQuery {
+    pub text: Option<String>,
+    pub tags: Vec<String>,
+    pub providers: Vec<String>,
+    pub min_rating: Option<u8>,
+    pub review_status: ReviewStatusFilter,
+    pub category: Option<String>,
+    pub status: Option<String>,
+    pub created_at_from: Option<String>,
+    pub created_at_to: Option<String>,
+    pub sort: Option<GallerySort>,
 }
 
 #[derive(Debug, Clone)]

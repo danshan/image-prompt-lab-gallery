@@ -30,7 +30,7 @@ impl ReviewField {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewFieldContext {
     pub current_title: Option<String>,
@@ -46,7 +46,7 @@ pub struct ReviewFieldContext {
     pub height: Option<u32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GenerateReviewFieldInput {
     pub library_path: PathBuf,

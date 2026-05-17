@@ -47,11 +47,26 @@ pub trait MetadataReviewService {
         library_id: &LibraryId,
     ) -> DomainResult<Vec<MetadataSuggestion>>;
     fn accept(&self, request: ReviewMetadataSuggestionRequest) -> DomainResult<AssetSummary>;
+    fn batch_accept(
+        &self,
+        request: BatchReviewMetadataSuggestionRequest,
+    ) -> DomainResult<Vec<AssetSummary>>;
     fn reject(
         &self,
         library_path: &std::path::Path,
         suggestion_id: &MetadataSuggestionId,
     ) -> DomainResult<()>;
+    fn batch_reject(
+        &self,
+        library_path: &std::path::Path,
+        suggestion_ids: &[MetadataSuggestionId],
+    ) -> DomainResult<()>;
+    fn list_history(
+        &self,
+        library_path: &std::path::Path,
+        asset_id: &AssetId,
+    ) -> DomainResult<Vec<MetadataSuggestion>>;
+    fn normalize_confidence(&self, confidence_json: &str) -> ConfidenceScoreView;
 }
 
 pub trait AlbumService {
@@ -60,6 +75,12 @@ pub trait AlbumService {
         -> DomainResult<AlbumSummary>;
     fn create_smart_album(&self, request: CreateSmartAlbumRequest) -> DomainResult<AlbumSummary>;
     fn add_asset(&self, album_id: &AlbumId, asset_id: &AssetId) -> DomainResult<()>;
+    fn batch_add_assets(&self, request: BatchAddAssetsToAlbumRequest) -> DomainResult<()>;
+    fn remove_asset(&self, album_id: &AlbumId, asset_id: &AssetId) -> DomainResult<()>;
+    fn rename_album(&self, album_id: &AlbumId, name: &str) -> DomainResult<AlbumSummary>;
+    fn delete_album(&self, album_id: &AlbumId) -> DomainResult<()>;
+    fn reorder_albums(&self, request: ReorderAlbumsRequest) -> DomainResult<()>;
+    fn reorder_album_items(&self, request: ReorderAlbumItemsRequest) -> DomainResult<()>;
     fn update_asset_metadata(
         &self,
         request: UpdateAssetMetadataRequest,

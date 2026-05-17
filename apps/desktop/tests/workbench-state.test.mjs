@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   acceptSuggestionState,
+  applySuggestionFieldToReviewForm,
   applyGalleryQuery,
   beginDetailLoad,
   beginReviewFieldGeneration,
+  buildBatchReviewPayloads,
   clearAlbumQuery,
   clearCurationStateForLibrarySwitch,
   clearSelectionForLibrarySwitch,
@@ -18,13 +20,17 @@ import {
   addReviewFormTag,
   isReviewFieldGenerating,
   markAssetReviewPending,
+  moveItem,
   openAlbumQuery,
   removeReviewFormTag,
   removeSuggestionState,
+  reorderByIds,
   resetGalleryQuery,
   reviewFormTags,
+  selectedOrCurrentIds,
   toggleGalleryProvider,
   toggleGalleryTag,
+  toggleSelection,
   updateQueueJobStatus,
 } from "../.test-dist/workbench-state.js";
 
@@ -80,6 +86,21 @@ test("removeSuggestionState removes only the completed suggestion", () => {
     next.map((suggestion) => suggestion.id),
     ["suggestion-2"],
   );
+});
+
+test("selection helpers toggle ids and fall back to current item", () => {
+  assert.deepEqual(toggleSelection([], "suggestion-1"), ["suggestion-1"]);
+  assert.deepEqual(toggleSelection(["suggestion-1"], "suggestion-1"), []);
+  assert.deepEqual(selectedOrCurrentIds(["a", "b"], "c"), ["a", "b"]);
+  assert.deepEqual(selectedOrCurrentIds([], "c"), ["c"]);
+  assert.deepEqual(selectedOrCurrentIds([], null), []);
+});
+
+test("reorder helpers keep unknown ids out and preserve remaining items", () => {
+  const items = [{ id: "a" }, { id: "b" }, { id: "c" }];
+  assert.deepEqual(reorderByIds(items, ["c", "a"]).map((item) => item.id), ["c", "a", "b"]);
+  assert.deepEqual(moveItem(items, 0, 2).map((item) => item.id), ["b", "c", "a"]);
+  assert.equal(moveItem(items, -1, 2), items);
 });
 
 test("markAssetReviewPending raises pending count without touching other assets", () => {
@@ -181,6 +202,63 @@ test("review field generation tracks loading per field and updates only the comp
   assert.equal(completed.description, "Old description");
   assert.equal(completed.generation.title.loading, false);
   assert.equal(completed.generation.title.logPath, "/tmp/imglab-codex-metadata-1.log");
+});
+
+test("history field pick updates only the review draft", () => {
+  const form = createReviewFormState({
+    id: "suggestion-1",
+    title: "Current",
+    description: "Current description",
+    schemaPrompt: "{}",
+    category: null,
+    tags: ["current"],
+  });
+  const history = {
+    id: "suggestion-0",
+    title: "History title",
+    description: "History description",
+    schemaPrompt: "{\"a\":1}",
+    category: "study",
+    tags: ["history"],
+  };
+
+  assert.equal(applySuggestionFieldToReviewForm(form, history, "title").title, "History title");
+  assert.deepEqual(applySuggestionFieldToReviewForm(form, history, "tags").tags, ["history"]);
+  assert.equal(applySuggestionFieldToReviewForm(form, history, "category").category, "study");
+});
+
+test("batch review payloads use current draft for active suggestion", () => {
+  const suggestions = [
+    {
+      id: "suggestion-1",
+      assetId: "asset-1",
+      title: "Stored title",
+      description: "Stored description",
+      schemaPrompt: "{}",
+      category: null,
+      tags: ["stored"],
+    },
+    {
+      id: "suggestion-2",
+      assetId: "asset-2",
+      title: "Other",
+      description: null,
+      schemaPrompt: null,
+      category: "study",
+      tags: ["other"],
+    },
+  ];
+  const form = {
+    ...createReviewFormState(suggestions[0]),
+    title: "Draft title",
+    tags: ["draft"],
+  };
+
+  const payloads = buildBatchReviewPayloads(suggestions, ["suggestion-1", "suggestion-2"], form);
+
+  assert.equal(payloads[0].title, "Draft title");
+  assert.deepEqual(payloads[0].tags, ["draft"]);
+  assert.equal(payloads[1].title, "Other");
 });
 
 test("review field generation failure preserves the draft", () => {

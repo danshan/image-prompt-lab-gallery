@@ -5,10 +5,12 @@ use super::{
     LocalLibraryService,
 };
 use crate::{
-    AssetId, AssetSummary, DomainError, DomainResult, LibraryId, MetadataReviewService,
-    MetadataSuggestion, MetadataSuggestionId, ReviewMetadataSuggestionRequest,
+    AssetId, AssetSummary, BatchReviewMetadataSuggestionRequest, ConfidenceScoreView, DomainError,
+    DomainResult, LibraryId, MetadataReviewService, MetadataSuggestion, MetadataSuggestionId,
+    ReviewMetadataSuggestionRequest,
 };
 use rusqlite::{params, Connection};
+use serde_json::Value;
 use std::path::Path;
 use uuid::Uuid;
 
@@ -60,6 +62,8 @@ impl MetadataReviewService for LocalLibraryService {
             suggested_category: request.suggested_category,
             confidence_json: request.confidence_json,
             status: "pending_review".to_string(),
+            created_at: Some(now),
+            reviewed_at: None,
         })
     }
 
@@ -74,7 +78,7 @@ impl MetadataReviewService for LocalLibraryService {
                 "
                 SELECT ms.id, ms.asset_id, ms.suggested_title, ms.suggested_description,
                        ms.suggested_schema_prompt, ms.suggested_tags_json, ms.suggested_category,
-                       ms.confidence_json, ms.status
+                       ms.confidence_json, ms.status, ms.created_at, ms.reviewed_at
                 FROM metadata_suggestions ms
                 INNER JOIN assets a ON a.id = ms.asset_id
                 WHERE a.library_id = ?1 AND ms.status = 'pending_review'
@@ -92,49 +96,20 @@ impl MetadataReviewService for LocalLibraryService {
     fn accept(&self, request: ReviewMetadataSuggestionRequest) -> DomainResult<AssetSummary> {
         let connection = Self::open_library_database(&request.library_path)?;
         let suggestion = load_suggestion(&connection, &request.suggestion_id)?;
-        if let Some(category) = request.category.as_deref() {
-            ensure_existing_category(&connection, &suggestion.asset_id, category)?;
-        }
-        let now = timestamp_string();
-        let transaction = connection.unchecked_transaction().map_err(database_error)?;
-
-        transaction
-            .execute(
-                "
-                UPDATE assets
-                SET title = ?1, description = ?2, schema_prompt = ?3, category = ?4, updated_at = ?5
-                WHERE id = ?6
-                ",
-                params![
-                    request.title,
-                    request.description,
-                    request.schema_prompt,
-                    request.category,
-                    now,
-                    suggestion.asset_id.0
-                ],
-            )
-            .map_err(database_error)?;
-
-        for tag in request.tags {
-            attach_tag(
-                &transaction,
-                &suggestion.asset_id,
-                &tag,
-                "metadata_review",
-                &now,
-            )?;
-        }
-
-        transaction
-            .execute(
-                "UPDATE metadata_suggestions SET status = 'accepted', reviewed_at = ?1 WHERE id = ?2",
-                params![now, request.suggestion_id.0],
-            )
-            .map_err(database_error)?;
-        transaction.commit().map_err(database_error)?;
-
+        accept_suggestions(&connection, &[request])?;
         load_asset_summary(&connection, &suggestion.asset_id)
+    }
+
+    fn batch_accept(
+        &self,
+        request: BatchReviewMetadataSuggestionRequest,
+    ) -> DomainResult<Vec<AssetSummary>> {
+        let connection = Self::open_library_database(&request.library_path)?;
+        let suggestions = accept_suggestions(&connection, &request.suggestions)?;
+        suggestions
+            .iter()
+            .map(|suggestion| load_asset_summary(&connection, &suggestion.asset_id))
+            .collect()
     }
 
     fn reject(
@@ -158,6 +133,126 @@ impl MetadataReviewService for LocalLibraryService {
 
         Ok(())
     }
+
+    fn batch_reject(
+        &self,
+        library_path: &Path,
+        suggestion_ids: &[MetadataSuggestionId],
+    ) -> DomainResult<()> {
+        let connection = Self::open_library_database(library_path)?;
+        let suggestions = suggestion_ids
+            .iter()
+            .map(|suggestion_id| load_suggestion(&connection, suggestion_id))
+            .collect::<DomainResult<Vec<_>>>()?;
+        ensure_all_pending(&suggestions)?;
+        let transaction = connection.unchecked_transaction().map_err(database_error)?;
+        let now = timestamp_string();
+        for suggestion_id in suggestion_ids {
+            transaction
+                .execute(
+                    "UPDATE metadata_suggestions SET status = 'rejected', reviewed_at = ?1 WHERE id = ?2",
+                    params![now, suggestion_id.0],
+                )
+                .map_err(database_error)?;
+        }
+        transaction.commit().map_err(database_error)
+    }
+
+    fn list_history(
+        &self,
+        library_path: &Path,
+        asset_id: &AssetId,
+    ) -> DomainResult<Vec<MetadataSuggestion>> {
+        let connection = Self::open_library_database(library_path)?;
+        ensure_asset_exists(&connection, asset_id)?;
+        let mut statement = connection
+            .prepare(
+                "
+                SELECT id, asset_id, suggested_title, suggested_description,
+                       suggested_schema_prompt, suggested_tags_json, suggested_category,
+                       confidence_json, status, created_at, reviewed_at
+                FROM metadata_suggestions
+                WHERE asset_id = ?1
+                ORDER BY created_at DESC, id
+                ",
+            )
+            .map_err(database_error)?;
+        let rows = statement
+            .query_map(params![asset_id.0], metadata_suggestion_from_row)
+            .map_err(database_error)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(database_error)
+    }
+
+    fn normalize_confidence(&self, confidence_json: &str) -> ConfidenceScoreView {
+        normalize_confidence_json(confidence_json)
+    }
+}
+
+fn accept_suggestions(
+    connection: &Connection,
+    requests: &[ReviewMetadataSuggestionRequest],
+) -> DomainResult<Vec<MetadataSuggestion>> {
+    let suggestions = requests
+        .iter()
+        .map(|request| load_suggestion(connection, &request.suggestion_id))
+        .collect::<DomainResult<Vec<_>>>()?;
+    ensure_all_pending(&suggestions)?;
+    for (request, suggestion) in requests.iter().zip(suggestions.iter()) {
+        if let Some(category) = request.category.as_deref() {
+            ensure_existing_category(connection, &suggestion.asset_id, category)?;
+        }
+    }
+    let now = timestamp_string();
+    let transaction = connection.unchecked_transaction().map_err(database_error)?;
+    for (request, suggestion) in requests.iter().zip(suggestions.iter()) {
+        transaction
+            .execute(
+                "
+                UPDATE assets
+                SET title = ?1, description = ?2, schema_prompt = ?3, category = ?4, updated_at = ?5
+                WHERE id = ?6
+                ",
+                params![
+                    request.title,
+                    request.description,
+                    request.schema_prompt,
+                    request.category,
+                    now,
+                    suggestion.asset_id.0
+                ],
+            )
+            .map_err(database_error)?;
+
+        for tag in &request.tags {
+            attach_tag(
+                &transaction,
+                &suggestion.asset_id,
+                tag,
+                "metadata_review",
+                &now,
+            )?;
+        }
+
+        transaction
+            .execute(
+                "UPDATE metadata_suggestions SET status = 'accepted', reviewed_at = ?1 WHERE id = ?2",
+                params![now, request.suggestion_id.0],
+            )
+            .map_err(database_error)?;
+    }
+    transaction.commit().map_err(database_error)?;
+    Ok(suggestions)
+}
+
+fn ensure_all_pending(suggestions: &[MetadataSuggestion]) -> DomainResult<()> {
+    for suggestion in suggestions {
+        if suggestion.status != "pending_review" {
+            return Err(DomainError::InvalidAssetReference {
+                id: format!("suggestion is not pending: {}", suggestion.id.0),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn ensure_existing_category(
@@ -237,6 +332,8 @@ fn metadata_suggestion_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Met
         suggested_category: row.get(6)?,
         confidence_json: row.get(7)?,
         status: row.get(8)?,
+        created_at: row.get(9)?,
+        reviewed_at: row.get(10)?,
     })
 }
 
@@ -248,7 +345,8 @@ fn load_suggestion(
         .query_row(
             "
             SELECT id, asset_id, suggested_title, suggested_description,
-                   suggested_schema_prompt, suggested_tags_json, suggested_category, confidence_json, status
+                   suggested_schema_prompt, suggested_tags_json, suggested_category, confidence_json, status,
+                   created_at, reviewed_at
             FROM metadata_suggestions
             WHERE id = ?1
             ",
@@ -261,4 +359,35 @@ fn load_suggestion(
             },
             other => database_error(other),
         })
+}
+
+fn normalize_confidence_json(confidence_json: &str) -> ConfidenceScoreView {
+    let Ok(value) = serde_json::from_str::<Value>(confidence_json) else {
+        return ConfidenceScoreView {
+            overall: None,
+            title: None,
+            description: None,
+            schema_prompt: None,
+            tags: None,
+            category: None,
+        };
+    };
+    let fields = value.get("fields");
+    ConfidenceScoreView {
+        overall: normalize_score(value.get("overall")),
+        title: normalize_score(fields.and_then(|fields| fields.get("title"))),
+        description: normalize_score(fields.and_then(|fields| fields.get("description"))),
+        schema_prompt: normalize_score(fields.and_then(|fields| fields.get("schemaPrompt"))),
+        tags: normalize_score(fields.and_then(|fields| fields.get("tags"))),
+        category: normalize_score(fields.and_then(|fields| fields.get("category"))),
+    }
+}
+
+fn normalize_score(value: Option<&Value>) -> Option<u8> {
+    let value = value?.as_f64()?;
+    if !(0.0..=100.0).contains(&value) {
+        return None;
+    }
+    let normalized = if value <= 1.0 { value * 100.0 } else { value };
+    Some(normalized.round().clamp(0.0, 100.0) as u8)
 }

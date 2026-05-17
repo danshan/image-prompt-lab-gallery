@@ -1,5 +1,5 @@
 export type JobStatus = "queued" | "running" | "completed" | "failed";
-export type GallerySort = "newest" | "oldest" | "ratingDesc" | "titleAsc" | "providerAsc";
+export type GallerySort = "newest" | "oldest" | "ratingDesc" | "titleAsc" | "providerAsc" | "albumOrder";
 export type ReviewStatusFilter = "any" | "pending";
 
 export type AssetState = {
@@ -16,6 +16,11 @@ export type SuggestionState = {
   title: string | null;
   category: string | null;
   tags: string[];
+};
+
+export type ReviewDraftSuggestionState = SuggestionState & {
+  description?: string | null;
+  schemaPrompt?: string | null;
 };
 
 export type QueueJobState = {
@@ -89,6 +94,45 @@ export function removeSuggestionState<TSuggestion extends SuggestionState>(
   suggestionId: string,
 ) {
   return suggestions.filter((suggestion) => suggestion.id !== suggestionId);
+}
+
+export function toggleSelection(selectedIds: string[], id: string): string[] {
+  return selectedIds.includes(id)
+    ? selectedIds.filter((selectedId) => selectedId !== id)
+    : [...selectedIds, id];
+}
+
+export function selectedOrCurrentIds(selectedIds: string[], currentId: string | null): string[] {
+  if (selectedIds.length > 0) {
+    return selectedIds;
+  }
+  return currentId ? [currentId] : [];
+}
+
+export function reorderByIds<TItem extends { id: string }>(items: TItem[], orderedIds: string[]): TItem[] {
+  const byId = new Map(items.map((item) => [item.id, item]));
+  const ordered = orderedIds.flatMap((id) => {
+    const item = byId.get(id);
+    return item ? [item] : [];
+  });
+  const rest = items.filter((item) => !orderedIds.includes(item.id));
+  return [...ordered, ...rest];
+}
+
+export function moveItem<TItem>(items: TItem[], fromIndex: number, toIndex: number): TItem[] {
+  if (
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= items.length ||
+    toIndex >= items.length ||
+    fromIndex === toIndex
+  ) {
+    return items;
+  }
+  const next = [...items];
+  const [item] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, item);
+  return next;
 }
 
 export function markAssetReviewPending<TAsset extends AssetState & { reviewPendingCount: number }>(
@@ -301,6 +345,47 @@ export function removeReviewFormTag(form: ReviewFormState, tag: string): ReviewF
   };
 }
 
+export function applySuggestionFieldToReviewForm(
+  form: ReviewFormState,
+  suggestion: EditableSuggestionState,
+  field: ReviewFieldName | "tags" | "category",
+): ReviewFormState {
+  switch (field) {
+    case "title":
+      return { ...form, title: suggestion.title ?? "" };
+    case "description":
+      return { ...form, description: suggestion.description ?? "" };
+    case "schemaPrompt":
+      return { ...form, schemaPrompt: suggestion.schemaPrompt ?? "" };
+    case "tags":
+      return { ...form, tags: uniqueTags(suggestion.tags) };
+    case "category":
+      return { ...form, category: suggestion.category ?? "" };
+  }
+}
+
+export function buildBatchReviewPayloads<TSuggestion extends ReviewDraftSuggestionState>(
+  suggestions: TSuggestion[],
+  selectedIds: string[],
+  currentForm: ReviewFormState | null,
+): TSuggestion[] {
+  const ids = new Set(selectedIds);
+  return suggestions
+    .filter((suggestion) => ids.has(suggestion.id))
+    .map((suggestion) =>
+      currentForm?.suggestionId === suggestion.id
+        ? {
+            ...suggestion,
+            title: currentForm.title || null,
+            description: currentForm.description || null,
+            schemaPrompt: currentForm.schemaPrompt || null,
+            tags: reviewFormTags(currentForm),
+            category: currentForm.category || null,
+          }
+        : suggestion,
+    );
+}
+
 function uniqueTags(tags: string[]): string[] {
   return Array.from(new Set(tags.map((tag) => tag.trim()).filter((tag) => tag.length > 0)));
 }
@@ -429,6 +514,8 @@ function compareGalleryAssets(
       return compareNullableText(left.title, right.title);
     case "providerAsc":
       return compareNullableText(left.provider, right.provider);
+    case "albumOrder":
+      return 0;
     case "newest":
       return compareText(right.updatedAt, left.updatedAt) || compareText(right.createdAt, left.createdAt);
   }

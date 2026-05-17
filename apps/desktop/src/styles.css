@@ -868,9 +868,23 @@ textarea {
 
 .review-actions {
   border-top: 1px solid #ece7de;
-  justify-content: flex-end;
+  justify-content: flex-start;
   margin-top: 14px;
   padding-top: 12px;
+}
+
+.review-list-panel .review-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+}
+
+.review-list-panel .review-actions button,
+.review-list-panel .add-album-row button,
+.review-list-panel .add-album-row select {
+  font-size: 13px;
+  min-height: 34px;
+  padding: 6px 9px;
 }
 
 .library-form {
@@ -965,6 +979,58 @@ textarea {
   gap: 8px;
   grid-template-columns: minmax(0, 1fr) auto;
   margin-top: 10px;
+}
+
+.history-row,
+.confidence-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.history-row button {
+  font-size: 11px;
+  min-height: 26px;
+  padding: 3px 6px;
+}
+
+.confidence-panel,
+.history-row {
+  background: #faf7f0;
+  border: 1px solid #e5ded1;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.smart-builder {
+  display: grid;
+  gap: 8px;
+}
+
+.checkbox-row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.history-table {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.review-list-item {
+  align-items: start;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.review-list-item > button {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  display: grid;
+  gap: 4px;
+  padding: 0;
+  text-align: left;
 }
 
 .meta-row {

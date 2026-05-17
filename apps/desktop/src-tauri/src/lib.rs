@@ -3,17 +3,19 @@ mod metadata_generation;
 
 use app_logs::{AppLogContentView, AppLogView, ReadAppLogInput};
 use imglab_core::{
-    prepare_generation_request, AlbumService, AssetId, AssetService, CreateLibraryRequest,
-    CreateMetadataSuggestionRequest, DomainError, ExportLibraryRequest, GalleryQuery,
-    GalleryReadService, GallerySort, GenerateImageRequest, GenerationOperation,
+    prepare_generation_request, AlbumId, AlbumService, AssetId, AssetService,
+    BatchAddAssetsToAlbumRequest, BatchReviewMetadataSuggestionRequest, CreateLibraryRequest,
+    CreateMetadataSuggestionRequest, CreateSmartAlbumRequest, DomainError, ExportLibraryRequest,
+    GalleryQuery, GalleryReadService, GallerySort, GenerateImageRequest, GenerationOperation,
     GenerationRequestInput, GenerationService, ImageProvider, ImportAssetRequest, LibraryId,
     LibraryService, LocalGenerationService, LocalLibraryService, MetadataReviewService,
-    MetadataSuggestionId, RepairLibraryRequest, ReviewMetadataSuggestionRequest,
-    ReviewStatusFilter, SearchQuery, SearchService, UpdateAssetMetadataRequest,
+    MetadataSuggestionId, ReorderAlbumItemsRequest, ReorderAlbumsRequest, RepairLibraryRequest,
+    ReviewMetadataSuggestionRequest, ReviewStatusFilter, SearchQuery, SearchService,
+    UpdateAssetMetadataRequest,
 };
 use imglab_provider_codex::CodexCliImageProvider;
 use metadata_generation::{
-    CodexCliMetadataGenerator, GenerateReviewFieldInput, GeneratedReviewFieldView,
+    CodexCliMetadataGenerator, GenerateReviewFieldInput, GeneratedReviewFieldView, ReviewField,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -164,6 +166,7 @@ struct AlbumListItemView {
     name: String,
     kind: String,
     item_count: u32,
+    sort_order: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -216,6 +219,21 @@ struct SuggestionView {
     tags: Vec<String>,
     category: Option<String>,
     status: String,
+    confidence_json: String,
+    created_at: Option<String>,
+    reviewed_at: Option<String>,
+    confidence: ConfidenceScoreView,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConfidenceScoreView {
+    overall: Option<u8>,
+    title: Option<u8>,
+    description: Option<u8>,
+    schema_prompt: Option<u8>,
+    tags: Option<u8>,
+    category: Option<u8>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -352,6 +370,49 @@ struct AddAlbumAssetInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct BatchAddAlbumAssetsInput {
+    album_id: String,
+    asset_ids: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RenameAlbumInput {
+    album_id: String,
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RemoveAlbumAssetInput {
+    album_id: String,
+    asset_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReorderAlbumsInput {
+    library_path: PathBuf,
+    album_ids: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReorderAlbumItemsInput {
+    album_id: String,
+    asset_ids: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateSmartAlbumInput {
+    library_path: PathBuf,
+    name: String,
+    smart_query_json: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct CreateSuggestionInput {
     library_path: PathBuf,
     asset_id: String,
@@ -373,6 +434,34 @@ struct ReviewSuggestionInput {
     schema_prompt: Option<String>,
     tags: Vec<String>,
     category: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BatchReviewSuggestionsInput {
+    library_path: PathBuf,
+    suggestions: Vec<ReviewSuggestionInput>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RejectSuggestionInput {
+    library_path: PathBuf,
+    suggestion_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BatchRejectSuggestionsInput {
+    library_path: PathBuf,
+    suggestion_ids: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SuggestionHistoryInput {
+    library_path: PathBuf,
+    asset_id: String,
 }
 
 #[tauri::command]
@@ -664,12 +753,74 @@ fn create_manual_album(input: CreateAlbumInput) -> Result<AlbumView, CommandErro
 }
 
 #[tauri::command]
+fn create_smart_album(input: CreateSmartAlbumInput) -> Result<AlbumView, CommandError> {
+    service()
+        .create_smart_album(CreateSmartAlbumRequest {
+            library_path: input.library_path,
+            name: input.name,
+            smart_query_json: input.smart_query_json,
+        })
+        .map(album_view)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
 fn add_asset_to_album(input: AddAlbumAssetInput) -> Result<(), CommandError> {
     service()
         .add_asset(
             &imglab_core::AlbumId(input.album_id),
             &AssetId(input.asset_id),
         )
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+fn batch_add_assets_to_album(input: BatchAddAlbumAssetsInput) -> Result<(), CommandError> {
+    service()
+        .batch_add_assets(BatchAddAssetsToAlbumRequest {
+            album_id: AlbumId(input.album_id),
+            asset_ids: input.asset_ids.into_iter().map(AssetId).collect(),
+        })
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+fn remove_asset_from_album(input: RemoveAlbumAssetInput) -> Result<(), CommandError> {
+    service()
+        .remove_asset(&AlbumId(input.album_id), &AssetId(input.asset_id))
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+fn rename_album(input: RenameAlbumInput) -> Result<AlbumView, CommandError> {
+    service()
+        .rename_album(&AlbumId(input.album_id), &input.name)
+        .map(album_view)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+fn delete_album(album_id: String) -> Result<(), CommandError> {
+    service().delete_album(&AlbumId(album_id)).map_err(Into::into)
+}
+
+#[tauri::command]
+fn reorder_albums(input: ReorderAlbumsInput) -> Result<(), CommandError> {
+    service()
+        .reorder_albums(ReorderAlbumsRequest {
+            library_path: input.library_path,
+            album_ids: input.album_ids.into_iter().map(AlbumId).collect(),
+        })
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+fn reorder_album_items(input: ReorderAlbumItemsInput) -> Result<(), CommandError> {
+    service()
+        .reorder_album_items(ReorderAlbumItemsRequest {
+            album_id: AlbumId(input.album_id),
+            asset_ids: input.asset_ids.into_iter().map(AssetId).collect(),
+        })
         .map_err(Into::into)
 }
 
@@ -715,6 +866,112 @@ fn accept_suggestion(input: ReviewSuggestionInput) -> Result<AssetView, CommandE
         })
         .map(asset_view)
         .map_err(Into::into)
+}
+
+#[tauri::command]
+fn batch_accept_suggestions(
+    input: BatchReviewSuggestionsInput,
+) -> Result<Vec<AssetView>, CommandError> {
+    let library_path = input.library_path;
+    service()
+        .batch_accept(BatchReviewMetadataSuggestionRequest {
+            library_path: library_path.clone(),
+            suggestions: input
+                .suggestions
+                .into_iter()
+                .map(|suggestion| ReviewMetadataSuggestionRequest {
+                    library_path: library_path.clone(),
+                    suggestion_id: MetadataSuggestionId(suggestion.suggestion_id),
+                    title: suggestion.title,
+                    description: suggestion.description,
+                    schema_prompt: suggestion.schema_prompt,
+                    tags: suggestion.tags,
+                    category: suggestion.category,
+                })
+                .collect(),
+        })
+        .map(|assets| assets.into_iter().map(asset_view).collect())
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+fn reject_suggestion(input: RejectSuggestionInput) -> Result<(), CommandError> {
+    service()
+        .reject(
+            &input.library_path,
+            &MetadataSuggestionId(input.suggestion_id),
+        )
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+fn batch_reject_suggestions(input: BatchRejectSuggestionsInput) -> Result<(), CommandError> {
+    let suggestion_ids = input
+        .suggestion_ids
+        .into_iter()
+        .map(MetadataSuggestionId)
+        .collect::<Vec<_>>();
+    service()
+        .batch_reject(&input.library_path, &suggestion_ids)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+fn list_suggestion_history(input: SuggestionHistoryInput) -> Result<Vec<SuggestionView>, CommandError> {
+    service()
+        .list_history(&input.library_path, &AssetId(input.asset_id))
+        .map(|suggestions| suggestions.into_iter().map(suggestion_view).collect())
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+async fn regenerate_suggestion(
+    input: GenerateReviewFieldInput,
+) -> Result<SuggestionView, CommandError> {
+    let library_path = input.library_path.clone();
+    let asset_id = input.asset_id.clone();
+    let context = input.context.clone();
+    let title_input = GenerateReviewFieldInput {
+        field: ReviewField::Title,
+        context: context.clone(),
+        ..input.clone()
+    };
+    let description_input = GenerateReviewFieldInput {
+        field: ReviewField::Description,
+        context: context.clone(),
+        ..input.clone()
+    };
+    let schema_input = GenerateReviewFieldInput {
+        field: ReviewField::SchemaPrompt,
+        context,
+        ..input
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let generator = CodexCliMetadataGenerator::new("codex", &library_path);
+        let title = generator.generate(&title_input)?.value;
+        let description = generator.generate(&description_input)?.value;
+        let schema_prompt = generator.generate(&schema_input)?.value;
+        service()
+            .create_suggestion(CreateMetadataSuggestionRequest {
+                library_path,
+                asset_id: AssetId(asset_id),
+                source: "codex_metadata".to_string(),
+                suggested_title: Some(title),
+                suggested_description: Some(description),
+                suggested_schema_prompt: Some(schema_prompt),
+                suggested_tags: title_input.context.tags,
+                suggested_category: title_input.context.category,
+                confidence_json: "{}".to_string(),
+            })
+            .map(suggestion_view)
+            .map_err(Into::into)
+    })
+    .await
+    .map_err(|error| CommandError {
+        code: "MetadataGenerationFailed".to_string(),
+        message: format!("metadata generation worker failed: {error}"),
+        recoverable: true,
+    })?
 }
 
 #[tauri::command]
@@ -822,6 +1079,7 @@ fn gallery_sort_from_input(value: Option<&str>) -> Result<GallerySort, CommandEr
         "rating_desc" | "ratingDesc" => Ok(GallerySort::RatingDesc),
         "title_asc" | "titleAsc" => Ok(GallerySort::TitleAsc),
         "provider_asc" | "providerAsc" => Ok(GallerySort::ProviderAsc),
+        "album_order" | "albumOrder" => Ok(GallerySort::AlbumOrder),
         other => Err(CommandError {
             code: "InvalidGalleryQuery".to_string(),
             message: format!("unsupported gallery sort: {other}"),
@@ -1012,10 +1270,12 @@ fn album_list_item_view(item: imglab_core::AlbumListItem) -> AlbumListItemView {
         }
         .to_string(),
         item_count: item.item_count,
+        sort_order: item.sort_order,
     }
 }
 
 fn suggestion_view(summary: imglab_core::MetadataSuggestion) -> SuggestionView {
+    let confidence = service().normalize_confidence(&summary.confidence_json);
     SuggestionView {
         id: summary.id.0,
         asset_id: summary.asset_id.0,
@@ -1025,6 +1285,21 @@ fn suggestion_view(summary: imglab_core::MetadataSuggestion) -> SuggestionView {
         tags: summary.suggested_tags,
         category: summary.suggested_category,
         status: summary.status,
+        confidence_json: summary.confidence_json,
+        created_at: summary.created_at,
+        reviewed_at: summary.reviewed_at,
+        confidence: confidence_score_view(confidence),
+    }
+}
+
+fn confidence_score_view(summary: imglab_core::ConfidenceScoreView) -> ConfidenceScoreView {
+    ConfidenceScoreView {
+        overall: summary.overall,
+        title: summary.title,
+        description: summary.description,
+        schema_prompt: summary.schema_prompt,
+        tags: summary.tags,
+        category: summary.category,
     }
 }
 
@@ -1071,11 +1346,23 @@ pub fn run() {
             add_tag_to_asset,
             list_albums,
             create_manual_album,
+            create_smart_album,
             add_asset_to_album,
+            batch_add_assets_to_album,
+            remove_asset_from_album,
+            rename_album,
+            delete_album,
+            reorder_albums,
+            reorder_album_items,
             create_suggestion,
             list_pending_suggestions,
             accept_suggestion,
+            batch_accept_suggestions,
+            reject_suggestion,
+            batch_reject_suggestions,
+            list_suggestion_history,
             generate_review_field,
+            regenerate_suggestion,
             list_app_logs,
             read_app_log
         ])

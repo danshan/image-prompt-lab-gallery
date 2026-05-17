@@ -2,7 +2,7 @@ use super::database_error;
 use crate::{DomainError, DomainResult};
 use rusqlite::Connection;
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 3;
+pub const CURRENT_SCHEMA_VERSION: u32 = 4;
 
 pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
     let user_version: u32 = connection
@@ -108,6 +108,7 @@ pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
                 description TEXT,
                 kind TEXT NOT NULL,
                 smart_query_json TEXT,
+                sort_order INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -154,6 +155,15 @@ pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
             )
             .map_err(database_error)?;
     }
+    if !column_exists(connection, "albums", "sort_order")? {
+        connection
+            .execute(
+                "ALTER TABLE albums ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
+                [],
+            )
+            .map_err(database_error)?;
+        backfill_album_sort_order(connection)?;
+    }
     connection
         .execute(
             "UPDATE asset_versions SET checksum = sha256 WHERE checksum IS NULL",
@@ -164,6 +174,28 @@ pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
         .pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
         .map_err(database_error)?;
 
+    Ok(())
+}
+
+fn backfill_album_sort_order(connection: &Connection) -> DomainResult<()> {
+    let album_ids = {
+        let mut statement = connection
+            .prepare("SELECT id FROM albums ORDER BY name, created_at, id")
+            .map_err(database_error)?;
+        let rows = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(database_error)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(database_error)?
+    };
+
+    for (index, album_id) in album_ids.iter().enumerate() {
+        connection
+            .execute(
+                "UPDATE albums SET sort_order = ?1 WHERE id = ?2",
+                rusqlite::params![index as i64 + 1, album_id],
+            )
+            .map_err(database_error)?;
+    }
     Ok(())
 }
 

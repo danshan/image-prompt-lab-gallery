@@ -4,9 +4,11 @@ import { convertFileSrc, invoke as tauriInvoke } from "@tauri-apps/api/core";
 import {
   acceptSuggestionState,
   addReviewFormTag,
+  applySuggestionFieldToReviewForm,
   applyGalleryQuery,
   beginDetailLoad,
   beginReviewFieldGeneration,
+  buildBatchReviewPayloads,
   clearAlbumQuery,
   clearCurationStateForLibrarySwitch,
   clearSelectionForLibrarySwitch,
@@ -19,13 +21,17 @@ import {
   formatAspectRatio,
   isReviewFieldGenerating,
   markAssetReviewPending,
+  moveItem,
   openAlbumQuery,
   removeSuggestionState,
   removeReviewFormTag,
+  reorderByIds,
   resetGalleryQuery,
   reviewFormTags,
+  selectedOrCurrentIds,
   toggleGalleryProvider,
   toggleGalleryTag,
+  toggleSelection,
   updateGalleryQuery,
   updateQueueJobStatus,
   type DetailLoadState,
@@ -129,6 +135,16 @@ type AlbumListItem = {
   name: string;
   kind: "manual" | "smart";
   itemCount: number | null;
+  sortOrder?: number;
+};
+
+type ConfidenceScore = {
+  overall: number | null;
+  title: number | null;
+  description: number | null;
+  schemaPrompt: number | null;
+  tags: number | null;
+  category: number | null;
 };
 
 type FileContext = {
@@ -175,6 +191,10 @@ type Suggestion = {
   tags: string[];
   category: string | null;
   status: string;
+  confidenceJson?: string;
+  createdAt?: string | null;
+  reviewedAt?: string | null;
+  confidence?: ConfidenceScore;
 };
 
 type QueueJob = {
@@ -516,6 +536,7 @@ function App() {
     runningInTauri ? null : mockLibraryStatus,
   );
   const [gallery, setGallery] = useState<GalleryAsset[]>(runningInTauri ? [] : mockGallery);
+  const [selectedGalleryAssetIds, setSelectedGalleryAssetIds] = useState<string[]>([]);
   const [query, setQuery] = useState<GalleryQueryState>(defaultGalleryQuery);
   const [selectedAssetId, setSelectedAssetId] = useState(runningInTauri ? "" : mockGallery[0].id);
   const [detailState, setDetailState] = useState<DetailLoadState<AssetDetail>>({
@@ -534,6 +555,9 @@ function App() {
   const [selectedSuggestionId, setSelectedSuggestionId] = useState<string | null>(
     runningInTauri ? null : mockSuggestions[0]?.id ?? null,
   );
+  const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<string[]>([]);
+  const [suggestionHistory, setSuggestionHistory] = useState<Suggestion[]>([]);
+  const [suggestionRegenerating, setSuggestionRegenerating] = useState(false);
   const [reviewForm, setReviewForm] = useState<ReviewFormState | null>(
     runningInTauri && mockSuggestions[0] ? null : createReviewFormState(mockSuggestions[0]),
   );
@@ -604,12 +628,14 @@ function App() {
     if (!selectedSuggestion) {
       setSelectedSuggestionId(null);
       setReviewForm(null);
+      setSuggestionHistory([]);
       return;
     }
     if (reviewForm?.suggestionId !== selectedSuggestion.id) {
       setSelectedSuggestionId(selectedSuggestion.id);
       setReviewForm(createReviewFormState(selectedSuggestion));
     }
+    void refreshSuggestionHistory(selectedSuggestion);
   }, [selectedSuggestion?.id]);
 
   useEffect(() => {
@@ -689,6 +715,28 @@ function App() {
     }
   }
 
+  async function refreshSuggestionHistory(suggestion: Suggestion) {
+    if (!runningInTauri || !library) {
+      setSuggestionHistory(
+        mockSuggestions.filter((item) => item.assetId === suggestion.assetId),
+      );
+      return;
+    }
+    try {
+      const history = await invokeCommand<Suggestion[]>("list_suggestion_history", {
+        input: {
+          libraryPath: library.rootPath,
+          assetId: suggestion.assetId,
+        },
+      });
+      setSuggestionHistory(history);
+      setRecoverableError(null);
+    } catch (error) {
+      setSuggestionHistory([]);
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
   async function refreshAppLogs() {
     setLogsLoading(true);
     try {
@@ -764,6 +812,8 @@ function App() {
       setAlbumNameInput("");
       setAlbumCreateOpen(false);
       setSelectedSuggestionId(cleared.selectedSuggestionId);
+    setSelectedSuggestionIds([]);
+    setSuggestionHistory([]);
     setReviewForm(cleared.reviewForm);
     setSuggestions(runningInTauri ? [] : mockSuggestions);
     setQuery(clearAlbumQuery(query));
@@ -1037,6 +1087,7 @@ function App() {
         name,
         kind: "manual",
         itemCount: 0,
+        sortOrder: albums.length + 1,
       };
       setAlbums((current) => [created, ...current]);
       setAlbumNameInput("");
@@ -1068,15 +1119,191 @@ function App() {
     }
   }
 
+  async function createSmartAlbum(name: string, smartQueryJson: string) {
+    const trimmed = name.trim();
+    if (!library || trimmed.length === 0) {
+      return;
+    }
+    if (!runningInTauri) {
+      const created: AlbumListItem = {
+        id: `album-${crypto.randomUUID()}`,
+        name: trimmed,
+        kind: "smart",
+        itemCount: 0,
+        sortOrder: albums.length + 1,
+      };
+      setAlbums((current) => [created, ...current]);
+      setSelectedAlbumId(created.id);
+      setQuery((current) => openAlbumQuery(current, created.id));
+      return;
+    }
+    try {
+      const created = await invokeCommand<Album>("create_smart_album", {
+        input: {
+          libraryPath: library.rootPath,
+          name: trimmed,
+          smartQueryJson,
+        },
+      });
+      setAlbumNameInput("");
+      setAlbumSearchInput("");
+      setAlbumCreateOpen(false);
+      await refreshAlbums();
+      setSelectedAlbumId(created.id);
+      setQuery((current) => openAlbumQuery(current, created.id));
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
   function openAlbum(albumId: string) {
     setSelectedAlbumId(albumId);
-    setQuery((current) => openAlbumQuery(current, albumId));
+    setQuery((current) => updateGalleryQuery(openAlbumQuery(current, albumId), { sort: "albumOrder" }));
     setActiveView("albums");
   }
 
   function closeAlbum() {
     setSelectedAlbumId(null);
     setQuery((current) => clearAlbumQuery(current));
+  }
+
+  async function renameAlbum(albumId: string, name: string) {
+    const trimmed = name.trim();
+    if (!library || trimmed.length === 0) {
+      return;
+    }
+    if (!runningInTauri) {
+      setAlbums((current) => current.map((album) => (album.id === albumId ? { ...album, name: trimmed } : album)));
+      return;
+    }
+    try {
+      await invokeCommand<Album>("rename_album", { input: { albumId, name: trimmed } });
+      await refreshAlbums();
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
+  async function deleteAlbumById(albumId: string) {
+    if (!library) {
+      return;
+    }
+    if (!runningInTauri) {
+      setAlbums((current) => current.filter((album) => album.id !== albumId));
+      if (selectedAlbumId === albumId) {
+        closeAlbum();
+      }
+      return;
+    }
+    try {
+      await invokeCommand("delete_album", { albumId });
+      if (selectedAlbumId === albumId) {
+        closeAlbum();
+      }
+      await refreshAlbums();
+      await refreshGallery();
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
+  async function reorderAlbumsByIds(albumIds: string[]) {
+    const next = reorderByIds(albums, albumIds);
+    setAlbums(next);
+    if (!runningInTauri || !library) {
+      return;
+    }
+    try {
+      await invokeCommand("reorder_albums", {
+        input: {
+          libraryPath: library.rootPath,
+          albumIds: next.map((album) => album.id),
+        },
+      });
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+      await refreshAlbums();
+    }
+  }
+
+  async function removeAssetFromSelectedAlbum(assetId: string) {
+    if (!library || !selectedAlbumId) {
+      return;
+    }
+    if (!runningInTauri) {
+      setGallery((current) => current.filter((asset) => asset.id !== assetId));
+      return;
+    }
+    try {
+      await invokeCommand("remove_asset_from_album", {
+        input: {
+          albumId: selectedAlbumId,
+          assetId,
+        },
+      });
+      await refreshAlbums();
+      await refreshGallery();
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
+  async function reorderSelectedAlbumAssets(assetIds: string[]) {
+    if (!library || !selectedAlbumId) {
+      return;
+    }
+    setGallery((current) => reorderByIds(current, assetIds));
+    if (!runningInTauri) {
+      return;
+    }
+    try {
+      await invokeCommand("reorder_album_items", {
+        input: {
+          albumId: selectedAlbumId,
+          assetIds,
+        },
+      });
+      await refreshGallery();
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+      await refreshGallery();
+    }
+  }
+
+  async function addSelectedGalleryAssetsToAlbum(albumId: string) {
+    if (!library || selectedGalleryAssetIds.length === 0) {
+      return;
+    }
+    if (!runningInTauri) {
+      setAlbums((current) =>
+        current.map((album) =>
+          album.id === albumId
+            ? { ...album, itemCount: (album.itemCount ?? 0) + selectedGalleryAssetIds.length }
+            : album,
+        ),
+      );
+      return;
+    }
+    try {
+      await invokeCommand("batch_add_assets_to_album", {
+        input: {
+          albumId,
+          assetIds: selectedGalleryAssetIds,
+        },
+      });
+      await refreshAlbums();
+      await refreshGallery();
+      setRecoverableError(null);
+      setStatus("Selected assets added to album");
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
   }
 
   async function addSelectedAssetToAlbum(albumId: string) {
@@ -1136,6 +1363,10 @@ function App() {
     setReviewForm(createReviewFormState(suggestion));
   }
 
+  function toggleSuggestionForBatch(suggestionId: string) {
+    setSelectedSuggestionIds((current) => toggleSelection(current, suggestionId));
+  }
+
   async function acceptReviewForm() {
     if (!library || !selectedSuggestion || !reviewForm) {
       return;
@@ -1190,10 +1421,109 @@ function App() {
         await loadAssetDetail(asset.id, selectedAsset?.currentVersionId ?? null);
       }
       await refreshSuggestions();
+      setSelectedSuggestionIds((current) => current.filter((id) => id !== suggestion.id));
       setReviewForm(null);
     } catch (error) {
       setRecoverableError(errorMessage(error));
     }
+  }
+
+  async function batchAcceptReviewSuggestions() {
+    if (!library) {
+      return;
+    }
+    const ids = selectedOrCurrentIds(selectedSuggestionIds, selectedSuggestion?.id ?? null);
+    if (ids.length === 0) {
+      return;
+    }
+    const finalForm = reviewForm ? addReviewFormTag(reviewForm, reviewForm.tagInput) : null;
+    const payloads = buildBatchReviewPayloads(suggestions, ids, finalForm).map((suggestion) => ({
+      libraryPath: library.rootPath,
+      suggestionId: suggestion.id,
+      title: suggestion.title,
+      description: suggestion.description ?? null,
+      schemaPrompt: suggestion.schemaPrompt ?? null,
+      tags: suggestion.tags,
+      category:
+        suggestion.category && availableCategories.includes(suggestion.category)
+          ? suggestion.category
+          : null,
+    }));
+    try {
+      await invokeCommand<AssetView[]>("batch_accept_suggestions", {
+        input: {
+          libraryPath: library.rootPath,
+          suggestions: payloads,
+        },
+      });
+      await refreshGallery();
+      await refreshSuggestions();
+      setSelectedSuggestionIds([]);
+      setReviewForm(null);
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+      await refreshSuggestions();
+    }
+  }
+
+  async function batchRejectReviewSuggestions() {
+    if (!library) {
+      return;
+    }
+    const ids = selectedOrCurrentIds(selectedSuggestionIds, selectedSuggestion?.id ?? null);
+    if (ids.length === 0) {
+      return;
+    }
+    try {
+      await invokeCommand("batch_reject_suggestions", {
+        input: {
+          libraryPath: library.rootPath,
+          suggestionIds: ids,
+        },
+      });
+      await refreshGallery();
+      await refreshSuggestions();
+      setSelectedSuggestionIds([]);
+      setReviewForm(null);
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+      await refreshSuggestions();
+    }
+  }
+
+  async function addReviewSelectionToAlbum(albumId: string) {
+    if (!library || albumId.length === 0) {
+      return;
+    }
+    const ids = selectedOrCurrentIds(selectedSuggestionIds, selectedSuggestion?.id ?? null);
+    const assetIds = suggestions
+      .filter((suggestion) => ids.includes(suggestion.id))
+      .map((suggestion) => suggestion.assetId);
+    if (assetIds.length === 0) {
+      return;
+    }
+    try {
+      await invokeCommand("batch_add_assets_to_album", {
+        input: {
+          albumId,
+          assetIds,
+        },
+      });
+      await refreshAlbums();
+      setRecoverableError(null);
+      setStatus("Review assets added to album");
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
+  function pickReviewHistoryField(suggestion: Suggestion, field: ReviewFieldName | "tags" | "category") {
+    if (!reviewForm) {
+      return;
+    }
+    setReviewForm(applySuggestionFieldToReviewForm(reviewForm, suggestion, field));
   }
 
   function restoreReviewForm() {
@@ -1270,6 +1600,62 @@ function App() {
           : current,
       );
       setRecoverableError(message);
+    }
+  }
+
+  async function regenerateFullSuggestion() {
+    if (!selectedSuggestion || !reviewForm) {
+      return;
+    }
+    if (suggestionRegenerating) {
+      return;
+    }
+    setSuggestionRegenerating(true);
+    setStatus("Regenerating suggestion");
+    if (!runningInTauri) {
+      const regenerated: Suggestion = {
+        ...selectedSuggestion,
+        id: `suggestion-${crypto.randomUUID()}`,
+        title: `${reviewForm.title || selectedSuggestion.title || "Untitled"} variant`,
+        description: reviewForm.description || selectedSuggestion.description,
+        schemaPrompt: reviewForm.schemaPrompt || selectedSuggestion.schemaPrompt,
+        tags: reviewFormTags(reviewForm),
+        category: reviewForm.category || selectedSuggestion.category,
+      };
+      setSuggestions((current) => [regenerated, ...current]);
+      setSuggestionHistory((current) => [regenerated, ...current]);
+      setSelectedSuggestionId(regenerated.id);
+      setReviewForm(createReviewFormState(regenerated));
+      setStatus("Suggestion regenerated");
+      setSuggestionRegenerating(false);
+      return;
+    }
+    if (!library) {
+      setRecoverableError("Open a real library before regenerating suggestions.");
+      setSuggestionRegenerating(false);
+      return;
+    }
+    try {
+      const fieldInput = {
+        libraryPath: library.rootPath,
+        assetId: selectedSuggestion.assetId,
+        suggestionId: selectedSuggestion.id,
+        field: "title" as ReviewFieldName,
+        context: reviewFieldContext(reviewForm, selectedSuggestion, gallery.find((item) => item.id === selectedSuggestion.assetId) ?? selectedAsset),
+      };
+      const regenerated = await invokeCommand<Suggestion>("regenerate_suggestion", {
+        input: fieldInput,
+      });
+      await refreshSuggestions();
+      await refreshSuggestionHistory(regenerated);
+      setSelectedSuggestionId(regenerated.id);
+      setReviewForm(createReviewFormState(regenerated));
+      setStatus("Suggestion regenerated");
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    } finally {
+      setSuggestionRegenerating(false);
     }
   }
 
@@ -1367,9 +1753,11 @@ function App() {
           <GalleryView
             assets={displayedGallery}
             selectedAssetId={selectedAsset?.id ?? ""}
+            selectedAssetIds={selectedGalleryAssetIds}
             query={query}
             availableTags={availableTags}
             onSelect={setSelectedAssetId}
+            onToggleAssetSelection={(assetId) => setSelectedGalleryAssetIds((current) => toggleSelection(current, assetId))}
             onQueryChange={setQuery}
             onRequestReview={(asset) => void requestAssetReview(asset)}
           />
@@ -1377,6 +1765,9 @@ function App() {
         {activeView === "albums" && (
           <AlbumsView
             albums={albums}
+            availableTags={availableTags}
+            availableCategories={availableCategories}
+            availableProviders={Array.from(new Set(gallery.map((asset) => asset.provider).filter((provider): provider is string => Boolean(provider))))}
             selectedAlbumId={selectedAlbumId}
             gallery={displayedGallery}
             loading={albumLoading}
@@ -1387,8 +1778,16 @@ function App() {
             createOpen={albumCreateOpen}
             onCreateOpenChange={setAlbumCreateOpen}
             onCreateAlbum={() => void createAlbum()}
+            onCreateSmartAlbum={(name, queryJson) => void createSmartAlbum(name, queryJson)}
             onOpenAlbum={openAlbum}
             onCloseAlbum={closeAlbum}
+            onRenameAlbum={(albumId, name) => void renameAlbum(albumId, name)}
+            onDeleteAlbum={(albumId) => void deleteAlbumById(albumId)}
+            onReorderAlbums={(albumIds) => void reorderAlbumsByIds(albumIds)}
+            onRemoveAsset={(assetId) => void removeAssetFromSelectedAlbum(assetId)}
+            onReorderAssets={(assetIds) => void reorderSelectedAlbumAssets(assetIds)}
+            selectedGalleryAssetCount={selectedGalleryAssetIds.length}
+            onBatchAddSelected={(albumId) => void addSelectedGalleryAssetsToAlbum(albumId)}
             onSelectAsset={setSelectedAssetId}
           />
         )}
@@ -1396,14 +1795,24 @@ function App() {
           <ReviewInbox
             suggestions={pendingSuggestions}
             selectedSuggestion={selectedSuggestion}
+            selectedSuggestionIds={selectedSuggestionIds}
+            suggestionHistory={suggestionHistory}
+            suggestionRegenerating={suggestionRegenerating}
             form={reviewForm}
             onSelect={selectSuggestion}
+            onToggleSelected={toggleSuggestionForBatch}
             onFormChange={setReviewForm}
             availableTags={availableTags}
             availableCategories={availableCategories}
+            albums={albums}
             onRestore={restoreReviewForm}
             onRegenerateField={(field) => void regenerateReviewField(field)}
+            onRegenerateSuggestion={() => void regenerateFullSuggestion()}
+            onPickHistoryField={pickReviewHistoryField}
             onAccept={() => void acceptReviewForm()}
+            onBatchAccept={() => void batchAcceptReviewSuggestions()}
+            onBatchReject={() => void batchRejectReviewSuggestions()}
+            onAddToAlbum={(albumId) => void addReviewSelectionToAlbum(albumId)}
           />
         )}
         {activeView === "queue" && <GenerationQueue queue={queue} />}
@@ -1687,17 +2096,21 @@ function GenerationComposer({
 function GalleryView({
   assets,
   selectedAssetId,
+  selectedAssetIds,
   query,
   availableTags,
   onSelect,
+  onToggleAssetSelection,
   onQueryChange,
   onRequestReview,
 }: {
   assets: GalleryAsset[];
   selectedAssetId: string;
+  selectedAssetIds: string[];
   query: GalleryQueryState;
   availableTags: string[];
   onSelect: (id: string) => void;
+  onToggleAssetSelection: (id: string) => void;
   onQueryChange: (query: GalleryQueryState) => void;
   onRequestReview: (asset: GalleryAsset) => void;
 }) {
@@ -1742,6 +2155,14 @@ function GalleryView({
             <button className="card-review-button" onClick={() => onRequestReview(asset)}>
               Review
             </button>
+            <label className="checkbox-row card-select-row">
+              <input
+                type="checkbox"
+                checked={selectedAssetIds.includes(asset.id)}
+                onChange={() => onToggleAssetSelection(asset.id)}
+              />
+              <span>Select</span>
+            </label>
           </article>
         ))}
       </section>
@@ -1760,6 +2181,9 @@ function Thumbnail({ asset, index }: { asset: GalleryAsset; index: number }) {
 
 function AlbumsView({
   albums,
+  availableTags,
+  availableCategories,
+  availableProviders,
   selectedAlbumId,
   gallery,
   loading,
@@ -1770,11 +2194,22 @@ function AlbumsView({
   createOpen,
   onCreateOpenChange,
   onCreateAlbum,
+  onCreateSmartAlbum,
   onOpenAlbum,
   onCloseAlbum,
+  onRenameAlbum,
+  onDeleteAlbum,
+  onReorderAlbums,
+  onRemoveAsset,
+  onReorderAssets,
+  selectedGalleryAssetCount,
+  onBatchAddSelected,
   onSelectAsset,
 }: {
   albums: AlbumListItem[];
+  availableTags: string[];
+  availableCategories: string[];
+  availableProviders: string[];
   selectedAlbumId: string | null;
   gallery: GalleryAsset[];
   loading: boolean;
@@ -1785,16 +2220,46 @@ function AlbumsView({
   createOpen: boolean;
   onCreateOpenChange: (open: boolean) => void;
   onCreateAlbum: () => void;
+  onCreateSmartAlbum: (name: string, queryJson: string) => void;
   onOpenAlbum: (albumId: string) => void;
   onCloseAlbum: () => void;
+  onRenameAlbum: (albumId: string, name: string) => void;
+  onDeleteAlbum: (albumId: string) => void;
+  onReorderAlbums: (albumIds: string[]) => void;
+  onRemoveAsset: (assetId: string) => void;
+  onReorderAssets: (assetIds: string[]) => void;
+  selectedGalleryAssetCount: number;
+  onBatchAddSelected: (albumId: string) => void;
   onSelectAsset: (assetId: string) => void;
 }) {
+  const [newAlbumKind, setNewAlbumKind] = useState<"manual" | "smart">("manual");
+  const [smartText, setSmartText] = useState("");
+  const [smartTags, setSmartTags] = useState("");
+  const [smartProviders, setSmartProviders] = useState("");
+  const [smartMinRating, setSmartMinRating] = useState("");
+  const [smartReviewPending, setSmartReviewPending] = useState(false);
+  const [smartCategory, setSmartCategory] = useState("");
+  const [smartStatus, setSmartStatus] = useState("");
+  const [smartCreatedAtFrom, setSmartCreatedAtFrom] = useState("");
+  const [smartCreatedAtTo, setSmartCreatedAtTo] = useState("");
+  const [smartSort, setSmartSort] = useState<GallerySort>("newest");
   const selectedAlbum = albums.find((album) => album.id === selectedAlbumId) ?? null;
   const searchNeedle = searchValue.trim().toLocaleLowerCase();
   const visibleAlbums =
     searchNeedle.length === 0
       ? albums
       : albums.filter((album) => album.name.toLocaleLowerCase().includes(searchNeedle));
+  const smartPreviewCount = previewSmartAlbumCount(gallery, {
+    text: smartText,
+    tags: splitCsv(smartTags),
+    providers: splitCsv(smartProviders),
+    minRating: smartMinRating.trim() ? Number(smartMinRating.trim()) : null,
+    reviewPending: smartReviewPending,
+    category: smartCategory,
+    status: smartStatus,
+    createdAtFrom: smartCreatedAtFrom,
+    createdAtTo: smartCreatedAtTo,
+  });
   return (
     <section className="albums-workspace">
       <div className="workspace-panel album-list-panel">
@@ -1832,9 +2297,98 @@ function AlbumsView({
                   placeholder="New manual album"
                 />
               </label>
+              <label>
+                <span>Kind</span>
+                <select className="select-control" value={newAlbumKind} onChange={(event) => setNewAlbumKind(event.target.value as "manual" | "smart")}>
+                  <option value="manual">Manual</option>
+                  <option value="smart">Smart</option>
+                </select>
+              </label>
+              {newAlbumKind === "smart" && (
+                <div className="smart-builder">
+                  <label>
+                    <span>Text</span>
+                    <input value={smartText} onChange={(event) => setSmartText(event.target.value)} />
+                  </label>
+                  <label>
+                    <span>Tags</span>
+                    <input list="smart-tag-options" value={smartTags} onChange={(event) => setSmartTags(event.target.value)} placeholder="comma separated" />
+                  </label>
+                  <datalist id="smart-tag-options">
+                    {availableTags.map((tag) => <option key={tag} value={tag} />)}
+                  </datalist>
+                  <label>
+                    <span>Providers</span>
+                    <input list="smart-provider-options" value={smartProviders} onChange={(event) => setSmartProviders(event.target.value)} placeholder="comma separated" />
+                  </label>
+                  <datalist id="smart-provider-options">
+                    {availableProviders.map((provider) => <option key={provider} value={provider} />)}
+                  </datalist>
+                  <label>
+                    <span>Min rating</span>
+                    <input value={smartMinRating} onChange={(event) => setSmartMinRating(event.target.value)} inputMode="numeric" />
+                  </label>
+                  <label>
+                    <span>Category</span>
+                    <select className="select-control" value={smartCategory} onChange={(event) => setSmartCategory(event.target.value)}>
+                      <option value="">Any</option>
+                      {availableCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Status</span>
+                    <input value={smartStatus} onChange={(event) => setSmartStatus(event.target.value)} placeholder="generated, curated..." />
+                  </label>
+                  <label>
+                    <span>Created from</span>
+                    <input value={smartCreatedAtFrom} onChange={(event) => setSmartCreatedAtFrom(event.target.value)} placeholder="unix ms" />
+                  </label>
+                  <label>
+                    <span>Created to</span>
+                    <input value={smartCreatedAtTo} onChange={(event) => setSmartCreatedAtTo(event.target.value)} placeholder="unix ms" />
+                  </label>
+                  <label>
+                    <span>Sort</span>
+                    <select className="select-control" value={smartSort} onChange={(event) => setSmartSort(event.target.value as GallerySort)}>
+                      <option value="newest">Newest</option>
+                      <option value="oldest">Oldest</option>
+                      <option value="ratingDesc">Rating</option>
+                      <option value="titleAsc">Title</option>
+                      <option value="providerAsc">Provider</option>
+                    </select>
+                  </label>
+                  <label className="checkbox-row">
+                    <input type="checkbox" checked={smartReviewPending} onChange={(event) => setSmartReviewPending(event.target.checked)} />
+                    <span>Review pending</span>
+                  </label>
+                  <small>{smartPreviewCount} visible assets match this builder.</small>
+                </div>
+              )}
               <div className="row-actions">
                 <button onClick={() => onCreateOpenChange(false)}>Cancel</button>
-                <button className="primary-button" disabled={newAlbumName.trim().length === 0} onClick={onCreateAlbum}>
+                <button
+                  className="primary-button"
+                  disabled={newAlbumName.trim().length === 0}
+                  onClick={() => {
+                    if (newAlbumKind === "manual") {
+                      onCreateAlbum();
+                      return;
+                    }
+                    const query = {
+                      ...(smartText.trim() ? { text: smartText.trim() } : {}),
+                      ...(smartTags.trim() ? { tags: splitCsv(smartTags) } : {}),
+                      ...(smartProviders.trim() ? { providers: splitCsv(smartProviders) } : {}),
+                      ...(smartMinRating.trim() ? { minRating: Number(smartMinRating.trim()) } : {}),
+                      ...(smartReviewPending ? { reviewStatus: "pending" } : {}),
+                      ...(smartCategory ? { category: smartCategory } : {}),
+                      ...(smartStatus.trim() ? { status: smartStatus.trim() } : {}),
+                      ...(smartCreatedAtFrom.trim() ? { createdAtFrom: smartCreatedAtFrom.trim() } : {}),
+                      ...(smartCreatedAtTo.trim() ? { createdAtTo: smartCreatedAtTo.trim() } : {}),
+                      sort: smartSort,
+                    };
+                    onCreateSmartAlbum(newAlbumName, JSON.stringify(query));
+                  }}
+                >
                   Create
                 </button>
               </div>
@@ -1851,6 +2405,22 @@ function AlbumsView({
               <button
                 key={album.id}
                 className={album.id === selectedAlbumId ? "album-list-item selected" : "album-list-item"}
+                draggable
+                onDragStart={(event) => event.dataTransfer.setData("text/album-id", album.id)}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const draggedId = event.dataTransfer.getData("text/album-id");
+                  if (!draggedId || draggedId === album.id) {
+                    return;
+                  }
+                  const fromIndex = albums.findIndex((item) => item.id === draggedId);
+                  const toIndex = albums.findIndex((item) => item.id === album.id);
+                  const next = moveItem(albums, fromIndex, toIndex);
+                  if (next !== albums) {
+                    onReorderAlbums(next.map((item) => item.id));
+                  }
+                }}
                 onClick={() => onOpenAlbum(album.id)}
               >
                 <span>
@@ -1873,7 +2443,25 @@ function AlbumsView({
                 : "Open an album to view its assets."}
             </p>
           </div>
-          {selectedAlbum && <button onClick={onCloseAlbum}>All assets</button>}
+          {selectedAlbum && (
+            <div className="row-actions">
+              {selectedAlbum.kind === "manual" && (
+                <button disabled={selectedGalleryAssetCount === 0} onClick={() => onBatchAddSelected(selectedAlbum.id)}>
+                  Add selected ({selectedGalleryAssetCount})
+                </button>
+              )}
+              <button onClick={() => {
+                const next = window.prompt("Album name", selectedAlbum.name);
+                if (next) {
+                  onRenameAlbum(selectedAlbum.id, next);
+                }
+              }}>
+                Rename
+              </button>
+              <button onClick={() => onDeleteAlbum(selectedAlbum.id)}>Delete</button>
+              <button onClick={onCloseAlbum}>All assets</button>
+            </div>
+          )}
         </div>
         {!selectedAlbum ? (
           <div className="empty-state">Choose an album from the list.</div>
@@ -1882,12 +2470,48 @@ function AlbumsView({
         ) : (
           <section className="gallery-grid compact-grid">
             {gallery.map((asset, index) => (
-              <button key={asset.id} className="asset-card" onClick={() => onSelectAsset(asset.id)}>
+              <button
+                key={asset.id}
+                className="asset-card"
+                draggable={selectedAlbum.kind === "manual"}
+                onDragStart={(event) => event.dataTransfer.setData("text/asset-id", asset.id)}
+                onDragOver={(event) => {
+                  if (selectedAlbum.kind === "manual") {
+                    event.preventDefault();
+                  }
+                }}
+                onDrop={(event) => {
+                  if (selectedAlbum.kind !== "manual") {
+                    return;
+                  }
+                  event.preventDefault();
+                  const draggedId = event.dataTransfer.getData("text/asset-id");
+                  if (!draggedId || draggedId === asset.id) {
+                    return;
+                  }
+                  const fromIndex = gallery.findIndex((item) => item.id === draggedId);
+                  const toIndex = gallery.findIndex((item) => item.id === asset.id);
+                  const next = moveItem(gallery, fromIndex, toIndex);
+                  onReorderAssets(next.map((item) => item.id));
+                }}
+                onClick={() => onSelectAsset(asset.id)}
+              >
                 <Thumbnail asset={asset} index={index} />
                 <span className="asset-title">{asset.title ?? "Untitled"}</span>
                 <span className="provider-pill">{asset.provider ?? "Unknown provider"}</span>
                 <StarRatingDisplay rating={asset.rating} />
                 {asset.reviewPendingCount > 0 && <span className="review-badge">Review pending</span>}
+                {selectedAlbum.kind === "manual" && (
+                  <span
+                    className="text-button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onRemoveAsset(asset.id);
+                    }}
+                  >
+                    Remove
+                  </span>
+                )}
               </button>
             ))}
           </section>
@@ -1900,26 +2524,47 @@ function AlbumsView({
 function ReviewInbox({
   suggestions,
   selectedSuggestion,
+  selectedSuggestionIds,
+  suggestionHistory,
+  suggestionRegenerating,
   form,
   onSelect,
+  onToggleSelected,
   onFormChange,
   availableTags,
   availableCategories,
+  albums,
   onRestore,
   onRegenerateField,
+  onRegenerateSuggestion,
+  onPickHistoryField,
   onAccept,
+  onBatchAccept,
+  onBatchReject,
+  onAddToAlbum,
 }: {
   suggestions: Suggestion[];
   selectedSuggestion: Suggestion | null;
+  selectedSuggestionIds: string[];
+  suggestionHistory: Suggestion[];
+  suggestionRegenerating: boolean;
   form: ReviewFormState | null;
   onSelect: (suggestion: Suggestion) => void;
+  onToggleSelected: (suggestionId: string) => void;
   onFormChange: (form: ReviewFormState) => void;
   availableTags: string[];
   availableCategories: string[];
+  albums: AlbumListItem[];
   onRestore: () => void;
   onRegenerateField: (field: ReviewFieldName) => void;
+  onRegenerateSuggestion: () => void;
+  onPickHistoryField: (suggestion: Suggestion, field: ReviewFieldName | "tags" | "category") => void;
   onAccept: () => void;
+  onBatchAccept: () => void;
+  onBatchReject: () => void;
+  onAddToAlbum: (albumId: string) => void;
 }) {
+  const [albumToAdd, setAlbumToAdd] = useState("");
   if (suggestions.length === 0) {
     return <div className="empty-state">No pending suggestions.</div>;
   }
@@ -1929,20 +2574,42 @@ function ReviewInbox({
         <div className="panel-header">
           <div>
             <h3>Pending review</h3>
-            <p>{suggestions.length} suggestion{suggestions.length === 1 ? "" : "s"}</p>
+            <p>{selectedSuggestionIds.length || suggestions.length} selected / {suggestions.length} pending</p>
           </div>
+        </div>
+        <div className="row-actions review-actions">
+          <button onClick={onBatchAccept}>Accept selected</button>
+          <button onClick={onBatchReject}>Reject selected</button>
+        </div>
+        <div className="add-album-row">
+          <select className="select-control" value={albumToAdd} onChange={(event) => setAlbumToAdd(event.target.value)}>
+            <option value="">Add selected to album</option>
+            {albums
+              .filter((album) => album.kind === "manual")
+              .map((album) => (
+                <option key={album.id} value={album.id}>{album.name}</option>
+              ))}
+          </select>
+          <button disabled={!albumToAdd} onClick={() => onAddToAlbum(albumToAdd)}>Add</button>
         </div>
         <div className="review-list">
           {suggestions.map((suggestion) => (
-            <button
+            <div
               className={suggestion.id === selectedSuggestion?.id ? "review-list-item selected" : "review-list-item"}
               key={suggestion.id}
-              onClick={() => onSelect(suggestion)}
             >
-              <strong>{suggestion.title ?? "Untitled suggestion"}</strong>
-              <span>{suggestion.category ?? "No category"}</span>
-              <small>{suggestion.tags.join(", ") || "No tags"}</small>
-            </button>
+              <input
+                type="checkbox"
+                checked={selectedSuggestionIds.includes(suggestion.id)}
+                onChange={() => onToggleSelected(suggestion.id)}
+                aria-label={`Select ${suggestion.title ?? suggestion.id}`}
+              />
+              <button type="button" onClick={() => onSelect(suggestion)}>
+                <strong>{suggestion.title ?? "Untitled suggestion"}</strong>
+                <span>{suggestion.category ?? "No category"}</span>
+                <small>{suggestion.tags.join(", ") || "No tags"}</small>
+              </button>
+            </div>
           ))}
         </div>
       </div>
@@ -1958,6 +2625,7 @@ function ReviewInbox({
               </div>
               <span className="review-badge">Review pending</span>
             </div>
+            <ConfidenceSummary confidence={selectedSuggestion.confidence} />
             <div className="review-form">
               <label>
                 <span>
@@ -2046,15 +2714,136 @@ function ReviewInbox({
             </div>
             <div className="row-actions review-actions">
               <button onClick={onRestore}>Restore</button>
+              <button disabled={suggestionRegenerating} onClick={onRegenerateSuggestion}>
+                {suggestionRegenerating ? "Regenerating..." : "Regenerate suggestion"}
+              </button>
               <button className="primary-button" onClick={onAccept}>
                 Accept changes
               </button>
             </div>
+            <SuggestionHistoryTable history={suggestionHistory} onPickField={onPickHistoryField} />
           </>
         )}
       </div>
     </section>
   );
+}
+
+function ConfidenceSummary({ confidence }: { confidence?: ConfidenceScore }) {
+  if (!confidence) {
+    return null;
+  }
+  const fields = [
+    ["Title", confidence.title],
+    ["Description", confidence.description],
+    ["Schema", confidence.schemaPrompt],
+    ["Tags", confidence.tags],
+    ["Category", confidence.category],
+  ] as const;
+  const knownFields = fields.filter(([, score]) => typeof score === "number");
+  if (typeof confidence.overall !== "number" && knownFields.length === 0) {
+    return null;
+  }
+  return (
+    <div className="confidence-panel">
+      <strong>Confidence {formatScore(confidence.overall)}</strong>
+      <div className="tag-list">
+        {knownFields.map(([label, score]) => (
+          <span key={label}>{label}: {formatScore(score)}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SuggestionHistoryTable({
+  history,
+  onPickField,
+}: {
+  history: Suggestion[];
+  onPickField: (suggestion: Suggestion, field: ReviewFieldName | "tags" | "category") => void;
+}) {
+  if (history.length === 0) {
+    return <div className="empty-state compact">No suggestion history.</div>;
+  }
+  return (
+    <div className="history-table">
+      <h3>Suggestion history</h3>
+      {history.map((suggestion) => (
+        <article key={suggestion.id} className="history-row">
+          <div>
+            <strong>{suggestion.title ?? "Untitled"}</strong>
+            <small>{suggestion.status} · {suggestion.createdAt ? displayDate(suggestion.createdAt) : "-"}</small>
+          </div>
+          <div className="row-actions">
+            <button onClick={() => onPickField(suggestion, "title")}>Title</button>
+            <button onClick={() => onPickField(suggestion, "description")}>Description</button>
+            <button onClick={() => onPickField(suggestion, "schemaPrompt")}>Schema</button>
+            <button onClick={() => onPickField(suggestion, "tags")}>Tags</button>
+            <button onClick={() => onPickField(suggestion, "category")}>Category</button>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function formatScore(score: number | null | undefined): string {
+  return typeof score === "number" ? `${score}%` : "unknown";
+}
+
+function splitCsv(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+function previewSmartAlbumCount(
+  assets: GalleryAsset[],
+  query: {
+    text: string;
+    tags: string[];
+    providers: string[];
+    minRating: number | null;
+    reviewPending: boolean;
+    category: string;
+    status: string;
+    createdAtFrom: string;
+    createdAtTo: string;
+  },
+): number {
+  const text = query.text.trim().toLocaleLowerCase();
+  return assets.filter((asset) => {
+    if (text && ![asset.title, asset.category, asset.status, asset.provider, asset.modelLabel, asset.prompt, ...asset.tags].some((value) => value?.toLocaleLowerCase().includes(text))) {
+      return false;
+    }
+    if (query.tags.length > 0 && !query.tags.every((tag) => asset.tags.includes(tag))) {
+      return false;
+    }
+    if (query.providers.length > 0 && (!asset.provider || !query.providers.includes(asset.provider))) {
+      return false;
+    }
+    if (query.minRating !== null && (asset.rating ?? 0) < query.minRating) {
+      return false;
+    }
+    if (query.reviewPending && asset.reviewPendingCount === 0) {
+      return false;
+    }
+    if (query.category && asset.category !== query.category) {
+      return false;
+    }
+    if (query.status.trim() && asset.status !== query.status.trim()) {
+      return false;
+    }
+    if (query.createdAtFrom.trim() && asset.createdAt < query.createdAtFrom.trim()) {
+      return false;
+    }
+    if (query.createdAtTo.trim() && asset.createdAt > query.createdAtTo.trim()) {
+      return false;
+    }
+    return true;
+  }).length;
 }
 
 function ReviewFieldGenerateButton({

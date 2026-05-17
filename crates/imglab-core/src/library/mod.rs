@@ -903,8 +903,9 @@ mod tests {
     use crate::MetadataReviewService;
     use crate::{
         AlbumKind, AlbumService, GalleryQuery, GalleryReadService, GallerySort, GeneratedImage,
-        GenerationResult, ReviewMetadataSuggestionRequest, ReviewStatusFilter, SearchQuery,
-        SearchService, UpdateAssetMetadataRequest,
+        BatchAddAssetsToAlbumRequest, BatchReviewMetadataSuggestionRequest, GenerationResult,
+        ReorderAlbumItemsRequest, ReorderAlbumsRequest, ReviewMetadataSuggestionRequest,
+        ReviewStatusFilter, SearchQuery, SearchService, UpdateAssetMetadataRequest,
     };
 
     fn test_root(name: &str) -> PathBuf {
@@ -2244,5 +2245,228 @@ mod tests {
             .expect_err("invalid smart query");
 
         assert!(matches!(error, DomainError::InvalidSmartAlbumQuery { .. }));
+    }
+
+    #[test]
+    fn reorders_albums_and_manual_album_items() {
+        let root = test_root("album-reorder");
+        let registry = test_root("album-reorder-registry").join("registry.sqlite");
+        let source_dir = test_root("album-reorder-source");
+        fs::create_dir_all(&source_dir).expect("create source dir");
+        let source_a = source_dir.join("a.png");
+        let source_b = source_dir.join("b.png");
+        fs::write(&source_a, png_bytes(10, 10)).expect("write a");
+        fs::write(&source_b, png_bytes(10, 10)).expect("write b");
+        let service = LocalLibraryService::new(registry);
+        let library = service
+            .create_library(CreateLibraryRequest {
+                root_path: root.clone(),
+                name: "Albums".to_string(),
+            })
+            .expect("create library");
+        let album_a = service
+            .create_manual_album(&library.id, "A")
+            .expect("album a");
+        let album_b = service
+            .create_manual_album(&library.id, "B")
+            .expect("album b");
+
+        service
+            .reorder_albums(ReorderAlbumsRequest {
+                library_path: root.clone(),
+                album_ids: vec![album_b.id.clone(), album_a.id.clone()],
+            })
+            .expect("reorder albums");
+        let albums = service.list_albums(&library.id).expect("list albums");
+        assert_eq!(albums[0].id, album_b.id);
+
+        let (asset_a, _) = service
+            .import_asset(ImportAssetRequest {
+                library_path: root.clone(),
+                source_path: source_a,
+            })
+            .expect("import a");
+        let (asset_b, _) = service
+            .import_asset(ImportAssetRequest {
+                library_path: root.clone(),
+                source_path: source_b,
+            })
+            .expect("import b");
+        service
+            .batch_add_assets(BatchAddAssetsToAlbumRequest {
+                album_id: album_a.id.clone(),
+                asset_ids: vec![asset_a.id.clone(), asset_b.id.clone()],
+            })
+            .expect("batch add");
+        service
+            .reorder_album_items(ReorderAlbumItemsRequest {
+                album_id: album_a.id.clone(),
+                asset_ids: vec![asset_b.id.clone(), asset_a.id.clone()],
+            })
+            .expect("reorder items");
+        let items = service
+            .query_gallery(
+                &root,
+                GalleryQuery {
+                    album_id: Some(album_a.id),
+                    sort: GallerySort::AlbumOrder,
+                    ..GalleryQuery::default()
+                },
+            )
+            .expect("album order query");
+        assert_eq!(items[0].id, asset_b.id);
+    }
+
+    #[test]
+    fn smart_album_supports_created_range_and_album_order_validation() {
+        let root = test_root("smart-range");
+        let registry = test_root("smart-range-registry").join("registry.sqlite");
+        let source_dir = test_root("smart-range-source");
+        fs::create_dir_all(&source_dir).expect("create source dir");
+        let source = source_dir.join("asset.png");
+        fs::write(&source, png_bytes(10, 10)).expect("write source");
+        let service = LocalLibraryService::new(registry);
+        service
+            .create_library(CreateLibraryRequest {
+                root_path: root.clone(),
+                name: "Smart Range".to_string(),
+            })
+            .expect("create library");
+        let (asset, _) = service
+            .import_asset(ImportAssetRequest {
+                library_path: root.clone(),
+                source_path: source,
+            })
+            .expect("import");
+        let smart = service
+            .create_smart_album(crate::CreateSmartAlbumRequest {
+                library_path: root.clone(),
+                name: "Recent".to_string(),
+                smart_query_json:
+                    "{\"createdAtFrom\":\"0\",\"createdAtTo\":\"999999999999999\"}".to_string(),
+            })
+            .expect("smart album");
+        let items = service
+            .query_gallery(
+                &root,
+                GalleryQuery {
+                    album_id: Some(smart.id),
+                    ..GalleryQuery::default()
+                },
+            )
+            .expect("smart query");
+        assert_eq!(items[0].id, asset.id);
+
+        let error = service
+            .query_gallery(
+                &root,
+                GalleryQuery {
+                    sort: GallerySort::AlbumOrder,
+                    ..GalleryQuery::default()
+                },
+            )
+            .expect_err("album order needs album");
+        assert!(matches!(error, DomainError::InvalidGalleryQuery { .. }));
+    }
+
+    #[test]
+    fn batch_review_rolls_back_and_confidence_normalizes() {
+        let root = test_root("batch-review");
+        let registry = test_root("batch-review-registry").join("registry.sqlite");
+        let source_dir = test_root("batch-review-source");
+        fs::create_dir_all(&source_dir).expect("create source dir");
+        let source_a = source_dir.join("a.png");
+        let source_b = source_dir.join("b.png");
+        fs::write(&source_a, png_bytes(10, 10)).expect("write a");
+        fs::write(&source_b, png_bytes(10, 10)).expect("write b");
+        let service = LocalLibraryService::new(registry);
+        service
+            .create_library(CreateLibraryRequest {
+                root_path: root.clone(),
+                name: "Review".to_string(),
+            })
+            .expect("create library");
+        let (asset_a, _) = service
+            .import_asset(ImportAssetRequest {
+                library_path: root.clone(),
+                source_path: source_a,
+            })
+            .expect("import a");
+        let (asset_b, _) = service
+            .import_asset(ImportAssetRequest {
+                library_path: root.clone(),
+                source_path: source_b,
+            })
+            .expect("import b");
+        let suggestion_a = service
+            .create_suggestion(crate::CreateMetadataSuggestionRequest {
+                library_path: root.clone(),
+                asset_id: asset_a.id.clone(),
+                source: "test".to_string(),
+                suggested_title: Some("A".to_string()),
+                suggested_description: None,
+                suggested_schema_prompt: None,
+                suggested_tags: vec![],
+                suggested_category: None,
+                confidence_json: "{\"overall\":0.75,\"fields\":{\"title\":80}}".to_string(),
+            })
+            .expect("suggestion a");
+        let suggestion_b = service
+            .create_suggestion(crate::CreateMetadataSuggestionRequest {
+                library_path: root.clone(),
+                asset_id: asset_b.id.clone(),
+                source: "test".to_string(),
+                suggested_title: Some("B".to_string()),
+                suggested_description: None,
+                suggested_schema_prompt: None,
+                suggested_tags: vec![],
+                suggested_category: None,
+                confidence_json: "{}".to_string(),
+            })
+            .expect("suggestion b");
+        service
+            .reject(&root, &suggestion_b.id)
+            .expect("reject suggestion b");
+        let error = service
+            .batch_accept(BatchReviewMetadataSuggestionRequest {
+                library_path: root.clone(),
+                suggestions: vec![
+                    ReviewMetadataSuggestionRequest {
+                        library_path: root.clone(),
+                        suggestion_id: suggestion_a.id.clone(),
+                        title: Some("Accepted A".to_string()),
+                        description: None,
+                        schema_prompt: None,
+                        tags: vec![],
+                        category: None,
+                    },
+                    ReviewMetadataSuggestionRequest {
+                        library_path: root.clone(),
+                        suggestion_id: suggestion_b.id,
+                        title: Some("Accepted B".to_string()),
+                        description: None,
+                        schema_prompt: None,
+                        tags: vec![],
+                        category: None,
+                    },
+                ],
+            })
+            .expect_err("batch should fail");
+        assert!(matches!(error, DomainError::InvalidAssetReference { .. }));
+        let asset_a_after = load_asset_summary(
+            &Connection::open(LocalLibraryService::database_path(&root)).expect("open db"),
+            &asset_a.id,
+        )
+        .expect("load asset");
+        assert!(asset_a_after.title.is_none());
+
+        let history = service
+            .list_history(&root, &asset_a.id)
+            .expect("history");
+        assert_eq!(history.len(), 1);
+        let confidence = service.normalize_confidence(&history[0].confidence_json);
+        assert_eq!(confidence.overall, Some(75));
+        assert_eq!(confidence.title, Some(80));
+        assert_eq!(service.normalize_confidence("not json").overall, None);
     }
 }
