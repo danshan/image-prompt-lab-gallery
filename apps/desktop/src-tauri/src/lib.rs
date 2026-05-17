@@ -152,6 +152,15 @@ struct AlbumView {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct AlbumListItemView {
+    id: String,
+    name: String,
+    kind: String,
+    item_count: u32,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct FileContextView {
     filename: String,
     relative_location: PathBuf,
@@ -170,6 +179,7 @@ struct AssetDetailView {
     id: String,
     title: Option<String>,
     description: Option<String>,
+    schema_prompt: Option<String>,
     category: Option<String>,
     rating: Option<u8>,
     status: String,
@@ -195,6 +205,7 @@ struct SuggestionView {
     asset_id: String,
     title: Option<String>,
     description: Option<String>,
+    schema_prompt: Option<String>,
     tags: Vec<String>,
     category: Option<String>,
     status: String,
@@ -304,6 +315,7 @@ struct UpdateMetadataInput {
     asset_id: String,
     title: Option<String>,
     description: Option<String>,
+    schema_prompt: Option<String>,
     rating: Option<u8>,
     category: Option<String>,
     status: Option<String>,
@@ -338,6 +350,7 @@ struct CreateSuggestionInput {
     asset_id: String,
     title: Option<String>,
     description: Option<String>,
+    schema_prompt: Option<String>,
     tags: Vec<String>,
     category: Option<String>,
     confidence_json: Option<String>,
@@ -350,6 +363,7 @@ struct ReviewSuggestionInput {
     suggestion_id: String,
     title: Option<String>,
     description: Option<String>,
+    schema_prompt: Option<String>,
     tags: Vec<String>,
     category: Option<String>,
 }
@@ -606,6 +620,7 @@ fn update_asset_metadata(input: UpdateMetadataInput) -> Result<AssetView, Comman
             asset_id: AssetId(input.asset_id),
             title: input.title,
             description: input.description,
+            schema_prompt: input.schema_prompt,
             rating: input.rating,
             category: input.category,
             status: input.status,
@@ -618,6 +633,16 @@ fn update_asset_metadata(input: UpdateMetadataInput) -> Result<AssetView, Comman
 fn add_tag_to_asset(input: AddTagInput) -> Result<(), CommandError> {
     service()
         .add_tag_to_asset(&input.library_path, &AssetId(input.asset_id), &input.tag)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+fn list_albums(library_path: PathBuf) -> Result<Vec<AlbumListItemView>, CommandError> {
+    let service = service();
+    let library = service.open_library(&library_path)?;
+    service
+        .list_albums(&library.id)
+        .map(|albums| albums.into_iter().map(album_list_item_view).collect())
         .map_err(Into::into)
 }
 
@@ -650,6 +675,7 @@ fn create_suggestion(input: CreateSuggestionInput) -> Result<SuggestionView, Com
             source: "desktop".to_string(),
             suggested_title: input.title,
             suggested_description: input.description,
+            suggested_schema_prompt: input.schema_prompt,
             suggested_tags: input.tags,
             suggested_category: input.category,
             confidence_json: input.confidence_json.unwrap_or_else(|| "{}".to_string()),
@@ -676,17 +702,11 @@ fn accept_suggestion(input: ReviewSuggestionInput) -> Result<AssetView, CommandE
             suggestion_id: MetadataSuggestionId(input.suggestion_id),
             title: input.title,
             description: input.description,
+            schema_prompt: input.schema_prompt,
             tags: input.tags,
             category: input.category,
         })
         .map(asset_view)
-        .map_err(Into::into)
-}
-
-#[tauri::command]
-fn reject_suggestion(library_path: PathBuf, suggestion_id: String) -> Result<(), CommandError> {
-    service()
-        .reject(&library_path, &MetadataSuggestionId(suggestion_id))
         .map_err(Into::into)
 }
 
@@ -842,6 +862,7 @@ fn asset_detail_view(summary: imglab_core::AssetDetailView) -> AssetDetailView {
         id: summary.id.0,
         title: summary.title,
         description: summary.description,
+        schema_prompt: summary.schema_prompt,
         category: summary.category,
         rating: summary.rating,
         status: summary.status,
@@ -949,12 +970,26 @@ fn album_view(summary: imglab_core::AlbumSummary) -> AlbumView {
     }
 }
 
+fn album_list_item_view(item: imglab_core::AlbumListItem) -> AlbumListItemView {
+    AlbumListItemView {
+        id: item.id.0,
+        name: item.name,
+        kind: match item.kind {
+            imglab_core::AlbumKind::Manual => "manual",
+            imglab_core::AlbumKind::Smart => "smart",
+        }
+        .to_string(),
+        item_count: item.item_count,
+    }
+}
+
 fn suggestion_view(summary: imglab_core::MetadataSuggestion) -> SuggestionView {
     SuggestionView {
         id: summary.id.0,
         asset_id: summary.asset_id.0,
         title: summary.suggested_title,
         description: summary.suggested_description,
+        schema_prompt: summary.suggested_schema_prompt,
         tags: summary.suggested_tags,
         category: summary.suggested_category,
         status: summary.status,
@@ -1002,12 +1037,12 @@ pub fn run() {
             get_generation_job,
             update_asset_metadata,
             add_tag_to_asset,
+            list_albums,
             create_manual_album,
             add_asset_to_album,
             create_suggestion,
             list_pending_suggestions,
-            accept_suggestion,
-            reject_suggestion
+            accept_suggestion
         ])
         .run(tauri::generate_context!())
         .expect("failed to run desktop application");

@@ -29,6 +29,7 @@ export type GalleryQueryState = {
   minRating: number | null;
   reviewStatus: ReviewStatusFilter;
   tags: string[];
+  albumId: string | null;
   sort: GallerySort;
 };
 
@@ -59,6 +60,7 @@ export const defaultGalleryQuery: GalleryQueryState = {
   minRating: null,
   reviewStatus: "any",
   tags: [],
+  albumId: null,
   sort: "newest",
 };
 
@@ -82,11 +84,25 @@ export function acceptSuggestionState<TAsset extends AssetState, TSuggestion ext
   };
 }
 
-export function rejectSuggestionState<TSuggestion extends SuggestionState>(
+export function removeSuggestionState<TSuggestion extends SuggestionState>(
   suggestions: TSuggestion[],
   suggestionId: string,
 ) {
   return suggestions.filter((suggestion) => suggestion.id !== suggestionId);
+}
+
+export function markAssetReviewPending<TAsset extends AssetState & { reviewPendingCount: number }>(
+  assets: TAsset[],
+  assetId: string,
+): TAsset[] {
+  return assets.map((asset) =>
+    asset.id === assetId
+      ? {
+          ...asset,
+          reviewPendingCount: Math.max(asset.reviewPendingCount, 1),
+        }
+      : asset,
+  );
 }
 
 export function updateQueueJobStatus<TJob extends QueueJobState>(
@@ -126,6 +142,80 @@ export function toggleGalleryTag(query: GalleryQueryState, tag: string): Gallery
 
 export function resetGalleryQuery(): GalleryQueryState {
   return { ...defaultGalleryQuery, providers: [], tags: [] };
+}
+
+export function openAlbumQuery(query: GalleryQueryState, albumId: string): GalleryQueryState {
+  return updateGalleryQuery(query, { albumId });
+}
+
+export function clearAlbumQuery(query: GalleryQueryState): GalleryQueryState {
+  return updateGalleryQuery(query, { albumId: null });
+}
+
+export type ReviewFormState = {
+  suggestionId: string;
+  title: string;
+  description: string;
+  schemaPrompt: string;
+  tags: string[];
+  tagInput: string;
+  category: string;
+};
+
+export type EditableSuggestionState = {
+  id: string;
+  title: string | null;
+  description?: string | null;
+  schemaPrompt?: string | null;
+  tags: string[];
+  category: string | null;
+};
+
+export function createReviewFormState(suggestion: EditableSuggestionState): ReviewFormState {
+  return {
+    suggestionId: suggestion.id,
+    title: suggestion.title ?? "",
+    description: suggestion.description ?? "",
+    schemaPrompt: suggestion.schemaPrompt ?? "",
+    tags: uniqueTags(suggestion.tags),
+    tagInput: "",
+    category: suggestion.category ?? "",
+  };
+}
+
+export function reviewFormTags(form: ReviewFormState): string[] {
+  return uniqueTags(form.tags);
+}
+
+export function addReviewFormTag(form: ReviewFormState, tag: string): ReviewFormState {
+  const normalized = tag.trim();
+  if (!normalized) {
+    return { ...form, tagInput: "" };
+  }
+  return {
+    ...form,
+    tags: uniqueTags([...form.tags, normalized]),
+    tagInput: "",
+  };
+}
+
+export function removeReviewFormTag(form: ReviewFormState, tag: string): ReviewFormState {
+  return {
+    ...form,
+    tags: form.tags.filter((item) => item !== tag),
+  };
+}
+
+function uniqueTags(tags: string[]): string[] {
+  return Array.from(new Set(tags.map((tag) => tag.trim()).filter((tag) => tag.length > 0)));
+}
+
+export function clearCurationStateForLibrarySwitch() {
+  return {
+    selectedAlbumId: null as string | null,
+    selectedSuggestionId: null as string | null,
+    reviewForm: null as ReviewFormState | null,
+  };
 }
 
 export function beginDetailLoad<TDetail>(assetId: string): DetailLoadState<TDetail> {

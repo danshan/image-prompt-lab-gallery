@@ -4,13 +4,21 @@ import {
   acceptSuggestionState,
   applyGalleryQuery,
   beginDetailLoad,
+  clearAlbumQuery,
+  clearCurationStateForLibrarySwitch,
   clearSelectionForLibrarySwitch,
   completeDetailLoad,
+  createReviewFormState,
   defaultGalleryQuery,
   failDetailLoad,
   formatAspectRatio,
-  rejectSuggestionState,
+  addReviewFormTag,
+  markAssetReviewPending,
+  openAlbumQuery,
+  removeReviewFormTag,
+  removeSuggestionState,
   resetGalleryQuery,
+  reviewFormTags,
   toggleGalleryProvider,
   toggleGalleryTag,
   updateQueueJobStatus,
@@ -44,7 +52,7 @@ test("acceptSuggestionState applies metadata and removes pending item", () => {
   assert.equal(next.suggestions.length, 0);
 });
 
-test("rejectSuggestionState removes only the rejected suggestion", () => {
+test("removeSuggestionState removes only the completed suggestion", () => {
   const suggestions = [
     {
       id: "suggestion-1",
@@ -62,12 +70,24 @@ test("rejectSuggestionState removes only the rejected suggestion", () => {
     },
   ];
 
-  const next = rejectSuggestionState(suggestions, "suggestion-1");
+  const next = removeSuggestionState(suggestions, "suggestion-1");
 
   assert.deepEqual(
     next.map((suggestion) => suggestion.id),
     ["suggestion-2"],
   );
+});
+
+test("markAssetReviewPending raises pending count without touching other assets", () => {
+  const next = markAssetReviewPending(
+    [
+      { id: "asset-1", title: null, category: null, rating: null, tags: [], reviewPendingCount: 0 },
+      { id: "asset-2", title: null, category: null, rating: null, tags: [], reviewPendingCount: 2 },
+    ],
+    "asset-1",
+  );
+  assert.equal(next[0].reviewPendingCount, 1);
+  assert.equal(next[1].reviewPendingCount, 2);
 });
 
 test("updateQueueJobStatus updates only the targeted job", () => {
@@ -98,6 +118,35 @@ test("resetGalleryQuery returns independent arrays", () => {
   first.providers.push("fake");
 
   assert.deepEqual(second.providers, []);
+});
+
+test("album query helpers set and clear selected album", () => {
+  const albumQuery = openAlbumQuery(defaultGalleryQuery, "album-1");
+  assert.equal(albumQuery.albumId, "album-1");
+  assert.equal(clearAlbumQuery(albumQuery).albumId, null);
+});
+
+test("review form state is initialized from suggestion and parses tags", () => {
+  const form = createReviewFormState({
+    id: "suggestion-1",
+    title: "Suggested title",
+    description: "Suggested description",
+    schemaPrompt: "{\"OUTPUT\":{\"mood\":\"editorial\"}}",
+    category: "study",
+    tags: ["botanical", "neon", "botanical"],
+  });
+
+  assert.equal(form.suggestionId, "suggestion-1");
+  assert.equal(form.title, "Suggested title");
+  assert.equal(form.description, "Suggested description");
+  assert.equal(form.schemaPrompt, "{\"OUTPUT\":{\"mood\":\"editorial\"}}");
+  assert.equal(form.category, "study");
+  assert.deepEqual(form.tags, ["botanical", "neon"]);
+  const added = addReviewFormTag({ ...form, tagInput: " neon " }, " neon ");
+  assert.deepEqual(added.tags, ["botanical", "neon"]);
+  assert.deepEqual(addReviewFormTag(added, "study").tags, ["botanical", "neon", "study"]);
+  assert.deepEqual(removeReviewFormTag(added, "neon").tags, ["botanical"]);
+  assert.deepEqual(reviewFormTags({ ...form, tags: [" botanical ", "", "neon"] }), ["botanical", "neon"]);
 });
 
 test("detail load helpers model loading lifecycle", () => {
@@ -139,6 +188,14 @@ test("library switching clears stale detail while preserving query object", () =
     ...defaultGalleryQuery,
     text: "botanical",
     providers: ["fake"],
+  });
+});
+
+test("library switching clears album and review state", () => {
+  assert.deepEqual(clearCurationStateForLibrarySwitch(), {
+    selectedAlbumId: null,
+    selectedSuggestionId: null,
+    reviewForm: null,
   });
 });
 

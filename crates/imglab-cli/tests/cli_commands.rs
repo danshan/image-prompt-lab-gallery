@@ -151,6 +151,16 @@ fn fake_generate_tag_album_and_suggestion_flow_work() {
         .assert_success();
     let version = &generated["versions"].as_array().expect("versions")[0];
     let asset_id = version["asset_id"].as_str().expect("asset id");
+    let generated_pending = workspace
+        .run(&["suggestion", "list", "--library", path(&library)])
+        .assert_success();
+    assert_eq!(
+        generated_pending["suggestions"]
+            .as_array()
+            .expect("suggestions")
+            .len(),
+        1
+    );
 
     workspace
         .run(&[
@@ -193,7 +203,7 @@ fn fake_generate_tag_album_and_suggestion_flow_work() {
             .as_array()
             .expect("suggestions")
             .len(),
-        1
+        2
     );
 
     let accepted = workspace

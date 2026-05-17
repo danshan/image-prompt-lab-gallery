@@ -1,9 +1,10 @@
 use crate::{
     AssetId, AssetService, AssetVersionId, CreateChildVersionRequest, CreateGenerationEventRequest,
-    CreateLibraryRequest, DomainError, DomainResult, ExportLibraryRequest, ExportSummary,
-    GenerateImageRequest, GenerationOperation, GenerationParameters, GenerationRequestInput,
-    ImageProvider, ImportAssetRequest, IntegrityIssue, IntegrityIssueKind, LibraryId,
-    LibraryService, LibraryStatusView, LibrarySummary, PreparedGenerationRequest, RepairIssue,
+    CreateLibraryRequest, CreateMetadataSuggestionRequest, DomainError, DomainResult,
+    ExportLibraryRequest, ExportSummary, GenerateImageRequest, GenerationOperation,
+    GenerationParameters, GenerationRequestInput, ImageProvider, ImportAssetRequest,
+    IntegrityIssue, IntegrityIssueKind, LibraryId, LibraryService, LibraryStatusView,
+    LibrarySummary, MetadataReviewService, PreparedGenerationRequest, RepairIssue,
     RepairLibraryRequest, RepairSummary, VersionSummary,
 };
 use rusqlite::{params, Connection};
@@ -20,7 +21,10 @@ mod albums;
 mod assets;
 #[cfg(test)]
 use assets::load_asset_summary;
-use assets::{ensure_asset_exists, load_version, mark_imported_version_as_generated};
+use assets::{
+    default_title_from_prompt, ensure_asset_exists, load_version,
+    mark_imported_version_as_generated,
+};
 mod export;
 use export::{load_export_versions, ExportVersionRow};
 mod gallery;
@@ -346,11 +350,84 @@ where
                 version
             };
 
+            create_generation_metadata_suggestion(&library_service, &request, &version.asset_id)?;
             versions.push(version);
         }
 
         Ok(versions)
     }
+}
+
+fn create_generation_metadata_suggestion(
+    library_service: &LocalLibraryService,
+    request: &GenerateImageRequest,
+    asset_id: &AssetId,
+) -> DomainResult<()> {
+    library_service.create_suggestion(CreateMetadataSuggestionRequest {
+        library_path: request.library_path.clone(),
+        asset_id: asset_id.clone(),
+        source: format!("generation:{}", request.parameters.provider),
+        suggested_title: default_title_from_prompt(&request.parameters.prompt),
+        suggested_description: None,
+        suggested_schema_prompt: Some(schema_prompt_draft_from_generation(&request.parameters)?),
+        suggested_tags: Vec::new(),
+        suggested_category: None,
+        confidence_json: json!({
+            "source": "generation",
+            "provider": request.parameters.provider,
+            "model": request.parameters.model,
+            "operation": operation_to_str(request.parameters.operation),
+        })
+        .to_string(),
+    })?;
+    Ok(())
+}
+
+fn schema_prompt_draft_from_generation(parameters: &GenerationParameters) -> DomainResult<String> {
+    let aspect_ratio = generation_parameter_value(&parameters.parameters_json, "aspect_ratio")
+        .or_else(|| generation_parameter_value(&parameters.parameters_json, "aspectRatio"))
+        .unwrap_or_else(|| "unspecified".to_string());
+    let schema = json!({
+        "GLOBAL_SETTINGS": {
+            "aspect_ratio": aspect_ratio,
+            "style": "derived from source prompt",
+            "clarity": "sharp foreground, readable subject detail",
+            "render_flags": ["sharp_foreground", "micro_texture", "editorial_finish"]
+        },
+        "ENVIRONMENT": {
+            "background": "preserve the generated image environment cues",
+            "lighting": "preserve the generated image lighting direction and contrast",
+            "atmosphere": ["match the final image mood", "avoid unsupported scene changes"]
+        },
+        "CORE_ASSETS": {
+            "primary_subject": parameters.prompt,
+            "materials": ["infer visible materials from final image"],
+            "composition": "preserve the generated composition and camera framing"
+        },
+        "MOTION_OR_DETAIL_SYSTEMS": [
+            {
+                "object": "visible detail systems",
+                "state": "preserve the generated image behavior and placement"
+            }
+        ],
+        "OUTPUT": {
+            "mood": "match the accepted visual direction",
+            "avoid": ["cheap e-commerce banner", "plastic CGI", "fake brand logos"]
+        }
+    });
+    let body = serde_json::to_string_pretty(&schema).map_err(serialization_error)?;
+    Ok(format!(
+        "// VERSION: 0.1\n// AESTHETIC: derived from generation prompt\n{body}"
+    ))
+}
+
+fn generation_parameter_value(parameters_json: &str, key: &str) -> Option<String> {
+    let value = serde_json::from_str::<serde_json::Value>(parameters_json).ok()?;
+    value.get(key).and_then(|value| match value {
+        serde_json::Value::String(text) => Some(text.clone()),
+        serde_json::Value::Number(number) => Some(number.to_string()),
+        _ => None,
+    })
 }
 
 pub fn prepare_generation_request(
@@ -825,7 +902,7 @@ mod tests {
     use crate::GenerationService;
     use crate::MetadataReviewService;
     use crate::{
-        AlbumService, GalleryQuery, GalleryReadService, GallerySort, GeneratedImage,
+        AlbumKind, AlbumService, GalleryQuery, GalleryReadService, GallerySort, GeneratedImage,
         GenerationResult, ReviewMetadataSuggestionRequest, ReviewStatusFilter, SearchQuery,
         SearchService, UpdateAssetMetadataRequest,
     };
@@ -1490,7 +1567,7 @@ mod tests {
         let root = test_root("generation-flow");
         let registry = test_root("generation-registry").join("registry.sqlite");
         let library = LocalLibraryService::new(registry);
-        library
+        let library_summary = library
             .create_library(CreateLibraryRequest {
                 root_path: root.clone(),
                 name: "Generation".to_string(),
@@ -1539,6 +1616,22 @@ mod tests {
         assert_eq!(gallery[0].provider.as_deref(), Some("fake"));
         assert_eq!(gallery[0].model_label.as_deref(), Some("fake-image"));
         assert_eq!(gallery[0].prompt.as_deref(), Some("make a test image"));
+        assert_eq!(gallery[0].review_pending_count, 1);
+
+        let suggestions = library
+            .list_pending(&root, &library_summary.id)
+            .expect("pending suggestions");
+        assert_eq!(suggestions.len(), 1);
+        assert_eq!(suggestions[0].asset_id, versions[0].asset_id);
+        assert_eq!(
+            suggestions[0].suggested_title.as_deref(),
+            Some("Make Test Image")
+        );
+        assert!(suggestions[0]
+            .suggested_schema_prompt
+            .as_deref()
+            .unwrap_or_default()
+            .contains("\"primary_subject\": \"make a test image\""));
 
         let detail = library
             .get_asset_detail(&root, &versions[0].asset_id, Some(&versions[0].id))
@@ -1548,6 +1641,7 @@ mod tests {
         assert_eq!(detail.model_label.as_deref(), Some("fake-image"));
         assert_eq!(detail.prompt.as_deref(), Some("make a test image"));
         assert_eq!(detail.parameters_json.as_deref(), Some("{}"));
+        assert_eq!(detail.review_pending_count, 1);
     }
 
     #[derive(Debug, Clone)]
@@ -1649,6 +1743,18 @@ mod tests {
                 source_path: source,
             })
             .expect("import asset");
+        service
+            .update_asset_metadata(UpdateAssetMetadataRequest {
+                library_path: root.clone(),
+                asset_id: asset.id.clone(),
+                title: None,
+                description: None,
+                schema_prompt: None,
+                rating: None,
+                category: Some("category-a".to_string()),
+                status: None,
+            })
+            .expect("seed category");
 
         let suggestion = service
             .create_suggestion(crate::CreateMetadataSuggestionRequest {
@@ -1657,6 +1763,7 @@ mod tests {
                 source: "fake".to_string(),
                 suggested_title: Some("Suggested title".to_string()),
                 suggested_description: Some("Suggested description".to_string()),
+                suggested_schema_prompt: Some("{\"OUTPUT\":{\"mood\":\"edited\"}}".to_string()),
                 suggested_tags: vec!["tag-a".to_string(), "tag-b".to_string()],
                 suggested_category: Some("category-a".to_string()),
                 confidence_json: "{}".to_string(),
@@ -1681,12 +1788,21 @@ mod tests {
                 suggestion_id: suggestion.id,
                 title: Some("Edited title".to_string()),
                 description: Some("Edited description".to_string()),
+                schema_prompt: Some("{\"OUTPUT\":{\"mood\":\"edited\"}}".to_string()),
                 tags: vec!["tag-a".to_string()],
                 category: Some("category-a".to_string()),
             })
             .expect("accept");
 
         assert_eq!(accepted.title.as_deref(), Some("Edited title"));
+        let detail = service
+            .get_asset_detail(&root, &asset.id, None)
+            .expect("detail");
+        assert_eq!(detail.description.as_deref(), Some("Edited description"));
+        assert_eq!(
+            detail.schema_prompt.as_deref(),
+            Some("{\"OUTPUT\":{\"mood\":\"edited\"}}")
+        );
         assert!(service
             .list_pending(&root, &library.id)
             .expect("pending")
@@ -1716,16 +1832,47 @@ mod tests {
             })
             .expect("import");
 
+        assert!(service
+            .list_albums(&library.id)
+            .expect("list empty albums")
+            .is_empty());
+
         let album = service
             .create_manual_album(&library.id, "Favorites")
             .expect("album");
+        let albums = service.list_albums(&library.id).expect("list albums");
+        assert_eq!(albums.len(), 1);
+        assert_eq!(albums[0].id, album.id);
+        assert_eq!(albums[0].name, "Favorites");
+        assert_eq!(albums[0].kind, AlbumKind::Manual);
+        assert_eq!(albums[0].item_count, 0);
+
         service.add_asset(&album.id, &asset.id).expect("add asset");
+        service
+            .add_asset(&album.id, &asset.id)
+            .expect("duplicate add is no-op");
+        let albums = service.list_albums(&library.id).expect("list albums");
+        assert_eq!(albums[0].item_count, 1);
+
+        let album_results = service
+            .query_gallery(
+                &root,
+                GalleryQuery {
+                    album_id: Some(album.id.clone()),
+                    ..GalleryQuery::default()
+                },
+            )
+            .expect("query album gallery");
+        assert_eq!(album_results.len(), 1);
+        assert_eq!(album_results[0].id, asset.id);
+
         service
             .update_asset_metadata(UpdateAssetMetadataRequest {
                 library_path: root.clone(),
                 asset_id: asset.id.clone(),
                 title: None,
                 description: None,
+                schema_prompt: None,
                 rating: Some(5),
                 category: Some("icons".to_string()),
                 status: Some("curated".to_string()),
@@ -1839,6 +1986,7 @@ mod tests {
                 asset_id: first.id.clone(),
                 title: None,
                 description: None,
+                schema_prompt: None,
                 rating: Some(5),
                 category: Some("botanical".to_string()),
                 status: Some("curated".to_string()),
@@ -1850,6 +1998,7 @@ mod tests {
                 asset_id: second.id,
                 title: None,
                 description: None,
+                schema_prompt: None,
                 rating: Some(2),
                 category: Some("city".to_string()),
                 status: Some("imported".to_string()),
@@ -1884,6 +2033,7 @@ mod tests {
                 source: "fake".to_string(),
                 suggested_title: Some("Neon Botanical Study".to_string()),
                 suggested_description: None,
+                suggested_schema_prompt: None,
                 suggested_tags: vec!["neon".to_string()],
                 suggested_category: Some("botanical".to_string()),
                 confidence_json: "{}".to_string(),

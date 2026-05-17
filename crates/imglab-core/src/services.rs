@@ -55,6 +55,7 @@ pub trait MetadataReviewService {
 }
 
 pub trait AlbumService {
+    fn list_albums(&self, library_id: &LibraryId) -> DomainResult<Vec<AlbumListItem>>;
     fn create_manual_album(&self, library_id: &LibraryId, name: &str)
         -> DomainResult<AlbumSummary>;
     fn create_smart_album(&self, request: CreateSmartAlbumRequest) -> DomainResult<AlbumSummary>;

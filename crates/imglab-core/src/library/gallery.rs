@@ -176,6 +176,7 @@ impl GalleryReadService for LocalLibraryService {
             id: asset.id,
             title: asset.title,
             description: asset.description,
+            schema_prompt: asset.schema_prompt,
             category: asset.category,
             rating: asset.rating,
             status: asset.status,
@@ -373,6 +374,7 @@ struct AssetDetailBase {
     id: AssetId,
     title: Option<String>,
     description: Option<String>,
+    schema_prompt: Option<String>,
     category: Option<String>,
     rating: Option<u8>,
     status: String,
@@ -396,7 +398,7 @@ fn load_asset_detail_base(
     connection
         .query_row(
             "
-            SELECT id, title, description, category, rating, status, created_at, updated_at
+            SELECT id, title, description, schema_prompt, category, rating, status, created_at, updated_at
             FROM assets
             WHERE id = ?1
             ",
@@ -406,11 +408,12 @@ fn load_asset_detail_base(
                     id: AssetId(row.get(0)?),
                     title: row.get(1)?,
                     description: row.get(2)?,
-                    category: row.get(3)?,
-                    rating: row.get::<_, Option<u8>>(4)?,
-                    status: row.get(5)?,
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
+                    schema_prompt: row.get(3)?,
+                    category: row.get(4)?,
+                    rating: row.get::<_, Option<u8>>(5)?,
+                    status: row.get(6)?,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
                 })
             },
         )

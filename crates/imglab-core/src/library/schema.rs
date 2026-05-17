@@ -2,7 +2,7 @@ use super::database_error;
 use crate::{DomainError, DomainResult};
 use rusqlite::Connection;
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 2;
+pub const CURRENT_SCHEMA_VERSION: u32 = 3;
 
 pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
     let user_version: u32 = connection
@@ -25,6 +25,7 @@ pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
                 media_type TEXT NOT NULL,
                 title TEXT,
                 description TEXT,
+                schema_prompt TEXT,
                 category TEXT,
                 rating INTEGER,
                 status TEXT NOT NULL,
@@ -76,6 +77,7 @@ pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
                 source TEXT NOT NULL,
                 suggested_title TEXT,
                 suggested_description TEXT,
+                suggested_schema_prompt TEXT,
                 suggested_tags_json TEXT NOT NULL,
                 suggested_category TEXT,
                 confidence_json TEXT NOT NULL,
@@ -133,6 +135,23 @@ pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
     if !column_exists(connection, "asset_versions", "checksum")? {
         connection
             .execute("ALTER TABLE asset_versions ADD COLUMN checksum TEXT", [])
+            .map_err(database_error)?;
+    }
+    if !column_exists(connection, "assets", "schema_prompt")? {
+        connection
+            .execute("ALTER TABLE assets ADD COLUMN schema_prompt TEXT", [])
+            .map_err(database_error)?;
+    }
+    if !column_exists(
+        connection,
+        "metadata_suggestions",
+        "suggested_schema_prompt",
+    )? {
+        connection
+            .execute(
+                "ALTER TABLE metadata_suggestions ADD COLUMN suggested_schema_prompt TEXT",
+                [],
+            )
             .map_err(database_error)?;
     }
     connection

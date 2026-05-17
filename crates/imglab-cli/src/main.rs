@@ -297,6 +297,7 @@ fn rate(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainErro
         asset_id: imglab_core::AssetId(asset_id),
         title: None,
         description: None,
+        schema_prompt: None,
         rating: Some(rating),
         category: None,
         status: None,
@@ -397,6 +398,7 @@ fn suggestion(service: &LocalLibraryService, args: &[String]) -> Result<(), Doma
                         "asset_id": suggestion.asset_id.0,
                         "title": suggestion.suggested_title,
                         "description": suggestion.suggested_description,
+                        "schema_prompt": suggestion.suggested_schema_prompt,
                         "tags": suggestion.suggested_tags,
                         "category": suggestion.suggested_category,
                         "status": suggestion.status
@@ -415,6 +417,7 @@ fn suggestion(service: &LocalLibraryService, args: &[String]) -> Result<(), Doma
                     "asset_id": asset_id,
                     "title": option_value(args, "--title"),
                     "description": option_value(args, "--description"),
+                    "schema_prompt": option_value(args, "--schema-prompt"),
                     "tags": tags,
                     "category": option_value(args, "--category")
                 }));
@@ -427,6 +430,7 @@ fn suggestion(service: &LocalLibraryService, args: &[String]) -> Result<(), Doma
                 source: "cli".to_string(),
                 suggested_title: option_value(args, "--title"),
                 suggested_description: option_value(args, "--description"),
+                suggested_schema_prompt: option_value(args, "--schema-prompt"),
                 suggested_tags: tags,
                 suggested_category: option_value(args, "--category"),
                 confidence_json: option_value(args, "--confidence")
@@ -445,6 +449,7 @@ fn suggestion(service: &LocalLibraryService, args: &[String]) -> Result<(), Doma
                     "suggestion_id": suggestion_id,
                     "title": option_value(args, "--title"),
                     "description": option_value(args, "--description"),
+                    "schema_prompt": option_value(args, "--schema-prompt"),
                     "tags": tags,
                     "category": option_value(args, "--category")
                 }));
@@ -456,6 +461,7 @@ fn suggestion(service: &LocalLibraryService, args: &[String]) -> Result<(), Doma
                 suggestion_id: MetadataSuggestionId(suggestion_id),
                 title: option_value(args, "--title"),
                 description: option_value(args, "--description"),
+                schema_prompt: option_value(args, "--schema-prompt"),
                 tags,
                 category: option_value(args, "--category"),
             })?;

@@ -30,10 +30,10 @@ impl MetadataReviewService for LocalLibraryService {
                 "
                 INSERT INTO metadata_suggestions (
                     id, asset_id, source, suggested_title, suggested_description,
-                    suggested_tags_json, suggested_category, confidence_json,
+                    suggested_schema_prompt, suggested_tags_json, suggested_category, confidence_json,
                     status, created_at, reviewed_at
                 )
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending_review', ?9, NULL)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'pending_review', ?10, NULL)
                 ",
                 params![
                     suggestion_id.0,
@@ -41,6 +41,7 @@ impl MetadataReviewService for LocalLibraryService {
                     request.source,
                     request.suggested_title,
                     request.suggested_description,
+                    request.suggested_schema_prompt,
                     tags_json,
                     request.suggested_category,
                     request.confidence_json,
@@ -54,6 +55,7 @@ impl MetadataReviewService for LocalLibraryService {
             asset_id: request.asset_id,
             suggested_title: request.suggested_title,
             suggested_description: request.suggested_description,
+            suggested_schema_prompt: request.suggested_schema_prompt,
             suggested_tags: request.suggested_tags,
             suggested_category: request.suggested_category,
             confidence_json: request.confidence_json,
@@ -71,7 +73,8 @@ impl MetadataReviewService for LocalLibraryService {
             .prepare(
                 "
                 SELECT ms.id, ms.asset_id, ms.suggested_title, ms.suggested_description,
-                       ms.suggested_tags_json, ms.suggested_category, ms.confidence_json, ms.status
+                       ms.suggested_schema_prompt, ms.suggested_tags_json, ms.suggested_category,
+                       ms.confidence_json, ms.status
                 FROM metadata_suggestions ms
                 INNER JOIN assets a ON a.id = ms.asset_id
                 WHERE a.library_id = ?1 AND ms.status = 'pending_review'
@@ -89,6 +92,9 @@ impl MetadataReviewService for LocalLibraryService {
     fn accept(&self, request: ReviewMetadataSuggestionRequest) -> DomainResult<AssetSummary> {
         let connection = Self::open_library_database(&request.library_path)?;
         let suggestion = load_suggestion(&connection, &request.suggestion_id)?;
+        if let Some(category) = request.category.as_deref() {
+            ensure_existing_category(&connection, &suggestion.asset_id, category)?;
+        }
         let now = timestamp_string();
         let transaction = connection.unchecked_transaction().map_err(database_error)?;
 
@@ -96,12 +102,13 @@ impl MetadataReviewService for LocalLibraryService {
             .execute(
                 "
                 UPDATE assets
-                SET title = ?1, description = ?2, category = ?3, updated_at = ?4
-                WHERE id = ?5
+                SET title = ?1, description = ?2, schema_prompt = ?3, category = ?4, updated_at = ?5
+                WHERE id = ?6
                 ",
                 params![
                     request.title,
                     request.description,
+                    request.schema_prompt,
                     request.category,
                     now,
                     suggestion.asset_id.0
@@ -153,6 +160,31 @@ impl MetadataReviewService for LocalLibraryService {
     }
 }
 
+fn ensure_existing_category(
+    connection: &Connection,
+    asset_id: &AssetId,
+    category: &str,
+) -> DomainResult<()> {
+    let count: i64 = connection
+        .query_row(
+            "
+            SELECT COUNT(*)
+            FROM assets candidate
+            INNER JOIN assets target ON target.library_id = candidate.library_id
+            WHERE target.id = ?1 AND candidate.category = ?2
+            ",
+            params![asset_id.0, category],
+            |row| row.get(0),
+        )
+        .map_err(database_error)?;
+    if count == 0 {
+        return Err(DomainError::InvalidGenerationParameters {
+            message: format!("category must already exist in this library: {category}"),
+        });
+    }
+    Ok(())
+}
+
 pub(super) fn attach_tag(
     connection: &Connection,
     asset_id: &AssetId,
@@ -190,9 +222,9 @@ pub(super) fn attach_tag(
 }
 
 fn metadata_suggestion_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<MetadataSuggestion> {
-    let tags_json: String = row.get(4)?;
+    let tags_json: String = row.get(5)?;
     let suggested_tags = serde_json::from_str(&tags_json).map_err(|error| {
-        rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(error))
+        rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(error))
     })?;
 
     Ok(MetadataSuggestion {
@@ -200,10 +232,11 @@ fn metadata_suggestion_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Met
         asset_id: AssetId(row.get(1)?),
         suggested_title: row.get(2)?,
         suggested_description: row.get(3)?,
+        suggested_schema_prompt: row.get(4)?,
         suggested_tags,
-        suggested_category: row.get(5)?,
-        confidence_json: row.get(6)?,
-        status: row.get(7)?,
+        suggested_category: row.get(6)?,
+        confidence_json: row.get(7)?,
+        status: row.get(8)?,
     })
 }
 
@@ -215,7 +248,7 @@ fn load_suggestion(
         .query_row(
             "
             SELECT id, asset_id, suggested_title, suggested_description,
-                   suggested_tags_json, suggested_category, confidence_json, status
+                   suggested_schema_prompt, suggested_tags_json, suggested_category, confidence_json, status
             FROM metadata_suggestions
             WHERE id = ?1
             ",

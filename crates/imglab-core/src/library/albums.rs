@@ -7,13 +7,25 @@ use super::{
     LocalLibraryService,
 };
 use crate::{
-    AlbumId, AlbumKind, AlbumService, AlbumSummary, AssetId, DomainError, DomainResult, LibraryId,
-    LibraryService, UpdateAssetMetadataRequest,
+    AlbumId, AlbumKind, AlbumListItem, AlbumService, AlbumSummary, AssetId, DomainError,
+    DomainResult, LibraryId, LibraryService, UpdateAssetMetadataRequest,
 };
 use rusqlite::{params, Connection};
 use uuid::Uuid;
 
 impl AlbumService for LocalLibraryService {
+    fn list_albums(&self, library_id: &LibraryId) -> DomainResult<Vec<AlbumListItem>> {
+        let library = self
+            .list_libraries(true)?
+            .into_iter()
+            .find(|library| library.id == *library_id)
+            .ok_or_else(|| DomainError::LibraryNotFound {
+                path: library_id.0.clone(),
+            })?;
+        let connection = Self::open_library_database(&library.root_path)?;
+        list_albums(&connection)
+    }
+
     fn create_manual_album(
         &self,
         library_id: &LibraryId,
@@ -103,15 +115,17 @@ impl AlbumService for LocalLibraryService {
                 UPDATE assets
                 SET title = COALESCE(?1, title),
                     description = COALESCE(?2, description),
-                    rating = COALESCE(?3, rating),
-                    category = COALESCE(?4, category),
-                    status = COALESCE(?5, status),
-                    updated_at = ?6
-                WHERE id = ?7
+                    schema_prompt = COALESCE(?3, schema_prompt),
+                    rating = COALESCE(?4, rating),
+                    category = COALESCE(?5, category),
+                    status = COALESCE(?6, status),
+                    updated_at = ?7
+                WHERE id = ?8
                 ",
                 params![
                     request.title,
                     request.description,
+                    request.schema_prompt,
                     request.rating,
                     request.category,
                     request.status,
@@ -122,6 +136,33 @@ impl AlbumService for LocalLibraryService {
             .map_err(database_error)?;
         load_asset_summary(&connection, &request.asset_id)
     }
+}
+
+fn list_albums(connection: &Connection) -> DomainResult<Vec<AlbumListItem>> {
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT a.id, a.name, a.kind, COUNT(ai.asset_id) AS item_count
+            FROM albums a
+            LEFT JOIN album_items ai ON ai.album_id = a.id
+            GROUP BY a.id, a.name, a.kind
+            ORDER BY a.name
+            ",
+        )
+        .map_err(database_error)?;
+    let rows = statement
+        .query_map([], |row| {
+            let kind: String = row.get(2)?;
+            let count: i64 = row.get(3)?;
+            Ok(AlbumListItem {
+                id: AlbumId(row.get(0)?),
+                name: row.get(1)?,
+                kind: album_kind_from_str(&kind),
+                item_count: count.max(0) as u32,
+            })
+        })
+        .map_err(database_error)?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(database_error)
 }
 
 fn create_album(
@@ -150,6 +191,14 @@ fn create_album(
         name: name.to_string(),
         kind,
     })
+}
+
+fn album_kind_from_str(kind: &str) -> AlbumKind {
+    if kind == "smart" {
+        AlbumKind::Smart
+    } else {
+        AlbumKind::Manual
+    }
 }
 
 fn validate_smart_query(query_json: &str) -> DomainResult<()> {

@@ -22,14 +22,16 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   color: inherit;
   font: inherit;
 }
 
 button,
 select,
-input {
+input,
+textarea {
   border: 1px solid #d8d4cc;
   border-radius: 6px;
   background: #fffdfa;
@@ -47,9 +49,15 @@ button:disabled {
 }
 
 input,
-select {
+select,
+textarea {
   min-height: 34px;
   padding: 7px 10px;
+}
+
+textarea {
+  min-height: 92px;
+  resize: vertical;
 }
 
 .workbench {
@@ -400,6 +408,20 @@ select {
   text-align: left;
 }
 
+.asset-card-main {
+  border: 0;
+  border-radius: 6px;
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.card-review-button {
+  justify-self: start;
+}
+
 .asset-card.selected {
   border-color: #0b8589;
   box-shadow: 0 0 0 1px #0b8589;
@@ -466,7 +488,9 @@ select {
 }
 
 .list-view,
-.settings-grid {
+.settings-grid,
+.album-list,
+.review-list {
   display: grid;
   gap: 12px;
 }
@@ -474,7 +498,8 @@ select {
 .list-row,
 .settings-grid > div,
 .library-form,
-.inspector-section {
+.inspector-section,
+.workspace-panel {
   background: #fffdfa;
   border: 1px solid #ddd8cf;
   border-radius: 8px;
@@ -516,8 +541,215 @@ select {
 
 .settings-grid > div,
 .library-form,
-.inspector-section {
+.inspector-section,
+.workspace-panel {
   padding: 12px;
+}
+
+.albums-workspace,
+.review-workspace {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 280px minmax(0, 1fr);
+  padding-bottom: 40px;
+}
+
+.workspace-panel {
+  min-width: 0;
+}
+
+.panel-header {
+  align-items: start;
+  border-bottom: 1px solid #ece7de;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+}
+
+.panel-header h3,
+.panel-header p {
+  margin: 0;
+}
+
+.panel-header p {
+  color: #6e6a62;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.album-search-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-bottom: 12px;
+  position: relative;
+}
+
+.album-create-popover {
+  background: #fffdfa;
+  border: 1px solid #cfc8bd;
+  border-radius: 8px;
+  box-shadow: 0 18px 42px rgba(39, 48, 51, 0.16);
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: min(320px, 100%);
+  z-index: 5;
+}
+
+.album-create-popover label {
+  display: grid;
+  gap: 6px;
+}
+
+.album-create-popover span {
+  color: #6e6a62;
+  font-size: 12px;
+}
+
+.album-list-item,
+.review-list-item {
+  background: #fffdfa;
+  border: 1px solid #ddd8cf;
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  min-height: 70px;
+  padding: 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.album-list-item {
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.album-list-item.selected,
+.review-list-item.selected {
+  background: #edf5f4;
+  border-color: #0b8589;
+  box-shadow: 0 0 0 1px #0b8589;
+}
+
+.album-list-item small,
+.review-list-item span,
+.review-list-item small {
+  color: #6e6a62;
+  font-size: 12px;
+}
+
+.album-list-item strong,
+.album-list-item small,
+.review-list-item strong,
+.review-list-item span,
+.review-list-item small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact-grid {
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  padding-bottom: 0;
+}
+
+.compact-grid .asset-card {
+  min-height: 300px;
+}
+
+.review-form {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.review-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.review-form span {
+  align-items: center;
+  color: #6e6a62;
+  display: flex;
+  font-size: 12px;
+  justify-content: space-between;
+}
+
+.inline-action {
+  background: transparent;
+  border: 0;
+  color: #0b8589;
+  font-size: 12px;
+  min-height: 0;
+  padding: 0;
+}
+
+.wide-field {
+  grid-column: 1 / -1;
+}
+
+.schema-prompt-input {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  min-height: 220px;
+}
+
+.tag-editor-field {
+  display: grid;
+  gap: 6px;
+}
+
+.tag-chip-editor {
+  align-items: center;
+  border: 1px solid #d9d2c5;
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 42px;
+  padding: 6px;
+}
+
+.tag-chip-editor input {
+  border: 0;
+  flex: 1;
+  min-width: 140px;
+  outline: none;
+  padding: 6px;
+}
+
+.tag-chip.removable {
+  cursor: pointer;
+}
+
+.schema-prompt-preview {
+  background: #f8f4ec;
+  border: 1px solid #ece7de;
+  border-radius: 8px;
+  color: #3a332a;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.review-actions {
+  border-top: 1px solid #ece7de;
+  justify-content: flex-end;
+  margin-top: 14px;
+  padding-top: 12px;
 }
 
 .library-form {
@@ -605,6 +837,13 @@ select {
   min-width: 0;
   padding: 2px 8px;
   width: 96px;
+}
+
+.add-album-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-top: 10px;
 }
 
 .meta-row {
@@ -706,7 +945,10 @@ select {
   }
 
   .search-row,
-  .composer {
+  .composer,
+  .albums-workspace,
+  .review-workspace,
+  .review-form {
     grid-template-columns: 1fr;
   }
 

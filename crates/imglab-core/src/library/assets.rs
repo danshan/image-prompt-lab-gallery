@@ -55,10 +55,10 @@ impl AssetService for LocalLibraryService {
             .execute(
                 "
                 INSERT INTO assets (
-                    id, library_id, media_type, title, description, category,
+                    id, library_id, media_type, title, description, schema_prompt, category,
                     rating, status, created_at, updated_at, captured_at
                 )
-                VALUES (?1, ?2, ?3, NULL, NULL, NULL, NULL, ?4, ?5, ?5, NULL)
+                VALUES (?1, ?2, ?3, NULL, NULL, NULL, NULL, NULL, ?4, ?5, ?5, NULL)
                 ",
                 params![asset_id.0, manifest.id, mime_type, "imported", now],
             )
@@ -439,7 +439,7 @@ fn update_generation_event_output_version(
     Ok(())
 }
 
-fn default_title_from_prompt(prompt: &str) -> Option<String> {
+pub(super) fn default_title_from_prompt(prompt: &str) -> Option<String> {
     let stop_words = [
         "a", "an", "and", "as", "at", "by", "for", "from", "in", "into", "of", "on", "or", "the",
         "to", "with",

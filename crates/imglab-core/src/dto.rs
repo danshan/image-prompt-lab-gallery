@@ -310,6 +310,7 @@ pub struct AssetDetailView {
     pub id: AssetId,
     pub title: Option<String>,
     pub description: Option<String>,
+    pub schema_prompt: Option<String>,
     pub category: Option<String>,
     pub rating: Option<u8>,
     pub status: String,
@@ -334,6 +335,7 @@ pub struct MetadataSuggestion {
     pub asset_id: AssetId,
     pub suggested_title: Option<String>,
     pub suggested_description: Option<String>,
+    pub suggested_schema_prompt: Option<String>,
     pub suggested_tags: Vec<String>,
     pub suggested_category: Option<String>,
     pub confidence_json: String,
@@ -347,6 +349,7 @@ pub struct CreateMetadataSuggestionRequest {
     pub source: String,
     pub suggested_title: Option<String>,
     pub suggested_description: Option<String>,
+    pub suggested_schema_prompt: Option<String>,
     pub suggested_tags: Vec<String>,
     pub suggested_category: Option<String>,
     pub confidence_json: String,
@@ -358,6 +361,7 @@ pub struct ReviewMetadataSuggestionRequest {
     pub suggestion_id: MetadataSuggestionId,
     pub title: Option<String>,
     pub description: Option<String>,
+    pub schema_prompt: Option<String>,
     pub tags: Vec<String>,
     pub category: Option<String>,
 }
@@ -367,6 +371,14 @@ pub struct AlbumSummary {
     pub id: AlbumId,
     pub name: String,
     pub kind: AlbumKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlbumListItem {
+    pub id: AlbumId,
+    pub name: String,
+    pub kind: AlbumKind,
+    pub item_count: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -382,6 +394,7 @@ pub struct UpdateAssetMetadataRequest {
     pub asset_id: AssetId,
     pub title: Option<String>,
     pub description: Option<String>,
+    pub schema_prompt: Option<String>,
     pub rating: Option<u8>,
     pub category: Option<String>,
     pub status: Option<String>,

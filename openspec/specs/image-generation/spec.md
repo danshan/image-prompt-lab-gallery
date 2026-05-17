@@ -18,6 +18,21 @@ Define image generation flows, provider boundaries, metadata capture, and reques
 - **WHEN** 文生图成功创建新 asset
 - **THEN** 该 asset 的 Gallery read model 和 asset detail read model 能通过绑定的 generation event 返回 provider, model, prompt 和 parameters
 
+#### Scenario: 生成完成后保持当前 Workflow
+
+- **WHEN** 用户发起 Generate Image 且生成成功
+- **THEN** 系统创建 asset/version 和 generation event, Gallery 可展示生成结果, 桌面端保持用户当前 workflow
+
+#### Scenario: 生成产生 Pending Suggestion
+
+- **WHEN** 生成成功并创建 metadata suggestion
+- **THEN** 该 suggestion 出现在 Review Inbox, Review badge 更新, 可包含 title 和 JSON schema prompt draft, 且 asset detail 可展示 review pending state
+
+#### Scenario: Factual Generation Metadata 立即可见
+
+- **WHEN** 用户选择新生成的 asset
+- **THEN** Gallery 或 Inspector 可展示 provider, model, prompt, parameters, lineage 和 file metadata, 但 pending suggestion 的 title, schema prompt, tags, description 和 category 不得在接受前作为 canonical metadata 展示
+
 #### Scenario: 文生图创建默认 Title
 
 - **WHEN** 文生图成功创建新 asset 且用户尚未提供 canonical title

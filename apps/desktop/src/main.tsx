@@ -3,15 +3,23 @@ import ReactDOM from "react-dom/client";
 import { convertFileSrc, invoke as tauriInvoke } from "@tauri-apps/api/core";
 import {
   acceptSuggestionState,
+  addReviewFormTag,
   applyGalleryQuery,
   beginDetailLoad,
+  clearAlbumQuery,
+  clearCurationStateForLibrarySwitch,
   clearSelectionForLibrarySwitch,
   completeDetailLoad,
+  createReviewFormState,
   defaultGalleryQuery,
   failDetailLoad,
   formatAspectRatio,
-  rejectSuggestionState,
+  markAssetReviewPending,
+  openAlbumQuery,
+  removeSuggestionState,
+  removeReviewFormTag,
   resetGalleryQuery,
+  reviewFormTags,
   toggleGalleryProvider,
   toggleGalleryTag,
   updateGalleryQuery,
@@ -20,6 +28,7 @@ import {
   type GalleryQueryState,
   type GallerySort,
   type JobStatus,
+  type ReviewFormState,
   type ReviewStatusFilter,
 } from "./workbench-state";
 import "./styles.css";
@@ -110,6 +119,13 @@ type Album = {
   count?: number;
 };
 
+type AlbumListItem = {
+  id: string;
+  name: string;
+  kind: "manual" | "smart";
+  itemCount: number | null;
+};
+
 type FileContext = {
   filename: string;
   relativeLocation: string;
@@ -126,6 +142,7 @@ type AssetDetail = {
   id: string;
   title: string | null;
   description: string | null;
+  schemaPrompt: string | null;
   category: string | null;
   rating: number | null;
   status: string;
@@ -149,6 +166,7 @@ type Suggestion = {
   assetId: string;
   title: string | null;
   description: string | null;
+  schemaPrompt: string | null;
   tags: string[];
   category: string | null;
   status: string;
@@ -204,6 +222,31 @@ const mockLibraryStatus: LibraryStatus = {
   integrityStatus: "healthy",
   integrityIssueCount: 0,
 };
+
+const mockSchemaPrompt = `// VERSION: 0.1
+// AESTHETIC: botanical neon study
+{
+  "GLOBAL_SETTINGS": {
+    "aspect_ratio": "1:1 square",
+    "style": "high-contrast digital illustration",
+    "clarity": "sharp foreground, luminous line detail",
+    "render_flags": ["sharp_foreground", "micro_texture", "editorial_finish"]
+  },
+  "ENVIRONMENT": {
+    "background": "dark studio backdrop",
+    "lighting": "neon rim light with controlled glow",
+    "atmosphere": ["botanical glow", "clean negative space"]
+  },
+  "CORE_ASSETS": {
+    "primary_subject": "exotic botanical study",
+    "materials": ["luminous line art", "delicate petal texture"],
+    "composition": "centered specimen layout"
+  },
+  "OUTPUT": {
+    "mood": "elegant, vivid, editorial",
+    "avoid": ["muddy contrast", "generic flower clipart", "fake brand logos"]
+  }
+}`;
 
 const mockGallery: GalleryAsset[] = [
   {
@@ -333,6 +376,7 @@ const mockDetail: AssetDetail = {
   id: "asset-botanical",
   title: "Neon Botanical Study",
   description: "Elegant high-contrast botanical illustration.",
+  schemaPrompt: mockSchemaPrompt,
   category: "study",
   rating: 5,
   status: "generated",
@@ -410,12 +454,19 @@ const mockDetail: AssetDetail = {
   },
 };
 
+const mockAlbumList: AlbumListItem[] = [
+  { id: "album-nature", name: "Nature Studies", kind: "manual", itemCount: 18 },
+  { id: "album-neon", name: "Neon & Glow", kind: "manual", itemCount: 11 },
+  { id: "album-product", name: "Product Shots", kind: "manual", itemCount: 6 },
+];
+
 const mockSuggestions: Suggestion[] = [
   {
     id: "suggestion-1",
     assetId: "asset-botanical",
     title: "Neon Botanical Study",
     description: "High-contrast botanical line art.",
+    schemaPrompt: mockSchemaPrompt,
     tags: ["botanical", "neon", "study"],
     category: "study",
     status: "pending_review",
@@ -448,7 +499,19 @@ function App() {
     loading: false,
     error: null,
   });
-  const [suggestions, setSuggestions] = useState<Suggestion[]>(mockSuggestions);
+  const [albums, setAlbums] = useState<AlbumListItem[]>(runningInTauri ? [] : mockAlbumList);
+  const [selectedAlbumId, setSelectedAlbumId] = useState<string | null>(null);
+  const [albumSearchInput, setAlbumSearchInput] = useState("");
+  const [albumNameInput, setAlbumNameInput] = useState("");
+  const [albumCreateOpen, setAlbumCreateOpen] = useState(false);
+  const [albumLoading, setAlbumLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>(runningInTauri ? [] : mockSuggestions);
+  const [selectedSuggestionId, setSelectedSuggestionId] = useState<string | null>(
+    runningInTauri ? null : mockSuggestions[0]?.id ?? null,
+  );
+  const [reviewForm, setReviewForm] = useState<ReviewFormState | null>(
+    runningInTauri && mockSuggestions[0] ? null : createReviewFormState(mockSuggestions[0]),
+  );
   const [queue, setQueue] = useState<QueueJob[]>(mockQueue);
   const [prompt, setPrompt] = useState("");
   const [provider, setProvider] = useState("codex-cli");
@@ -467,8 +530,17 @@ function App() {
     [displayedGallery, selectedAssetId],
   );
   const pendingSuggestions = suggestions.filter((suggestion) => suggestion.status === "pending_review");
+  const selectedSuggestion =
+    pendingSuggestions.find((suggestion) => suggestion.id === selectedSuggestionId) ?? pendingSuggestions[0] ?? null;
   const availableTags = useMemo(
     () => Array.from(new Set((runningInTauri ? gallery : mockGallery).flatMap((asset) => asset.tags))).sort(),
+    [runningInTauri, gallery],
+  );
+  const availableCategories = useMemo(
+    () =>
+      Array.from(
+        new Set((runningInTauri ? gallery : mockGallery).map((asset) => asset.category).filter((category): category is string => Boolean(category))),
+      ).sort(),
     [runningInTauri, gallery],
   );
 
@@ -483,6 +555,25 @@ function App() {
       void refreshGallery();
     }
   }, [runningInTauri, library?.rootPath, query]);
+
+  useEffect(() => {
+    if (runningInTauri && library) {
+      void refreshAlbums();
+      void refreshSuggestions();
+    }
+  }, [runningInTauri, library?.rootPath]);
+
+  useEffect(() => {
+    if (!selectedSuggestion) {
+      setSelectedSuggestionId(null);
+      setReviewForm(null);
+      return;
+    }
+    if (reviewForm?.suggestionId !== selectedSuggestion.id) {
+      setSelectedSuggestionId(selectedSuggestion.id);
+      setReviewForm(createReviewFormState(selectedSuggestion));
+    }
+  }, [selectedSuggestion?.id]);
 
   useEffect(() => {
     if (!selectedAsset) {
@@ -522,12 +613,61 @@ function App() {
     }
   }
 
+  async function refreshAlbums() {
+    if (!runningInTauri || !library) {
+      setAlbums([]);
+      return;
+    }
+    setAlbumLoading(true);
+    try {
+      const items = await invokeCommand<AlbumListItem[]>("list_albums", { libraryPath: library.rootPath });
+      setAlbums(items);
+      setSelectedAlbumId((current) => (current && items.some((item) => item.id === current) ? current : null));
+      setRecoverableError(null);
+    } catch (error) {
+      setAlbums([]);
+      setRecoverableError(errorMessage(error));
+    } finally {
+      setAlbumLoading(false);
+    }
+  }
+
+  async function refreshSuggestions() {
+    if (!runningInTauri || !library) {
+      setSuggestions([]);
+      setSelectedSuggestionId(null);
+      setReviewForm(null);
+      return;
+    }
+    try {
+      const items = await invokeCommand<Suggestion[]>("list_pending_suggestions", { libraryPath: library.rootPath });
+      setSuggestions(items);
+      setSelectedSuggestionId((current) => (current && items.some((item) => item.id === current) ? current : items[0]?.id ?? null));
+      setRecoverableError(null);
+    } catch (error) {
+      setSuggestions([]);
+      setSelectedSuggestionId(null);
+      setReviewForm(null);
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
   function switchLibrary(libraryId: string) {
     const nextLibrary = libraries.find((item) => item.id === libraryId) ?? null;
+    const cleared = clearCurationStateForLibrarySwitch();
     setLibrary(nextLibrary);
     setSelectedAssetId("");
     setDetailState(clearSelectionForLibrarySwitch());
     setGallery([]);
+      setAlbums(runningInTauri ? [] : mockAlbumList);
+      setSelectedAlbumId(cleared.selectedAlbumId);
+      setAlbumSearchInput("");
+      setAlbumNameInput("");
+      setAlbumCreateOpen(false);
+      setSelectedSuggestionId(cleared.selectedSuggestionId);
+    setReviewForm(cleared.reviewForm);
+    setSuggestions(runningInTauri ? [] : mockSuggestions);
+    setQuery(clearAlbumQuery(query));
     setRecoverableError(null);
     setLibraryPathInput(nextLibrary?.rootPath ?? "");
     setStatus(nextLibrary ? "Library switched" : "No library selected");
@@ -590,6 +730,17 @@ function App() {
       setLibrary(created);
       setLibraryStatus(null);
       setGallery([]);
+      setAlbums([]);
+      setAlbumSearchInput("");
+      setAlbumNameInput("");
+      setAlbumCreateOpen(false);
+      setSuggestions([]);
+      setSelectedAlbumId(null);
+      setAlbumSearchInput("");
+      setAlbumNameInput("");
+      setAlbumCreateOpen(false);
+      setSelectedSuggestionId(null);
+      setReviewForm(null);
       setSelectedAssetId("");
       setStatus("Library created");
     } catch (error) {
@@ -609,6 +760,9 @@ function App() {
       setLibraries((current) => [opened, ...current.filter((item) => item.id !== opened.id)]);
       setLibrary(opened);
       setLibraryStatus(null);
+      setSelectedAlbumId(null);
+      setSelectedSuggestionId(null);
+      setReviewForm(null);
       setStatus("Library opened");
     } catch (error) {
       setStatus(errorMessage(error));
@@ -681,6 +835,7 @@ function App() {
       if (job.status === "completed") {
         setStatus(`${job.versions.length} version generated`);
         await refreshGallery();
+        await refreshSuggestions();
         return;
       }
       if (job.status === "failed") {
@@ -772,6 +927,135 @@ function App() {
     }
   }
 
+  async function createAlbum() {
+    const name = albumNameInput.trim();
+    if (!library || name.length === 0) {
+      return;
+    }
+    if (!runningInTauri) {
+      const created: AlbumListItem = {
+        id: `album-${crypto.randomUUID()}`,
+        name,
+        kind: "manual",
+        itemCount: 0,
+      };
+      setAlbums((current) => [created, ...current]);
+      setAlbumNameInput("");
+      setAlbumSearchInput("");
+      setAlbumCreateOpen(false);
+      setSelectedAlbumId(created.id);
+      setQuery((current) => openAlbumQuery(current, created.id));
+      setStatus("Album created");
+      setRecoverableError(null);
+      return;
+    }
+    try {
+      const created = await invokeCommand<Album>("create_manual_album", {
+        input: {
+          libraryPath: library.rootPath,
+          name,
+        },
+      });
+      setAlbumNameInput("");
+      setAlbumSearchInput("");
+      setAlbumCreateOpen(false);
+      await refreshAlbums();
+      setSelectedAlbumId(created.id);
+      setQuery((current) => openAlbumQuery(current, created.id));
+      setStatus("Album created");
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
+  function openAlbum(albumId: string) {
+    setSelectedAlbumId(albumId);
+    setQuery((current) => openAlbumQuery(current, albumId));
+    setActiveView("albums");
+  }
+
+  function closeAlbum() {
+    setSelectedAlbumId(null);
+    setQuery((current) => clearAlbumQuery(current));
+  }
+
+  async function addSelectedAssetToAlbum(albumId: string) {
+    const detail = detailState.detail;
+    if (!library || !detail || albumId.length === 0) {
+      return;
+    }
+    if (!runningInTauri) {
+      const album = albums.find((item) => item.id === albumId);
+      if (!album) {
+        return;
+      }
+      const alreadyInAlbum = detail.albums.some((item) => item.id === albumId);
+      setDetailState((current) =>
+        current.detail
+          ? {
+              ...current,
+              detail: {
+                ...current.detail,
+                albums: alreadyInAlbum
+                  ? current.detail.albums
+                  : [...current.detail.albums, { id: album.id, name: album.name, kind: album.kind }],
+              },
+            }
+          : current,
+      );
+      if (!alreadyInAlbum) {
+        setAlbums((current) =>
+          current.map((item) =>
+            item.id === albumId ? { ...item, itemCount: (item.itemCount ?? 0) + 1 } : item,
+          ),
+        );
+      }
+      setStatus(alreadyInAlbum ? "Asset already in album" : "Asset added to album");
+      setRecoverableError(null);
+      return;
+    }
+    try {
+      await invokeCommand("add_asset_to_album", {
+        input: {
+          albumId,
+          assetId: detail.id,
+        },
+      });
+      await refreshAlbums();
+      await refreshGallery();
+      await loadAssetDetail(detail.id, selectedAsset?.currentVersionId ?? null);
+      setStatus("Asset added to album");
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
+  function selectSuggestion(suggestion: Suggestion) {
+    setSelectedSuggestionId(suggestion.id);
+    setReviewForm(createReviewFormState(suggestion));
+  }
+
+  async function acceptReviewForm() {
+    if (!library || !selectedSuggestion || !reviewForm) {
+      return;
+    }
+    const finalForm = addReviewFormTag(reviewForm, reviewForm.tagInput);
+    const finalSuggestion: Suggestion = {
+      ...selectedSuggestion,
+      title: finalForm.title.trim() || null,
+      description: finalForm.description.trim() || null,
+      schemaPrompt: finalForm.schemaPrompt.trim() || null,
+      tags: reviewFormTags(finalForm),
+      category:
+        finalForm.category.trim() && availableCategories.includes(finalForm.category.trim())
+          ? finalForm.category.trim()
+          : null,
+    };
+    await acceptSuggestion(finalSuggestion);
+  }
+
   async function acceptSuggestion(suggestion: Suggestion) {
     if (!library) {
       return;
@@ -783,6 +1067,7 @@ function App() {
           suggestionId: suggestion.id,
           title: suggestion.title,
           description: suggestion.description,
+          schemaPrompt: suggestion.schemaPrompt,
           tags: suggestion.tags,
           category: suggestion.category,
         },
@@ -793,30 +1078,90 @@ function App() {
           assetId: asset.id,
           title: asset.title,
           description: suggestion.description,
+          schemaPrompt: suggestion.schemaPrompt,
           category: asset.category,
           tags: suggestion.tags,
           status: suggestion.status,
         });
         return state.assets;
       });
-      setSuggestions((current) => rejectSuggestionState(current, suggestion.id));
+      setSuggestions((current) => removeSuggestionState(current, suggestion.id));
       await refreshGallery();
+      if (detailState.detail?.id === asset.id) {
+        await loadAssetDetail(asset.id, selectedAsset?.currentVersionId ?? null);
+      }
+      await refreshSuggestions();
+      setReviewForm(null);
     } catch (error) {
       setRecoverableError(errorMessage(error));
     }
   }
 
-  async function rejectSuggestion(suggestion: Suggestion) {
+  function restoreReviewForm() {
+    if (selectedSuggestion) {
+      setReviewForm(createReviewFormState(selectedSuggestion));
+    }
+  }
+
+  function regenerateReviewField(field: "title" | "description" | "schemaPrompt") {
+    if (!reviewForm || !selectedSuggestion) {
+      return;
+    }
+    const asset = gallery.find((item) => item.id === selectedSuggestion.assetId) ?? selectedAsset;
+    const sourceText = asset?.prompt ?? selectedSuggestion.title ?? reviewForm.title;
+    if (field === "title") {
+      setReviewForm({ ...reviewForm, title: titleFromPrompt(sourceText) });
+      return;
+    }
+    if (field === "description") {
+      setReviewForm({ ...reviewForm, description: descriptionFromPrompt(sourceText) });
+      return;
+    }
+    setReviewForm({ ...reviewForm, schemaPrompt: schemaPromptFromAsset(asset, sourceText) });
+  }
+
+  async function requestAssetReview(asset: GalleryAsset) {
+    const existing = pendingSuggestions.find((suggestion) => suggestion.assetId === asset.id);
+    if (existing) {
+      setSelectedSuggestionId(existing.id);
+      setReviewForm(createReviewFormState(existing));
+      setActiveView("review");
+      return;
+    }
     if (!library) {
-      setSuggestions((current) => rejectSuggestionState(current, suggestion.id));
+      const suggestion = suggestionFromAsset(asset);
+      setSuggestions((current) => [suggestion, ...current.filter((item) => item.assetId !== asset.id)]);
+      setGallery((current) => markAssetReviewPending(current, asset.id));
+      setDetailState((current) =>
+        current.detail?.id === asset.id
+          ? { ...current, detail: { ...current.detail, reviewPendingCount: Math.max(current.detail.reviewPendingCount, 1) } }
+          : current,
+      );
+      setSelectedSuggestionId(suggestion.id);
+      setActiveView("review");
       return;
     }
     try {
-      await invokeCommand("reject_suggestion", {
-        libraryPath: library.rootPath,
-        suggestionId: suggestion.id,
+      const suggestion = await invokeCommand<Suggestion>("create_suggestion", {
+        input: {
+          libraryPath: library.rootPath,
+          assetId: asset.id,
+          title: asset.title,
+          description: null,
+          schemaPrompt: schemaPromptFromAsset(asset, asset.prompt ?? asset.title ?? ""),
+          tags: asset.tags,
+          category: asset.category && availableCategories.includes(asset.category) ? asset.category : null,
+          confidenceJson: JSON.stringify({ source: "manual_re_review" }),
+        },
       });
-      setSuggestions((current) => rejectSuggestionState(current, suggestion.id));
+      setGallery((current) => markAssetReviewPending(current, asset.id));
+      setSelectedSuggestionId(suggestion.id);
+      setActiveView("review");
+      await refreshGallery();
+      await refreshSuggestions();
+      if (detailState.detail?.id === asset.id) {
+        await loadAssetDetail(asset.id, asset.currentVersionId);
+      }
     } catch (error) {
       setRecoverableError(errorMessage(error));
     }
@@ -873,11 +1218,40 @@ function App() {
             availableTags={availableTags}
             onSelect={setSelectedAssetId}
             onQueryChange={setQuery}
+            onRequestReview={(asset) => void requestAssetReview(asset)}
           />
         )}
-        {activeView === "albums" && <AlbumsView gallery={displayedGallery} />}
+        {activeView === "albums" && (
+          <AlbumsView
+            albums={albums}
+            selectedAlbumId={selectedAlbumId}
+            gallery={displayedGallery}
+            loading={albumLoading}
+            searchValue={albumSearchInput}
+            onSearchChange={setAlbumSearchInput}
+            newAlbumName={albumNameInput}
+            onNewAlbumNameChange={setAlbumNameInput}
+            createOpen={albumCreateOpen}
+            onCreateOpenChange={setAlbumCreateOpen}
+            onCreateAlbum={() => void createAlbum()}
+            onOpenAlbum={openAlbum}
+            onCloseAlbum={closeAlbum}
+            onSelectAsset={setSelectedAssetId}
+          />
+        )}
         {activeView === "review" && (
-          <ReviewInbox suggestions={pendingSuggestions} onAccept={acceptSuggestion} onReject={rejectSuggestion} />
+          <ReviewInbox
+            suggestions={pendingSuggestions}
+            selectedSuggestion={selectedSuggestion}
+            form={reviewForm}
+            onSelect={selectSuggestion}
+            onFormChange={setReviewForm}
+            availableTags={availableTags}
+            availableCategories={availableCategories}
+            onRestore={restoreReviewForm}
+            onRegenerateField={regenerateReviewField}
+            onAccept={() => void acceptReviewForm()}
+          />
         )}
         {activeView === "queue" && <GenerationQueue queue={queue} />}
         {activeView === "settings" && (
@@ -900,6 +1274,8 @@ function App() {
         onUpdateRating={updateRating}
         onUpdateTitle={(title) => void updateTitle(title)}
         onAddTag={(tag) => void addTagToSelectedAsset(tag)}
+        albums={albums}
+        onAddToAlbum={(albumId) => void addSelectedAssetToAlbum(albumId)}
         onGenerateVariation={() => {
           const versionId = detail?.lineage[0]?.version.id ?? detail?.versions[0]?.id ?? selectedAsset?.currentVersionId ?? null;
           void startGeneration(versionId);
@@ -1155,6 +1531,7 @@ function GalleryView({
   availableTags,
   onSelect,
   onQueryChange,
+  onRequestReview,
 }: {
   assets: GalleryAsset[];
   selectedAssetId: string;
@@ -1162,6 +1539,7 @@ function GalleryView({
   availableTags: string[];
   onSelect: (id: string) => void;
   onQueryChange: (query: GalleryQueryState) => void;
+  onRequestReview: (asset: GalleryAsset) => void;
 }) {
   if (assets.length === 0) {
     return <div className="empty-state">No assets match the current query.</div>;
@@ -1181,13 +1559,14 @@ function GalleryView({
       </div>
       <section className="gallery-grid">
         {assets.map((asset, index) => (
-          <button
+          <article
             key={asset.id}
             className={asset.id === selectedAssetId ? "asset-card selected" : "asset-card"}
-            onClick={() => onSelect(asset.id)}
           >
-            <Thumbnail asset={asset} index={index} />
-            <span className="asset-title">{asset.title ?? "Untitled"}</span>
+            <button className="asset-card-main" onClick={() => onSelect(asset.id)}>
+              <Thumbnail asset={asset} index={index} />
+              <span className="asset-title">{asset.title ?? "Untitled"}</span>
+            </button>
             <span className="provider-pill">{asset.provider ?? "Unknown provider"}</span>
             <StarRatingDisplay rating={asset.rating} />
             {asset.reviewPendingCount > 0 && <span className="review-badge">Review pending</span>}
@@ -1200,7 +1579,10 @@ function GalleryView({
               <span>{asset.versionLabel ?? "v1"}</span>
               <span>{asset.versionCount} version{asset.versionCount === 1 ? "" : "s"}</span>
             </span>
-          </button>
+            <button className="card-review-button" onClick={() => onRequestReview(asset)}>
+              Review
+            </button>
+          </article>
         ))}
       </section>
     </>
@@ -1216,49 +1598,298 @@ function Thumbnail({ asset, index }: { asset: GalleryAsset; index: number }) {
   );
 }
 
-function AlbumsView({ gallery }: { gallery: GalleryAsset[] }) {
-  const groups = groupByProvider(gallery);
+function AlbumsView({
+  albums,
+  selectedAlbumId,
+  gallery,
+  loading,
+  searchValue,
+  onSearchChange,
+  newAlbumName,
+  onNewAlbumNameChange,
+  createOpen,
+  onCreateOpenChange,
+  onCreateAlbum,
+  onOpenAlbum,
+  onCloseAlbum,
+  onSelectAsset,
+}: {
+  albums: AlbumListItem[];
+  selectedAlbumId: string | null;
+  gallery: GalleryAsset[];
+  loading: boolean;
+  searchValue: string;
+  onSearchChange: (value: string) => void;
+  newAlbumName: string;
+  onNewAlbumNameChange: (value: string) => void;
+  createOpen: boolean;
+  onCreateOpenChange: (open: boolean) => void;
+  onCreateAlbum: () => void;
+  onOpenAlbum: (albumId: string) => void;
+  onCloseAlbum: () => void;
+  onSelectAsset: (assetId: string) => void;
+}) {
+  const selectedAlbum = albums.find((album) => album.id === selectedAlbumId) ?? null;
+  const searchNeedle = searchValue.trim().toLocaleLowerCase();
+  const visibleAlbums =
+    searchNeedle.length === 0
+      ? albums
+      : albums.filter((album) => album.name.toLocaleLowerCase().includes(searchNeedle));
   return (
-    <section className="list-view">
-      {groups.map((group) => (
-        <article className="list-row" key={group.name}>
+    <section className="albums-workspace">
+      <div className="workspace-panel album-list-panel">
+        <div className="panel-header">
           <div>
-            <h3>{group.name}</h3>
-            <p>manual</p>
+            <h3>Albums</h3>
+            <p>{loading ? "Loading albums..." : `${albums.length} album${albums.length === 1 ? "" : "s"}`}</p>
           </div>
-          <strong>{group.count}</strong>
-        </article>
-      ))}
+        </div>
+        <div className="album-search-row">
+          <input
+            value={searchValue}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="Search albums"
+          />
+          <button className="icon-button" aria-label="Create album" onClick={() => onCreateOpenChange(!createOpen)}>
+            +
+          </button>
+          {createOpen && (
+            <div className="album-create-popover">
+              <label>
+                <span>Album name</span>
+                <input
+                  value={newAlbumName}
+                  autoFocus
+                  onChange={(event) => onNewAlbumNameChange(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      onCreateAlbum();
+                    }
+                    if (event.key === "Escape") {
+                      onCreateOpenChange(false);
+                    }
+                  }}
+                  placeholder="New manual album"
+                />
+              </label>
+              <div className="row-actions">
+                <button onClick={() => onCreateOpenChange(false)}>Cancel</button>
+                <button className="primary-button" disabled={newAlbumName.trim().length === 0} onClick={onCreateAlbum}>
+                  Create
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+        {albums.length === 0 ? (
+          <div className="empty-state compact">No albums yet.</div>
+        ) : visibleAlbums.length === 0 ? (
+          <div className="empty-state compact">No albums match the search.</div>
+        ) : (
+          <div className="album-list">
+            {visibleAlbums.map((album) => (
+              <button
+                key={album.id}
+                className={album.id === selectedAlbumId ? "album-list-item selected" : "album-list-item"}
+                onClick={() => onOpenAlbum(album.id)}
+              >
+                <span>
+                  <strong>{album.name}</strong>
+                  <small>{album.kind}</small>
+                </span>
+                <strong>{album.itemCount ?? "-"}</strong>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="workspace-panel album-detail-panel">
+        <div className="panel-header">
+          <div>
+            <h3>{selectedAlbum?.name ?? "Select an album"}</h3>
+            <p>
+              {selectedAlbum
+                ? `${selectedAlbum.kind} album · ${gallery.length} visible item${gallery.length === 1 ? "" : "s"}`
+                : "Open an album to view its assets."}
+            </p>
+          </div>
+          {selectedAlbum && <button onClick={onCloseAlbum}>All assets</button>}
+        </div>
+        {!selectedAlbum ? (
+          <div className="empty-state">Choose an album from the list.</div>
+        ) : gallery.length === 0 ? (
+          <div className="empty-state">This album is empty.</div>
+        ) : (
+          <section className="gallery-grid compact-grid">
+            {gallery.map((asset, index) => (
+              <button key={asset.id} className="asset-card" onClick={() => onSelectAsset(asset.id)}>
+                <Thumbnail asset={asset} index={index} />
+                <span className="asset-title">{asset.title ?? "Untitled"}</span>
+                <span className="provider-pill">{asset.provider ?? "Unknown provider"}</span>
+                <StarRatingDisplay rating={asset.rating} />
+                {asset.reviewPendingCount > 0 && <span className="review-badge">Review pending</span>}
+              </button>
+            ))}
+          </section>
+        )}
+      </div>
     </section>
   );
 }
 
 function ReviewInbox({
   suggestions,
+  selectedSuggestion,
+  form,
+  onSelect,
+  onFormChange,
+  availableTags,
+  availableCategories,
+  onRestore,
+  onRegenerateField,
   onAccept,
-  onReject,
 }: {
   suggestions: Suggestion[];
-  onAccept: (suggestion: Suggestion) => void;
-  onReject: (suggestion: Suggestion) => void;
+  selectedSuggestion: Suggestion | null;
+  form: ReviewFormState | null;
+  onSelect: (suggestion: Suggestion) => void;
+  onFormChange: (form: ReviewFormState) => void;
+  availableTags: string[];
+  availableCategories: string[];
+  onRestore: () => void;
+  onRegenerateField: (field: "title" | "description" | "schemaPrompt") => void;
+  onAccept: () => void;
 }) {
   if (suggestions.length === 0) {
     return <div className="empty-state">No pending suggestions.</div>;
   }
   return (
-    <section className="list-view">
-      {suggestions.map((suggestion) => (
-        <article className="list-row review-row" key={suggestion.id}>
+    <section className="review-workspace">
+      <div className="workspace-panel review-list-panel">
+        <div className="panel-header">
           <div>
-            <h3>{suggestion.title ?? "Untitled suggestion"}</h3>
-            <p>{suggestion.tags.join(", ") || "No tags"}</p>
+            <h3>Pending review</h3>
+            <p>{suggestions.length} suggestion{suggestions.length === 1 ? "" : "s"}</p>
           </div>
-          <div className="row-actions">
-            <button onClick={() => onAccept(suggestion)}>Accept</button>
-            <button onClick={() => onReject(suggestion)}>Reject</button>
-          </div>
-        </article>
-      ))}
+        </div>
+        <div className="review-list">
+          {suggestions.map((suggestion) => (
+            <button
+              className={suggestion.id === selectedSuggestion?.id ? "review-list-item selected" : "review-list-item"}
+              key={suggestion.id}
+              onClick={() => onSelect(suggestion)}
+            >
+              <strong>{suggestion.title ?? "Untitled suggestion"}</strong>
+              <span>{suggestion.category ?? "No category"}</span>
+              <small>{suggestion.tags.join(", ") || "No tags"}</small>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="workspace-panel review-detail-panel">
+        {!selectedSuggestion || !form ? (
+          <div className="empty-state">Select a suggestion to review.</div>
+        ) : (
+          <>
+            <div className="panel-header">
+              <div>
+                <h3>Review metadata</h3>
+                <p>Status: {selectedSuggestion.status}</p>
+              </div>
+              <span className="review-badge">Review pending</span>
+            </div>
+            <div className="review-form">
+              <label>
+                <span>
+                  Title
+                  <button type="button" className="inline-action" onClick={() => onRegenerateField("title")}>
+                    Regenerate
+                  </button>
+                </span>
+                <input value={form.title} onChange={(event) => onFormChange({ ...form, title: event.target.value })} />
+              </label>
+              <label>
+                <span>Category</span>
+                <select
+                  className="select-control"
+                  value={form.category}
+                  onChange={(event) => onFormChange({ ...form, category: event.target.value })}
+                >
+                  <option value="">No category</option>
+                  {availableCategories.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="wide-field">
+                <span>
+                  Description
+                  <button type="button" className="inline-action" onClick={() => onRegenerateField("description")}>
+                    Regenerate
+                  </button>
+                </span>
+                <textarea
+                  value={form.description}
+                  onChange={(event) => onFormChange({ ...form, description: event.target.value })}
+                />
+              </label>
+              <label className="wide-field">
+                <span>
+                  JSON Schema Prompt
+                  <button type="button" className="inline-action" onClick={() => onRegenerateField("schemaPrompt")}>
+                    Regenerate
+                  </button>
+                </span>
+                <textarea
+                  className="schema-prompt-input"
+                  value={form.schemaPrompt}
+                  onChange={(event) => onFormChange({ ...form, schemaPrompt: event.target.value })}
+                  spellCheck={false}
+                />
+              </label>
+              <div className="wide-field tag-editor-field">
+                <span>Tags</span>
+                <div className="tag-chip-editor">
+                  {form.tags.map((tag) => (
+                    <button
+                      key={tag}
+                      className="tag-chip removable"
+                      onClick={() => onFormChange(removeReviewFormTag(form, tag))}
+                    >
+                      {tag} x
+                    </button>
+                  ))}
+                  <input
+                    list="review-tag-options"
+                    value={form.tagInput}
+                    onChange={(event) => onFormChange({ ...form, tagInput: event.target.value })}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        onFormChange(addReviewFormTag(form, form.tagInput));
+                      }
+                    }}
+                    placeholder="Add tag"
+                  />
+                  <datalist id="review-tag-options">
+                    {availableTags.map((tag) => (
+                      <option key={tag} value={tag} />
+                    ))}
+                  </datalist>
+                </div>
+              </div>
+            </div>
+            <div className="row-actions review-actions">
+              <button onClick={onRestore}>Restore</button>
+              <button className="primary-button" onClick={onAccept}>
+                Accept changes
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </section>
   );
 }
@@ -1338,6 +1969,8 @@ function Inspector({
   onUpdateRating,
   onUpdateTitle,
   onAddTag,
+  albums,
+  onAddToAlbum,
   onGenerateVariation,
 }: {
   asset: GalleryAsset | null;
@@ -1345,6 +1978,8 @@ function Inspector({
   onUpdateRating: (rating: number) => void;
   onUpdateTitle: (title: string) => void;
   onAddTag: (tag: string) => void;
+  albums: AlbumListItem[];
+  onAddToAlbum: (albumId: string) => void;
   onGenerateVariation: () => void;
 }) {
   const detail = detailState.detail;
@@ -1352,11 +1987,13 @@ function Inspector({
   const [tagEditorOpen, setTagEditorOpen] = useState(false);
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleInput, setTitleInput] = useState("");
+  const [albumToAdd, setAlbumToAdd] = useState("");
   useEffect(() => {
     setTagInput("");
     setTagEditorOpen(false);
     setTitleEditing(false);
     setTitleInput(detail?.title ?? asset?.title ?? "");
+    setAlbumToAdd("");
   }, [detail?.id, detail?.title, asset?.title]);
   const submitTag = () => {
     const trimmed = tagInput.trim();
@@ -1440,7 +2077,14 @@ function Inspector({
       <InspectorSection title="Provider & Model">
         <MetaRow label="Provider" value={detail.provider ?? asset.provider ?? "-"} />
         <MetaRow label="Model" value={detail.modelLabel ?? asset.modelLabel ?? "-"} />
+        <MetaRow label="Category" value={detail.category ?? asset.category ?? "-"} />
         <MetaRow label="Parameters" value={detail.parametersJson ?? "-"} />
+      </InspectorSection>
+      <InspectorSection title="Description">
+        <p>{detail.description ?? "No description."}</p>
+      </InspectorSection>
+      <InspectorSection title="JSON Schema Prompt">
+        <pre className="schema-prompt-preview">{detail.schemaPrompt ?? "No schema prompt."}</pre>
       </InspectorSection>
       <InspectorSection title="Tags">
         <div className="tag-list">
@@ -1486,7 +2130,28 @@ function Inspector({
         ) : (
           detail.albums.map((album) => <MetaRow key={album.id} label={album.kind} value={album.name} />)
         )}
-        <button className="text-button">Add to album</button>
+        <div className="add-album-row">
+          <select className="select-control" value={albumToAdd} onChange={(event) => setAlbumToAdd(event.target.value)}>
+            <option value="">Add to album</option>
+            {albums
+              .filter((album) => album.kind === "manual")
+              .map((album) => (
+                <option key={album.id} value={album.id}>
+                  {album.name}
+                </option>
+              ))}
+          </select>
+          <button
+            className="mini-button"
+            disabled={albumToAdd.length === 0}
+            onClick={() => {
+              onAddToAlbum(albumToAdd);
+              setAlbumToAdd("");
+            }}
+          >
+            Add
+          </button>
+        </div>
       </InspectorSection>
       <InspectorSection title="Versions & Lineage">
         <div className="lineage-list">
@@ -1549,7 +2214,7 @@ function galleryQueryInput(libraryPath: string, query: GalleryQueryState) {
     reviewStatus: query.reviewStatus,
     tags: query.tags,
     sort: query.sort,
-    albumId: null,
+    albumId: query.albumId,
   };
 }
 
@@ -1601,6 +2266,64 @@ function mockDetailFor(asset: GalleryAsset): AssetDetail {
         }
       : null,
   };
+}
+
+function suggestionFromAsset(asset: GalleryAsset): Suggestion {
+  return {
+    id: `suggestion-${asset.id}-${Date.now()}`,
+    assetId: asset.id,
+    title: asset.title,
+    description: null,
+    schemaPrompt: schemaPromptFromAsset(asset, asset.prompt ?? asset.title ?? ""),
+    tags: asset.tags,
+    category: asset.category,
+    status: "pending_review",
+  };
+}
+
+function titleFromPrompt(prompt: string | null | undefined): string {
+  const words = (prompt ?? "")
+    .split(/[^a-zA-Z0-9]+/)
+    .map((word) => word.trim().toLowerCase())
+    .filter((word) => word.length > 0 && !["a", "an", "and", "the", "of", "with", "to", "for"].includes(word))
+    .slice(0, 6)
+    .map((word) => word.slice(0, 1).toUpperCase() + word.slice(1));
+  return words.join(" ") || "Untitled Review";
+}
+
+function descriptionFromPrompt(prompt: string | null | undefined): string {
+  const text = (prompt ?? "").trim();
+  if (!text) {
+    return "Generated visual asset prepared for metadata review.";
+  }
+  return `Review draft based on the generation prompt: ${text}`;
+}
+
+function schemaPromptFromAsset(asset: GalleryAsset | null | undefined, sourceText: string): string {
+  const aspectRatio = asset?.width && asset.height ? formatAspectRatio(asset.width, asset.height) : "unspecified";
+  const schema = {
+    GLOBAL_SETTINGS: {
+      aspect_ratio: aspectRatio,
+      style: "derived from current asset and prompt",
+      clarity: "sharp foreground, visible subject detail",
+      render_flags: ["sharp_foreground", "micro_texture", "editorial_finish"],
+    },
+    ENVIRONMENT: {
+      background: "preserve the generated image environment cues",
+      lighting: "preserve visible lighting direction and contrast",
+      atmosphere: ["match final image mood", "avoid unsupported scene changes"],
+    },
+    CORE_ASSETS: {
+      primary_subject: sourceText || asset?.title || "reviewed image asset",
+      materials: ["infer visible materials from final image"],
+      composition: "preserve generated composition and camera framing",
+    },
+    OUTPUT: {
+      mood: "match accepted visual direction",
+      avoid: ["cheap e-commerce banner", "plastic CGI", "fake brand logos"],
+    },
+  };
+  return `// VERSION: 0.1\n// AESTHETIC: review draft\n${JSON.stringify(schema, null, 2)}`;
 }
 
 function thumbnailStyle(index: number): React.CSSProperties {
@@ -1690,15 +2413,6 @@ function formatResolution(width: number | null, height: number | null) {
 
 function formatChecksum(file: FileContext) {
   return `${file.checksumAlgorithm}: ${file.checksum}`;
-}
-
-function groupByProvider(gallery: GalleryAsset[]) {
-  const counts = new Map<string, number>();
-  for (const asset of gallery) {
-    const key = asset.provider ?? "Unknown provider";
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  return Array.from(counts.entries()).map(([name, count]) => ({ name, count }));
 }
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
