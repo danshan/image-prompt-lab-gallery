@@ -87,6 +87,11 @@ type GalleryAsset = {
   updatedAt: string;
 };
 
+type LightboxImage = {
+  path: string;
+  label: string;
+};
+
 type AssetView = {
   id: string;
   title: string | null;
@@ -293,6 +298,11 @@ const mockSchemaPrompt = `// VERSION: 0.1
   }
 }`;
 
+function mockImageDataUrl(startColor: string, endColor: string) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${startColor}"/><stop offset="100%" stop-color="${endColor}"/></linearGradient></defs><rect width="1024" height="1024" fill="url(#g)"/></svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
 const mockGallery: GalleryAsset[] = [
   {
     id: "asset-botanical",
@@ -307,7 +317,7 @@ const mockGallery: GalleryAsset[] = [
     tags: ["botanical", "neon", "study"],
     reviewPendingCount: 1,
     currentVersionId: "version-botanical-3",
-    imagePath: null,
+    imagePath: mockImageDataUrl("#05151b", "#d69a2d"),
     width: 1024,
     height: 1024,
     versionLabel: "v3",
@@ -327,7 +337,7 @@ const mockGallery: GalleryAsset[] = [
     tags: ["landscape", "mountain", "lake"],
     reviewPendingCount: 1,
     currentVersionId: "version-alpine-2",
-    imagePath: null,
+    imagePath: mockImageDataUrl("#485368", "#ff9d78"),
     width: 1792,
     height: 1024,
     versionLabel: "v2",
@@ -347,7 +357,7 @@ const mockGallery: GalleryAsset[] = [
     tags: ["solarpunk", "interior", "architecture"],
     reviewPendingCount: 0,
     currentVersionId: "version-atrium-4",
-    imagePath: null,
+    imagePath: mockImageDataUrl("#f7f5ee", "#4c6b63"),
     width: 1344,
     height: 1024,
     versionLabel: "v4",
@@ -367,7 +377,7 @@ const mockGallery: GalleryAsset[] = [
     tags: ["canyon", "abstract", "geology"],
     reviewPendingCount: 0,
     currentVersionId: "version-canyon-1",
-    imagePath: null,
+    imagePath: mockImageDataUrl("#cc522c", "#4c1639"),
     width: null,
     height: null,
     versionLabel: "v1",
@@ -387,7 +397,7 @@ const mockGallery: GalleryAsset[] = [
     tags: ["sci-fi", "space", "outpost"],
     reviewPendingCount: 1,
     currentVersionId: "version-orbital-2",
-    imagePath: null,
+    imagePath: mockImageDataUrl("#111827", "#c3a978"),
     width: 1024,
     height: 1024,
     versionLabel: "v2",
@@ -407,7 +417,7 @@ const mockGallery: GalleryAsset[] = [
     tags: ["city", "night", "rain"],
     reviewPendingCount: 0,
     currentVersionId: "version-tokyo-3",
-    imagePath: null,
+    imagePath: mockImageDataUrl("#04283f", "#d98646"),
     width: 1024,
     height: 1536,
     versionLabel: "v3",
@@ -574,6 +584,7 @@ function App() {
   const [selectedLogPath, setSelectedLogPath] = useState<string | null>(null);
   const [selectedLogContent, setSelectedLogContent] = useState<AppLogContent | null>(null);
   const [logContentLoading, setLogContentLoading] = useState(false);
+  const [lightboxImage, setLightboxImage] = useState<LightboxImage | null>(null);
   const logReadRequestRef = useRef<string | null>(null);
 
   const displayedGallery = useMemo(
@@ -1845,11 +1856,20 @@ function App() {
         onAddTag={(tag) => void addTagToSelectedAsset(tag)}
         albums={albums}
         onAddToAlbum={(albumId) => void addSelectedAssetToAlbum(albumId)}
+        onPreviewImage={(asset) => {
+          if (asset.imagePath) {
+            setLightboxImage({
+              path: asset.imagePath,
+              label: asset.title ?? "Generated image",
+            });
+          }
+        }}
         onGenerateVariation={() => {
           const versionId = detail?.lineage[0]?.version.id ?? detail?.versions[0]?.id ?? selectedAsset?.currentVersionId ?? null;
           void startGeneration(versionId);
         }}
       />
+      {lightboxImage && <ImageLightbox image={lightboxImage} onClose={() => setLightboxImage(null)} />}
     </main>
   );
 }
@@ -2176,6 +2196,35 @@ function Thumbnail({ asset, index }: { asset: GalleryAsset; index: number }) {
     <span className="thumbnail" style={style}>
       {asset.imagePath && <img alt={asset.title ?? "Generated image"} src={convertImagePath(asset.imagePath)} />}
     </span>
+  );
+}
+
+function ImageLightbox({ image, onClose }: { image: LightboxImage; onClose: () => void }) {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  const closeFromBackdrop = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget) {
+      onClose();
+    }
+  };
+
+  return (
+    <div className="image-lightbox" role="dialog" aria-modal="true" aria-label={image.label} onClick={closeFromBackdrop}>
+      <button className="image-lightbox-close" aria-label="Close image preview" onClick={onClose}>
+        X
+      </button>
+      <div className="image-lightbox-frame">
+        <img alt={image.label} src={convertImagePath(image.path)} onClick={(event) => event.stopPropagation()} />
+      </div>
+    </div>
   );
 }
 
@@ -3022,6 +3071,7 @@ function Inspector({
   onAddTag,
   albums,
   onAddToAlbum,
+  onPreviewImage,
   onGenerateVariation,
 }: {
   asset: GalleryAsset | null;
@@ -3031,6 +3081,7 @@ function Inspector({
   onAddTag: (tag: string) => void;
   albums: AlbumListItem[];
   onAddToAlbum: (albumId: string) => void;
+  onPreviewImage: (asset: GalleryAsset) => void;
   onGenerateVariation: () => void;
 }) {
   const detail = detailState.detail;
@@ -3089,7 +3140,13 @@ function Inspector({
   return (
     <aside className="inspector">
       <section className="inspector-hero">
-        <Thumbnail asset={asset} index={0} />
+        {asset.imagePath ? (
+          <button className="inspector-thumbnail-button" aria-label="Open full image preview" onClick={() => onPreviewImage(asset)}>
+            <Thumbnail asset={asset} index={0} />
+          </button>
+        ) : (
+          <Thumbnail asset={asset} index={0} />
+        )}
         <div>
           {titleEditing ? (
             <input

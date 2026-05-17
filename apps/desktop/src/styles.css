@@ -441,14 +441,6 @@ textarea {
   width: 100%;
 }
 
-.thumbnail::after {
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  border-radius: inherit;
-  content: "";
-  inset: 8px;
-  position: absolute;
-}
-
 .star-rating {
   align-items: center;
   color: #8a6a00;
@@ -922,9 +914,76 @@ textarea {
   width: 118px;
 }
 
+.inspector-thumbnail-button {
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: zoom-in;
+  height: 118px;
+  padding: 0;
+  width: 118px;
+}
+
+.inspector-thumbnail-button:focus-visible {
+  outline: 2px solid #0b8589;
+  outline-offset: 3px;
+}
+
 .inspector-hero div {
   display: grid;
   gap: 7px;
+}
+
+.image-lightbox {
+  align-items: center;
+  background: rgba(18, 17, 15, 0.88);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 32px;
+  position: fixed;
+  z-index: 1000;
+}
+
+.image-lightbox-frame {
+  align-items: center;
+  display: flex;
+  height: calc(100vh - 64px);
+  justify-content: center;
+  max-height: calc(100vh - 64px);
+  max-width: calc(100vw - 64px);
+  pointer-events: none;
+  width: calc(100vw - 64px);
+}
+
+.image-lightbox-frame img {
+  display: block;
+  max-height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+  pointer-events: auto;
+}
+
+.image-lightbox-close {
+  align-items: center;
+  background: #fffdfa;
+  border: 1px solid #ddd8cf;
+  border-radius: 4px;
+  color: #2a2926;
+  cursor: pointer;
+  display: inline-flex;
+  height: 36px;
+  justify-content: center;
+  position: fixed;
+  right: 24px;
+  top: 24px;
+  width: 36px;
+  z-index: 1001;
+}
+
+.image-lightbox-close:focus-visible {
+  outline: 2px solid #f0c96d;
+  outline-offset: 2px;
 }
 
 .editable-title {
