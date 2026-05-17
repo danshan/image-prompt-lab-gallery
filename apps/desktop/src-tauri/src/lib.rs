@@ -1,3 +1,7 @@
+mod app_logs;
+mod metadata_generation;
+
+use app_logs::{AppLogContentView, AppLogView, ReadAppLogInput};
 use imglab_core::{
     prepare_generation_request, AlbumService, AssetId, AssetService, CreateLibraryRequest,
     CreateMetadataSuggestionRequest, DomainError, ExportLibraryRequest, GalleryQuery,
@@ -8,6 +12,9 @@ use imglab_core::{
     ReviewStatusFilter, SearchQuery, SearchService, UpdateAssetMetadataRequest,
 };
 use imglab_provider_codex::CodexCliImageProvider;
+use metadata_generation::{
+    CodexCliMetadataGenerator, GenerateReviewFieldInput, GeneratedReviewFieldView,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -710,6 +717,31 @@ fn accept_suggestion(input: ReviewSuggestionInput) -> Result<AssetView, CommandE
         .map_err(Into::into)
 }
 
+#[tauri::command]
+async fn generate_review_field(
+    input: GenerateReviewFieldInput,
+) -> Result<GeneratedReviewFieldView, CommandError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        CodexCliMetadataGenerator::new("codex", &input.library_path).generate(&input)
+    })
+    .await
+    .map_err(|error| CommandError {
+        code: "MetadataGenerationFailed".to_string(),
+        message: format!("metadata generation worker failed: {error}"),
+        recoverable: true,
+    })?
+}
+
+#[tauri::command]
+fn list_app_logs() -> Result<Vec<AppLogView>, CommandError> {
+    app_logs::list_app_logs()
+}
+
+#[tauri::command]
+fn read_app_log(input: ReadAppLogInput) -> Result<AppLogContentView, CommandError> {
+    app_logs::read_app_log(&input.path)
+}
+
 fn run_generation<P>(
     provider: P,
     request: GenerateImageRequest,
@@ -1042,7 +1074,10 @@ pub fn run() {
             add_asset_to_album,
             create_suggestion,
             list_pending_suggestions,
-            accept_suggestion
+            accept_suggestion,
+            generate_review_field,
+            list_app_logs,
+            read_app_log
         ])
         .run(tauri::generate_context!())
         .expect("failed to run desktop application");

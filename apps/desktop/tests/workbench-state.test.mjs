@@ -4,15 +4,19 @@ import {
   acceptSuggestionState,
   applyGalleryQuery,
   beginDetailLoad,
+  beginReviewFieldGeneration,
   clearAlbumQuery,
   clearCurationStateForLibrarySwitch,
   clearSelectionForLibrarySwitch,
   completeDetailLoad,
+  completeReviewFieldGeneration,
   createReviewFormState,
   defaultGalleryQuery,
+  failReviewFieldGeneration,
   failDetailLoad,
   formatAspectRatio,
   addReviewFormTag,
+  isReviewFieldGenerating,
   markAssetReviewPending,
   openAlbumQuery,
   removeReviewFormTag,
@@ -141,12 +145,104 @@ test("review form state is initialized from suggestion and parses tags", () => {
   assert.equal(form.description, "Suggested description");
   assert.equal(form.schemaPrompt, "{\"OUTPUT\":{\"mood\":\"editorial\"}}");
   assert.equal(form.category, "study");
+  assert.equal(form.generation.title.loading, false);
   assert.deepEqual(form.tags, ["botanical", "neon"]);
   const added = addReviewFormTag({ ...form, tagInput: " neon " }, " neon ");
   assert.deepEqual(added.tags, ["botanical", "neon"]);
   assert.deepEqual(addReviewFormTag(added, "study").tags, ["botanical", "neon", "study"]);
   assert.deepEqual(removeReviewFormTag(added, "neon").tags, ["botanical"]);
   assert.deepEqual(reviewFormTags({ ...form, tags: [" botanical ", "", "neon"] }), ["botanical", "neon"]);
+});
+
+test("review field generation tracks loading per field and updates only the completed field", () => {
+  const form = createReviewFormState({
+    id: "suggestion-1",
+    title: "Old title",
+    description: "Old description",
+    schemaPrompt: "{}",
+    category: null,
+    tags: [],
+  });
+
+  const loading = beginReviewFieldGeneration(form, "title", "request-1");
+  assert.equal(isReviewFieldGenerating(loading, "title"), true);
+  assert.equal(isReviewFieldGenerating(loading, "description"), false);
+
+  const completed = completeReviewFieldGeneration(
+    loading,
+    "suggestion-1",
+    "title",
+    "request-1",
+    "New title",
+    "/tmp/imglab-codex-metadata-1.log",
+  );
+
+  assert.equal(completed.title, "New title");
+  assert.equal(completed.description, "Old description");
+  assert.equal(completed.generation.title.loading, false);
+  assert.equal(completed.generation.title.logPath, "/tmp/imglab-codex-metadata-1.log");
+});
+
+test("review field generation failure preserves the draft", () => {
+  const form = beginReviewFieldGeneration(
+    createReviewFormState({
+      id: "suggestion-1",
+      title: "Draft title",
+      description: "Draft description",
+      schemaPrompt: "{}",
+      category: null,
+      tags: [],
+    }),
+    "description",
+    "request-1",
+  );
+
+  const failed = failReviewFieldGeneration(
+    form,
+    "suggestion-1",
+    "description",
+    "request-1",
+    "codex failed",
+  );
+
+  assert.equal(failed.description, "Draft description");
+  assert.equal(failed.generation.description.loading, false);
+  assert.equal(failed.generation.description.error, "codex failed");
+});
+
+test("review field generation ignores stale responses", () => {
+  const form = beginReviewFieldGeneration(
+    createReviewFormState({
+      id: "suggestion-1",
+      title: "Draft title",
+      description: "",
+      schemaPrompt: "{}",
+      category: null,
+      tags: [],
+    }),
+    "title",
+    "request-1",
+  );
+
+  const wrongSuggestion = completeReviewFieldGeneration(
+    form,
+    "suggestion-2",
+    "title",
+    "request-1",
+    "Wrong title",
+  );
+  const wrongRequest = completeReviewFieldGeneration(
+    form,
+    "suggestion-1",
+    "title",
+    "request-2",
+    "Wrong title",
+  );
+
+  assert.equal(wrongSuggestion.title, "Draft title");
+  assert.equal(wrongSuggestion.generation.title.loading, true);
+  assert.equal(wrongRequest.title, "Draft title");
+  assert.equal(wrongRequest.generation.title.loading, true);
 });
 
 test("detail load helpers model loading lifecycle", () => {

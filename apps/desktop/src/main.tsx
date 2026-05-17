@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { convertFileSrc, invoke as tauriInvoke } from "@tauri-apps/api/core";
 import {
@@ -6,14 +6,18 @@ import {
   addReviewFormTag,
   applyGalleryQuery,
   beginDetailLoad,
+  beginReviewFieldGeneration,
   clearAlbumQuery,
   clearCurationStateForLibrarySwitch,
   clearSelectionForLibrarySwitch,
   completeDetailLoad,
+  completeReviewFieldGeneration,
   createReviewFormState,
   defaultGalleryQuery,
   failDetailLoad,
+  failReviewFieldGeneration,
   formatAspectRatio,
+  isReviewFieldGenerating,
   markAssetReviewPending,
   openAlbumQuery,
   removeSuggestionState,
@@ -28,6 +32,7 @@ import {
   type GalleryQueryState,
   type GallerySort,
   type JobStatus,
+  type ReviewFieldName,
   type ReviewFormState,
   type ReviewStatusFilter,
 } from "./workbench-state";
@@ -196,6 +201,26 @@ type CommandError = {
   code?: string;
   message?: string;
   recoverable?: boolean;
+};
+
+type GeneratedReviewField = {
+  field: ReviewFieldName;
+  value: string;
+  logPath: string;
+};
+
+type AppLog = {
+  path: string;
+  kind: string;
+  modifiedAt: string;
+  sizeBytes: number;
+  preview: string;
+};
+
+type AppLogContent = {
+  path: string;
+  content: string;
+  truncated: boolean;
 };
 
 const mockLibrary: Library = {
@@ -520,6 +545,12 @@ function App() {
   const [recoverableError, setRecoverableError] = useState<string | null>(null);
   const [libraryPathInput, setLibraryPathInput] = useState("");
   const [libraryNameInput, setLibraryNameInput] = useState("Image Prompt Lab");
+  const [appLogs, setAppLogs] = useState<AppLog[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [selectedLogPath, setSelectedLogPath] = useState<string | null>(null);
+  const [selectedLogContent, setSelectedLogContent] = useState<AppLogContent | null>(null);
+  const [logContentLoading, setLogContentLoading] = useState(false);
+  const logReadRequestRef = useRef<string | null>(null);
 
   const displayedGallery = useMemo(
     () => (runningInTauri ? gallery : applyGalleryQuery(mockGallery, query)),
@@ -562,6 +593,12 @@ function App() {
       void refreshSuggestions();
     }
   }, [runningInTauri, library?.rootPath]);
+
+  useEffect(() => {
+    if (activeView === "settings") {
+      void refreshAppLogs();
+    }
+  }, [activeView, runningInTauri]);
 
   useEffect(() => {
     if (!selectedSuggestion) {
@@ -649,6 +686,68 @@ function App() {
       setSelectedSuggestionId(null);
       setReviewForm(null);
       setRecoverableError(errorMessage(error));
+    }
+  }
+
+  async function refreshAppLogs() {
+    setLogsLoading(true);
+    try {
+      if (!runningInTauri) {
+        setAppLogs([]);
+        setSelectedLogPath(null);
+        setSelectedLogContent(null);
+        setRecoverableError(null);
+        return;
+      }
+      const logs = await invokeCommand<AppLog[]>("list_app_logs");
+      setAppLogs(logs);
+      setSelectedLogPath((current) => {
+        const next = current && logs.some((log) => log.path === current) ? current : logs[0]?.path ?? null;
+        if (!next) {
+          setSelectedLogContent(null);
+        } else if (next !== current) {
+          void readAppLog(next);
+        }
+        return next;
+      });
+      setRecoverableError(null);
+    } catch (error) {
+      setAppLogs([]);
+      setSelectedLogPath(null);
+      setSelectedLogContent(null);
+      setRecoverableError(errorMessage(error));
+    } finally {
+      setLogsLoading(false);
+    }
+  }
+
+  async function readAppLog(path: string) {
+    const requestId = crypto.randomUUID();
+    logReadRequestRef.current = requestId;
+    setSelectedLogPath(path);
+    setLogContentLoading(true);
+    try {
+      if (!runningInTauri) {
+        if (logReadRequestRef.current === requestId) {
+          setSelectedLogContent(null);
+        }
+        setRecoverableError(null);
+        return;
+      }
+      const content = await invokeCommand<AppLogContent>("read_app_log", { input: { path } });
+      if (logReadRequestRef.current === requestId && content.path === path) {
+        setSelectedLogContent(content);
+      }
+      setRecoverableError(null);
+    } catch (error) {
+      if (logReadRequestRef.current === requestId) {
+        setSelectedLogContent(null);
+      }
+      setRecoverableError(errorMessage(error));
+    } finally {
+      if (logReadRequestRef.current === requestId) {
+        setLogContentLoading(false);
+      }
     }
   }
 
@@ -1103,21 +1202,75 @@ function App() {
     }
   }
 
-  function regenerateReviewField(field: "title" | "description" | "schemaPrompt") {
+  async function regenerateReviewField(field: ReviewFieldName) {
     if (!reviewForm || !selectedSuggestion) {
       return;
     }
+    if (isReviewFieldGenerating(reviewForm, field)) {
+      return;
+    }
+    const requestId = crypto.randomUUID();
+    const suggestionId = selectedSuggestion.id;
+    setReviewForm(beginReviewFieldGeneration(reviewForm, field, requestId));
     const asset = gallery.find((item) => item.id === selectedSuggestion.assetId) ?? selectedAsset;
     const sourceText = asset?.prompt ?? selectedSuggestion.title ?? reviewForm.title;
-    if (field === "title") {
-      setReviewForm({ ...reviewForm, title: titleFromPrompt(sourceText) });
+    if (!runningInTauri) {
+      const value = previewGeneratedReviewField(field, asset, sourceText);
+      setReviewForm((current) =>
+        current
+          ? completeReviewFieldGeneration(current, suggestionId, field, requestId, value, null)
+          : current,
+      );
       return;
     }
-    if (field === "description") {
-      setReviewForm({ ...reviewForm, description: descriptionFromPrompt(sourceText) });
+    if (!library) {
+      setReviewForm((current) =>
+        current
+          ? failReviewFieldGeneration(
+              current,
+              suggestionId,
+              field,
+              requestId,
+              "Open a real library before regenerating review metadata.",
+            )
+          : current,
+      );
       return;
     }
-    setReviewForm({ ...reviewForm, schemaPrompt: schemaPromptFromAsset(asset, sourceText) });
+    try {
+      await nextAnimationFrame();
+      const result = await invokeCommand<GeneratedReviewField>("generate_review_field", {
+        input: {
+          libraryPath: library.rootPath,
+          assetId: selectedSuggestion.assetId,
+          suggestionId,
+          field,
+          context: reviewFieldContext(reviewForm, selectedSuggestion, asset),
+        },
+      });
+      setReviewForm((current) =>
+        current
+          ? completeReviewFieldGeneration(
+              current,
+              suggestionId,
+              field,
+              requestId,
+              result.value,
+              result.logPath,
+            )
+          : current,
+      );
+      setRecoverableError(null);
+      void refreshAppLogs();
+    } catch (error) {
+      const message = errorMessage(error);
+      setReviewForm((current) =>
+        current
+          ? failReviewFieldGeneration(current, suggestionId, field, requestId, message, null)
+          : current,
+      );
+      setRecoverableError(message);
+    }
   }
 
   async function requestAssetReview(asset: GalleryAsset) {
@@ -1249,7 +1402,7 @@ function App() {
             availableTags={availableTags}
             availableCategories={availableCategories}
             onRestore={restoreReviewForm}
-            onRegenerateField={regenerateReviewField}
+            onRegenerateField={(field) => void regenerateReviewField(field)}
             onAccept={() => void acceptReviewForm()}
           />
         )}
@@ -1264,6 +1417,13 @@ function App() {
             onLibraryNameChange={setLibraryNameInput}
             onCreate={createLibrary}
             onOpen={openLibrary}
+            logs={appLogs}
+            logsLoading={logsLoading}
+            selectedLogPath={selectedLogPath}
+            selectedLogContent={selectedLogContent}
+            logContentLoading={logContentLoading}
+            onRefreshLogs={() => void refreshAppLogs()}
+            onSelectLog={(path) => void readAppLog(path)}
           />
         )}
       </section>
@@ -1757,7 +1917,7 @@ function ReviewInbox({
   availableTags: string[];
   availableCategories: string[];
   onRestore: () => void;
-  onRegenerateField: (field: "title" | "description" | "schemaPrompt") => void;
+  onRegenerateField: (field: ReviewFieldName) => void;
   onAccept: () => void;
 }) {
   if (suggestions.length === 0) {
@@ -1802,11 +1962,14 @@ function ReviewInbox({
               <label>
                 <span>
                   Title
-                  <button type="button" className="inline-action" onClick={() => onRegenerateField("title")}>
-                    Regenerate
-                  </button>
+                  <ReviewFieldGenerateButton form={form} field="title" onRegenerateField={onRegenerateField} />
                 </span>
-                <input value={form.title} onChange={(event) => onFormChange({ ...form, title: event.target.value })} />
+                <input
+                  value={form.title}
+                  disabled={isReviewFieldGenerating(form, "title")}
+                  onChange={(event) => onFormChange({ ...form, title: event.target.value })}
+                />
+                <ReviewFieldGenerationStatus form={form} field="title" />
               </label>
               <label>
                 <span>Category</span>
@@ -1826,28 +1989,28 @@ function ReviewInbox({
               <label className="wide-field">
                 <span>
                   Description
-                  <button type="button" className="inline-action" onClick={() => onRegenerateField("description")}>
-                    Regenerate
-                  </button>
+                  <ReviewFieldGenerateButton form={form} field="description" onRegenerateField={onRegenerateField} />
                 </span>
                 <textarea
                   value={form.description}
+                  disabled={isReviewFieldGenerating(form, "description")}
                   onChange={(event) => onFormChange({ ...form, description: event.target.value })}
                 />
+                <ReviewFieldGenerationStatus form={form} field="description" />
               </label>
               <label className="wide-field">
                 <span>
                   JSON Schema Prompt
-                  <button type="button" className="inline-action" onClick={() => onRegenerateField("schemaPrompt")}>
-                    Regenerate
-                  </button>
+                  <ReviewFieldGenerateButton form={form} field="schemaPrompt" onRegenerateField={onRegenerateField} />
                 </span>
                 <textarea
                   className="schema-prompt-input"
                   value={form.schemaPrompt}
+                  disabled={isReviewFieldGenerating(form, "schemaPrompt")}
                   onChange={(event) => onFormChange({ ...form, schemaPrompt: event.target.value })}
                   spellCheck={false}
                 />
+                <ReviewFieldGenerationStatus form={form} field="schemaPrompt" />
               </label>
               <div className="wide-field tag-editor-field">
                 <span>Tags</span>
@@ -1894,6 +2057,42 @@ function ReviewInbox({
   );
 }
 
+function ReviewFieldGenerateButton({
+  form,
+  field,
+  onRegenerateField,
+}: {
+  form: ReviewFormState;
+  field: ReviewFieldName;
+  onRegenerateField: (field: ReviewFieldName) => void;
+}) {
+  const loading = isReviewFieldGenerating(form, field);
+  return (
+    <button
+      type="button"
+      className="inline-action"
+      disabled={loading}
+      onClick={() => onRegenerateField(field)}
+    >
+      {loading ? "Generating..." : "Regenerate"}
+    </button>
+  );
+}
+
+function ReviewFieldGenerationStatus({
+  form,
+  field,
+}: {
+  form: ReviewFormState;
+  field: ReviewFieldName;
+}) {
+  const state = form.generation[field];
+  if (state.error) {
+    return <small className="field-status error-text">Generation failed. Check the message above or Settings Logs.</small>;
+  }
+  return null;
+}
+
 function GenerationQueue({ queue }: { queue: QueueJob[] }) {
   return (
     <section className="list-view">
@@ -1921,6 +2120,13 @@ function SettingsView({
   onLibraryNameChange,
   onCreate,
   onOpen,
+  logs,
+  logsLoading,
+  selectedLogPath,
+  selectedLogContent,
+  logContentLoading,
+  onRefreshLogs,
+  onSelectLog,
 }: {
   library: Library | null;
   libraries: Library[];
@@ -1930,6 +2136,13 @@ function SettingsView({
   onLibraryNameChange: (value: string) => void;
   onCreate: () => void;
   onOpen: () => void;
+  logs: AppLog[];
+  logsLoading: boolean;
+  selectedLogPath: string | null;
+  selectedLogContent: AppLogContent | null;
+  logContentLoading: boolean;
+  onRefreshLogs: () => void;
+  onSelectLog: (path: string) => void;
 }) {
   return (
     <section className="settings-grid">
@@ -1958,6 +2171,55 @@ function SettingsView({
           <button onClick={onCreate}>Create Library</button>
           <button onClick={onOpen}>Open Library</button>
         </div>
+      </div>
+      <div className="settings-logs-panel">
+        <div className="panel-header">
+          <div>
+            <h3>Logs</h3>
+            <p>{logsLoading ? "Loading logs..." : `${logs.length} recent log${logs.length === 1 ? "" : "s"}`}</p>
+          </div>
+          <button onClick={onRefreshLogs} disabled={logsLoading}>
+            {logsLoading ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
+        {logs.length === 0 ? (
+          <div className="empty-state compact">No app logs found.</div>
+        ) : (
+          <div className="logs-browser">
+            <div className="logs-list">
+              {logs.map((log) => (
+                <button
+                  key={log.path}
+                  className={log.path === selectedLogPath ? "log-list-item selected" : "log-list-item"}
+                  onClick={() => onSelectLog(log.path)}
+                >
+                  <span className="log-list-heading">
+                    <strong>{log.kind}</strong>
+                    <span>{formatBytes(log.sizeBytes)}</span>
+                  </span>
+                  <span className="log-list-meta">
+                    <span>{displayDate(log.modifiedAt)}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="log-preview">
+              {logContentLoading ? (
+                <div className="empty-state compact">Loading log preview...</div>
+              ) : selectedLogContent ? (
+                <>
+                  <div className="log-preview-meta">
+                    <span className="mono-line">{selectedLogContent.path}</span>
+                    {selectedLogContent.truncated && <strong>Truncated</strong>}
+                  </div>
+                  <pre>{selectedLogContent.content || "Log is empty."}</pre>
+                </>
+              ) : (
+                <div className="empty-state compact">Select a log to preview.</div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );
@@ -2246,6 +2508,12 @@ function hasTauriRuntime() {
   return typeof window !== "undefined" && Boolean(window.__TAURI_INTERNALS__);
 }
 
+function nextAnimationFrame() {
+  return new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
+}
+
 function mockDetailFor(asset: GalleryAsset): AssetDetail {
   return {
     ...mockDetail,
@@ -2279,6 +2547,40 @@ function suggestionFromAsset(asset: GalleryAsset): Suggestion {
     category: asset.category,
     status: "pending_review",
   };
+}
+
+function reviewFieldContext(
+  form: ReviewFormState,
+  suggestion: Suggestion,
+  asset: GalleryAsset | null | undefined,
+) {
+  return {
+    currentTitle: form.title.trim() || null,
+    currentDescription: form.description.trim() || null,
+    currentSchemaPrompt: form.schemaPrompt.trim() || null,
+    assetTitle: asset?.title ?? suggestion.title,
+    assetPrompt: asset?.prompt ?? null,
+    tags: reviewFormTags(form),
+    category: form.category.trim() || suggestion.category,
+    provider: asset?.provider ?? null,
+    modelLabel: asset?.modelLabel ?? null,
+    width: asset?.width ?? null,
+    height: asset?.height ?? null,
+  };
+}
+
+function previewGeneratedReviewField(
+  field: ReviewFieldName,
+  asset: GalleryAsset | null | undefined,
+  sourceText: string,
+): string {
+  if (field === "title") {
+    return titleFromPrompt(sourceText);
+  }
+  if (field === "description") {
+    return descriptionFromPrompt(sourceText);
+  }
+  return schemaPromptFromAsset(asset, sourceText);
 }
 
 function titleFromPrompt(prompt: string | null | undefined): string {

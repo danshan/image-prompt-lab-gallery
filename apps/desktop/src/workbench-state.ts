@@ -160,6 +160,7 @@ export type ReviewFormState = {
   tags: string[];
   tagInput: string;
   category: string;
+  generation: ReviewFieldGenerationMap;
 };
 
 export type EditableSuggestionState = {
@@ -171,6 +172,17 @@ export type EditableSuggestionState = {
   category: string | null;
 };
 
+export type ReviewFieldName = "title" | "description" | "schemaPrompt";
+
+export type ReviewFieldGenerationState = {
+  loading: boolean;
+  requestId: string | null;
+  error: string | null;
+  logPath: string | null;
+};
+
+export type ReviewFieldGenerationMap = Record<ReviewFieldName, ReviewFieldGenerationState>;
+
 export function createReviewFormState(suggestion: EditableSuggestionState): ReviewFormState {
   return {
     suggestionId: suggestion.id,
@@ -180,7 +192,90 @@ export function createReviewFormState(suggestion: EditableSuggestionState): Revi
     tags: uniqueTags(suggestion.tags),
     tagInput: "",
     category: suggestion.category ?? "",
+    generation: createReviewFieldGenerationMap(),
   };
+}
+
+export function createReviewFieldGenerationMap(): ReviewFieldGenerationMap {
+  return {
+    title: createIdleReviewFieldGenerationState(),
+    description: createIdleReviewFieldGenerationState(),
+    schemaPrompt: createIdleReviewFieldGenerationState(),
+  };
+}
+
+export function beginReviewFieldGeneration(
+  form: ReviewFormState,
+  field: ReviewFieldName,
+  requestId: string,
+): ReviewFormState {
+  return {
+    ...form,
+    generation: {
+      ...form.generation,
+      [field]: {
+        loading: true,
+        requestId,
+        error: null,
+        logPath: null,
+      },
+    },
+  };
+}
+
+export function completeReviewFieldGeneration(
+  form: ReviewFormState,
+  suggestionId: string,
+  field: ReviewFieldName,
+  requestId: string,
+  value: string,
+  logPath: string | null = null,
+): ReviewFormState {
+  if (!isCurrentReviewFieldRequest(form, suggestionId, field, requestId)) {
+    return form;
+  }
+  return {
+    ...form,
+    [field]: value,
+    generation: {
+      ...form.generation,
+      [field]: {
+        loading: false,
+        requestId: null,
+        error: null,
+        logPath,
+      },
+    },
+  };
+}
+
+export function failReviewFieldGeneration(
+  form: ReviewFormState,
+  suggestionId: string,
+  field: ReviewFieldName,
+  requestId: string,
+  error: string,
+  logPath: string | null = null,
+): ReviewFormState {
+  if (!isCurrentReviewFieldRequest(form, suggestionId, field, requestId)) {
+    return form;
+  }
+  return {
+    ...form,
+    generation: {
+      ...form.generation,
+      [field]: {
+        loading: false,
+        requestId: null,
+        error,
+        logPath,
+      },
+    },
+  };
+}
+
+export function isReviewFieldGenerating(form: ReviewFormState, field: ReviewFieldName): boolean {
+  return form.generation[field].loading;
 }
 
 export function reviewFormTags(form: ReviewFormState): string[] {
@@ -208,6 +303,24 @@ export function removeReviewFormTag(form: ReviewFormState, tag: string): ReviewF
 
 function uniqueTags(tags: string[]): string[] {
   return Array.from(new Set(tags.map((tag) => tag.trim()).filter((tag) => tag.length > 0)));
+}
+
+function createIdleReviewFieldGenerationState(): ReviewFieldGenerationState {
+  return {
+    loading: false,
+    requestId: null,
+    error: null,
+    logPath: null,
+  };
+}
+
+function isCurrentReviewFieldRequest(
+  form: ReviewFormState,
+  suggestionId: string,
+  field: ReviewFieldName,
+  requestId: string,
+): boolean {
+  return form.suggestionId === suggestionId && form.generation[field].requestId === requestId;
 }
 
 export function clearCurationStateForLibrarySwitch() {

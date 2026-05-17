@@ -539,6 +539,120 @@ textarea {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
+.settings-logs-panel {
+  grid-column: 1 / -1;
+}
+
+.logs-browser {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(320px, 0.85fr) minmax(0, 1.15fr);
+}
+
+.logs-list {
+  display: grid;
+  gap: 8px;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.log-list-item {
+  display: grid;
+  gap: 6px;
+  min-height: 64px;
+  padding: 9px 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.log-list-item.selected {
+  background: #edf5f4;
+  border-color: #0b8589;
+  box-shadow: 0 0 0 1px #0b8589;
+}
+
+.log-list-heading {
+  align-items: baseline;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+}
+
+.log-list-heading strong {
+  font-size: 13px;
+  line-height: 1.25;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-list-heading span {
+  color: #6e6a62;
+  font-size: 12px;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.log-list-item small {
+  color: #6e6a62;
+  font-size: 12px;
+  line-height: 1.35;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-list-meta {
+  color: #6e6a62;
+  display: block;
+  font-size: 12px;
+  line-height: 1.35;
+  min-width: 0;
+}
+
+.log-list-meta span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.log-preview {
+  min-width: 0;
+}
+
+.log-preview-meta {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.log-preview-meta strong {
+  border: 1px solid #efc77b;
+  border-radius: 5px;
+  color: #b36b00;
+  font-size: 12px;
+  padding: 3px 7px;
+}
+
+.log-preview pre {
+  background: #1f2527;
+  border-radius: 8px;
+  color: #f8f4ec;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  margin: 0;
+  max-height: 420px;
+  overflow: auto;
+  padding: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .settings-grid > div,
 .library-form,
 .inspector-section,
@@ -690,6 +804,13 @@ textarea {
   font-size: 12px;
   min-height: 0;
   padding: 0;
+}
+
+.field-status {
+  color: #6e6a62;
+  font-size: 12px;
+  min-height: 16px;
+  overflow-wrap: anywhere;
 }
 
 .wide-field {
@@ -947,6 +1068,7 @@ textarea {
   .search-row,
   .composer,
   .albums-workspace,
+  .logs-browser,
   .review-workspace,
   .review-form {
     grid-template-columns: 1fr;
