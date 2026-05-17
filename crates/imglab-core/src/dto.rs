@@ -223,6 +223,7 @@ pub struct GalleryAssetView {
     pub status: String,
     pub provider: Option<String>,
     pub model_label: Option<String>,
+    pub prompt: Option<String>,
     pub tags: Vec<String>,
     pub review_pending_count: u32,
     pub current_version_id: Option<AssetVersionId>,
@@ -327,6 +328,8 @@ pub struct CreateSmartAlbumRequest {
 pub struct UpdateAssetMetadataRequest {
     pub library_path: PathBuf,
     pub asset_id: AssetId,
+    pub title: Option<String>,
+    pub description: Option<String>,
     pub rating: Option<u8>,
     pub category: Option<String>,
     pub status: Option<String>,

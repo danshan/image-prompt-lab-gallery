@@ -46,6 +46,7 @@ type GalleryAsset = {
   status: string;
   provider: string | null;
   modelLabel: string | null;
+  prompt: string | null;
   tags: string[];
   reviewPendingCount: number;
   currentVersionId: string | null;
@@ -184,6 +185,8 @@ const mockGallery: GalleryAsset[] = [
     status: "generated",
     provider: "Midjourney",
     modelLabel: "v6.0",
+    prompt:
+      "botanical study of exotic plants and flowers, neon line art glow, dark background, ultra detailed",
     tags: ["botanical", "neon", "study"],
     reviewPendingCount: 1,
     currentVersionId: "version-botanical-3",
@@ -201,6 +204,7 @@ const mockGallery: GalleryAsset[] = [
     status: "generated",
     provider: "DALL-E 3",
     modelLabel: "standard",
+    prompt: "alpine lake reflection at sunrise, clear air, cinematic landscape study",
     tags: ["landscape", "mountain", "lake"],
     reviewPendingCount: 1,
     currentVersionId: "version-alpine-2",
@@ -218,6 +222,7 @@ const mockGallery: GalleryAsset[] = [
     status: "curated",
     provider: "Stable Diffusion XL",
     modelLabel: "sdxl",
+    prompt: "solarpunk atrium interior with daylight, plants, and modular architecture",
     tags: ["solarpunk", "interior", "architecture"],
     reviewPendingCount: 0,
     currentVersionId: "version-atrium-4",
@@ -235,6 +240,7 @@ const mockGallery: GalleryAsset[] = [
     status: "generated",
     provider: "Midjourney",
     modelLabel: "v6.0",
+    prompt: "abstract canyon flow, layered geology, carved shapes, warm light",
     tags: ["canyon", "abstract", "geology"],
     reviewPendingCount: 0,
     currentVersionId: "version-canyon-1",
@@ -252,6 +258,7 @@ const mockGallery: GalleryAsset[] = [
     status: "generated",
     provider: "Stable Diffusion XL",
     modelLabel: "sdxl",
+    prompt: "orbital outpost above a blue planet, hard surface sci-fi concept art",
     tags: ["sci-fi", "space", "outpost"],
     reviewPendingCount: 1,
     currentVersionId: "version-orbital-2",
@@ -269,6 +276,7 @@ const mockGallery: GalleryAsset[] = [
     status: "curated",
     provider: "DALL-E 3",
     modelLabel: "standard",
+    prompt: "rainy tokyo night street, reflections, cinematic city photography",
     tags: ["city", "night", "rain"],
     reviewPendingCount: 0,
     currentVersionId: "version-tokyo-3",
@@ -631,6 +639,56 @@ function App() {
     }
   }
 
+  async function updateTitle(title: string) {
+    const detail = detailState.detail;
+    const trimmed = title.trim();
+    if (!library || !detail || trimmed.length === 0 || trimmed === detail.title) {
+      return;
+    }
+    try {
+      const asset = await invokeCommand<AssetView>("update_asset_metadata", {
+        input: {
+          libraryPath: library.rootPath,
+          assetId: detail.id,
+          title: trimmed,
+        },
+      });
+      setGallery((current) =>
+        current.map((item) => (item.id === asset.id ? { ...item, title: asset.title } : item)),
+      );
+      setDetailState((current) =>
+        current.detail ? { ...current, detail: { ...current.detail, title: asset.title } } : current,
+      );
+      setStatus("Title updated");
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
+  async function addTagToSelectedAsset(tag: string) {
+    const detail = detailState.detail;
+    const trimmed = tag.trim();
+    if (!library || !detail || trimmed.length === 0) {
+      return;
+    }
+    try {
+      await invokeCommand("add_tag_to_asset", {
+        input: {
+          libraryPath: library.rootPath,
+          assetId: detail.id,
+          tag: trimmed,
+        },
+      });
+      await refreshGallery();
+      await loadAssetDetail(detail.id, selectedAsset?.currentVersionId ?? null);
+      setStatus("Tag added");
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
   async function acceptSuggestion(suggestion: Suggestion) {
     if (!library) {
       return;
@@ -754,6 +812,8 @@ function App() {
         asset={selectedAsset}
         detailState={detailState}
         onUpdateRating={updateRating}
+        onUpdateTitle={(title) => void updateTitle(title)}
+        onAddTag={(tag) => void addTagToSelectedAsset(tag)}
         onGenerateVariation={() => {
           const versionId = detail?.lineage[0]?.version.id ?? detail?.versions[0]?.id ?? selectedAsset?.currentVersionId ?? null;
           void startGeneration(versionId);
@@ -1029,7 +1089,7 @@ function GalleryView({
             <Thumbnail asset={asset} index={index} />
             <span className="asset-title">{asset.title ?? "Untitled"}</span>
             <span className="provider-pill">{asset.provider ?? "Unknown provider"}</span>
-            <span className="rating-line">{stars(asset.rating)}</span>
+            <StarRatingDisplay rating={asset.rating} />
             {asset.reviewPendingCount > 0 && <span className="review-badge">Review pending</span>}
             <span className="card-tags">
               {asset.tags.slice(0, 3).map((tag) => (
@@ -1170,14 +1230,44 @@ function Inspector({
   asset,
   detailState,
   onUpdateRating,
+  onUpdateTitle,
+  onAddTag,
   onGenerateVariation,
 }: {
   asset: GalleryAsset | null;
   detailState: DetailLoadState<AssetDetail>;
   onUpdateRating: (rating: number) => void;
+  onUpdateTitle: (title: string) => void;
+  onAddTag: (tag: string) => void;
   onGenerateVariation: () => void;
 }) {
   const detail = detailState.detail;
+  const [tagInput, setTagInput] = useState("");
+  const [tagEditorOpen, setTagEditorOpen] = useState(false);
+  const [titleEditing, setTitleEditing] = useState(false);
+  const [titleInput, setTitleInput] = useState("");
+  useEffect(() => {
+    setTagInput("");
+    setTagEditorOpen(false);
+    setTitleEditing(false);
+    setTitleInput(detail?.title ?? asset?.title ?? "");
+  }, [detail?.id, detail?.title, asset?.title]);
+  const submitTag = () => {
+    const trimmed = tagInput.trim();
+    if (trimmed.length === 0) {
+      return;
+    }
+    onAddTag(trimmed);
+    setTagInput("");
+    setTagEditorOpen(false);
+  };
+  const saveTitle = () => {
+    const trimmed = titleInput.trim();
+    setTitleEditing(false);
+    if (trimmed.length > 0) {
+      onUpdateTitle(trimmed);
+    }
+  };
   if (!asset) {
     return (
       <aside className="inspector">
@@ -1207,8 +1297,29 @@ function Inspector({
       <section className="inspector-hero">
         <Thumbnail asset={asset} index={0} />
         <div>
-          <h2>{detail.title ?? asset.title ?? "Untitled"}</h2>
-          <span>{stars(detail.rating)} ({detail.rating ?? "-"})</span>
+          {titleEditing ? (
+            <input
+              className="title-input"
+              value={titleInput}
+              autoFocus
+              onChange={(event) => setTitleInput(event.target.value)}
+              onBlur={saveTitle}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  saveTitle();
+                }
+                if (event.key === "Escape") {
+                  setTitleInput(detail.title ?? asset.title ?? "");
+                  setTitleEditing(false);
+                }
+              }}
+            />
+          ) : (
+            <h2 className="editable-title" onDoubleClick={() => setTitleEditing(true)}>
+              {detail.title ?? asset.title ?? "Untitled"}
+            </h2>
+          )}
+          <StarRatingDisplay rating={detail.rating} showEmpty />
           {detail.reviewPendingCount > 0 && <strong>Review pending</strong>}
           <small>Added: {displayDate(detail.createdAt)}</small>
         </div>
@@ -1227,7 +1338,37 @@ function Inspector({
           {detail.tags.map((tag) => (
             <span key={tag}>{tag}</span>
           ))}
-          <button className="mini-button">+</button>
+          {tagEditorOpen && (
+            <input
+              className="tag-input"
+              value={tagInput}
+              autoFocus
+              onChange={(event) => setTagInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  submitTag();
+                }
+                if (event.key === "Escape") {
+                  setTagInput("");
+                  setTagEditorOpen(false);
+                }
+              }}
+              placeholder="Add tag"
+            />
+          )}
+          <button
+            className="mini-button"
+            disabled={tagEditorOpen && tagInput.trim().length === 0}
+            onClick={() => {
+              if (tagEditorOpen) {
+                submitTag();
+              } else {
+                setTagEditorOpen(true);
+              }
+            }}
+          >
+            +
+          </button>
         </div>
       </InspectorSection>
       <InspectorSection title="Albums">
@@ -1268,17 +1409,7 @@ function Inspector({
         )}
       </InspectorSection>
       <InspectorSection title="Rating">
-        <div className="rating-row">
-          {[1, 2, 3, 4, 5].map((rating) => (
-            <button
-              key={rating}
-              className={detail.rating === rating ? "rating active" : "rating"}
-              onClick={() => onUpdateRating(rating)}
-            >
-              {rating}
-            </button>
-          ))}
-        </div>
+        <StarRatingControl rating={detail.rating} onChange={onUpdateRating} />
       </InspectorSection>
     </aside>
   );
@@ -1370,9 +1501,46 @@ function thumbnailStyle(index: number): React.CSSProperties {
   return { background: styles[index % styles.length] };
 }
 
-function stars(rating: number | null) {
+function StarRatingDisplay({ rating, showEmpty = false }: { rating: number | null; showEmpty?: boolean }) {
   const value = rating ?? 0;
-  return `${"*".repeat(value)}${"-".repeat(5 - value)}`;
+  if (value === 0 && !showEmpty) {
+    return <span className="star-rating empty" aria-label="Not rated">Unrated</span>;
+  }
+  return (
+    <span className="star-rating" aria-label={`${value} of 5 stars`}>
+      {[1, 2, 3, 4, 5].map((star) => (
+        <span key={star} className={star <= value ? "star filled" : "star"}>
+          {star <= value ? "★" : "☆"}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function StarRatingControl({
+  rating,
+  onChange,
+}: {
+  rating: number | null;
+  onChange: (rating: number) => void;
+}) {
+  const value = rating ?? 0;
+  return (
+    <div className="star-rating-control" role="radiogroup" aria-label="Rating">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <button
+          key={star}
+          className={star <= value ? "star-button active" : "star-button"}
+          aria-label={`${star} star${star === 1 ? "" : "s"}`}
+          aria-checked={value === star}
+          role="radio"
+          onClick={() => onChange(star)}
+        >
+          {star <= value ? "★" : "☆"}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function displayDate(value: string) {

@@ -39,6 +39,7 @@ export type GalleryFilterAsset = {
   status: string;
   provider: string | null;
   modelLabel: string | null;
+  prompt?: string | null;
   tags: string[];
   reviewPendingCount: number;
   createdAt: string;
@@ -197,6 +198,7 @@ function assetMatchesText(asset: GalleryFilterAsset, text: string): boolean {
     asset.status,
     asset.provider,
     asset.modelLabel,
+    asset.prompt,
     ...asset.tags,
   ].some((value) => value?.toLocaleLowerCase().includes(text));
 }

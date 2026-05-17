@@ -291,28 +291,27 @@ where
             let temp_file = temp_dir.join(format!("output.{extension}"));
             fs::write(&temp_file, &image.bytes).map_err(|error| io_error(&temp_file, error))?;
 
-            let event_asset_id = asset_id.clone();
-            let event = library_service.record_generation_event(CreateGenerationEventRequest {
-                library_path: request.library_path.clone(),
-                asset_id: event_asset_id.clone(),
-                output_version_id: None,
-                provider: request.parameters.provider.clone(),
-                provider_model: request.parameters.model.clone(),
-                operation_type: request.parameters.operation,
-                prompt: request.parameters.prompt.clone(),
-                negative_prompt: request.parameters.negative_prompt.clone(),
-                input_asset_version_id: parent_version_id.clone(),
-                parameters_json: request.parameters.parameters_json.clone(),
-                raw_request_json: Some(result.raw_request_json.clone()),
-                raw_response_json: Some(result.raw_response_json.clone()),
-                status: "completed".to_string(),
-                error_code: None,
-                error_message: None,
-            })?;
-
             let version = if let (Some(asset_id), Some(parent_version_id)) =
-                (event_asset_id, parent_version_id.clone())
+                (asset_id.clone(), parent_version_id.clone())
             {
+                let event =
+                    library_service.record_generation_event(CreateGenerationEventRequest {
+                        library_path: request.library_path.clone(),
+                        asset_id: Some(asset_id.clone()),
+                        output_version_id: None,
+                        provider: request.parameters.provider.clone(),
+                        provider_model: request.parameters.model.clone(),
+                        operation_type: request.parameters.operation,
+                        prompt: request.parameters.prompt.clone(),
+                        negative_prompt: request.parameters.negative_prompt.clone(),
+                        input_asset_version_id: Some(parent_version_id.clone()),
+                        parameters_json: request.parameters.parameters_json.clone(),
+                        raw_request_json: Some(result.raw_request_json.clone()),
+                        raw_response_json: Some(result.raw_response_json.clone()),
+                        status: "completed".to_string(),
+                        error_code: None,
+                        error_message: None,
+                    })?;
                 library_service.create_child_version(CreateChildVersionRequest {
                     library_path: request.library_path.clone(),
                     asset_id,
@@ -323,10 +322,35 @@ where
                     version_label: Some("generated".to_string()),
                 })?
             } else {
-                let (_, version) = library_service.import_asset(ImportAssetRequest {
+                let (asset, mut version) = library_service.import_asset(ImportAssetRequest {
                     library_path: request.library_path.clone(),
                     source_path: temp_file,
                 })?;
+                let event =
+                    library_service.record_generation_event(CreateGenerationEventRequest {
+                        library_path: request.library_path.clone(),
+                        asset_id: Some(asset.id.clone()),
+                        output_version_id: Some(version.id.clone()),
+                        provider: request.parameters.provider.clone(),
+                        provider_model: request.parameters.model.clone(),
+                        operation_type: request.parameters.operation,
+                        prompt: request.parameters.prompt.clone(),
+                        negative_prompt: request.parameters.negative_prompt.clone(),
+                        input_asset_version_id: None,
+                        parameters_json: request.parameters.parameters_json.clone(),
+                        raw_request_json: Some(result.raw_request_json.clone()),
+                        raw_response_json: Some(result.raw_response_json.clone()),
+                        status: "completed".to_string(),
+                        error_code: None,
+                        error_message: None,
+                    })?;
+                mark_imported_version_as_generated(
+                    &request.library_path,
+                    &asset.id,
+                    &version.id,
+                    &event.id,
+                )?;
+                version.generation_event_id = Some(event.id);
                 version
             };
 
@@ -696,6 +720,10 @@ impl AssetService for LocalLibraryService {
             )
             .map_err(database_error)?;
 
+        if let Some(event_id) = &request.generation_event_id {
+            update_generation_event_output_version(&request.library_path, event_id, &version_id)?;
+        }
+
         Ok(VersionSummary {
             id: version_id,
             asset_id: request.asset_id,
@@ -1042,13 +1070,17 @@ impl AlbumService for LocalLibraryService {
             .execute(
                 "
                 UPDATE assets
-                SET rating = COALESCE(?1, rating),
-                    category = COALESCE(?2, category),
-                    status = COALESCE(?3, status),
-                    updated_at = ?4
-                WHERE id = ?5
+                SET title = COALESCE(?1, title),
+                    description = COALESCE(?2, description),
+                    rating = COALESCE(?3, rating),
+                    category = COALESCE(?4, category),
+                    status = COALESCE(?5, status),
+                    updated_at = ?6
+                WHERE id = ?7
                 ",
                 params![
+                    request.title,
+                    request.description,
                     request.rating,
                     request.category,
                     request.status,
@@ -1116,6 +1148,12 @@ impl GalleryReadService for LocalLibraryService {
                         .contains(&needle)
                     || item
                         .model_label
+                        .as_deref()
+                        .unwrap_or_default()
+                        .to_ascii_lowercase()
+                        .contains(&needle)
+                    || item
+                        .prompt
                         .as_deref()
                         .unwrap_or_default()
                         .to_ascii_lowercase()
@@ -1630,13 +1668,15 @@ fn search_assets(connection: &Connection, query: SearchQuery) -> DomainResult<Ve
     let mut assets = load_all_asset_summaries(connection)?;
     if let Some(text) = query.text {
         let needle = text.to_ascii_lowercase();
+        assets.retain(|asset| asset_matches_search_text(connection, &asset.id, asset, &needle));
+    }
+    if let Some(provider) = query.provider {
         assets.retain(|asset| {
-            asset
-                .title
-                .as_deref()
-                .unwrap_or_default()
-                .to_ascii_lowercase()
-                .contains(&needle)
+            load_latest_generation_event(connection, &asset.id)
+                .ok()
+                .flatten()
+                .map(|event| event.provider == provider)
+                .unwrap_or(false)
         });
     }
     if let Some(min_rating) = query.min_rating {
@@ -1655,6 +1695,85 @@ fn search_assets(connection: &Connection, query: SearchQuery) -> DomainResult<Ve
     Ok(assets)
 }
 
+fn asset_matches_search_text(
+    connection: &Connection,
+    asset_id: &AssetId,
+    asset: &AssetSummary,
+    needle: &str,
+) -> bool {
+    if [
+        asset.title.as_deref(),
+        asset.category.as_deref(),
+        Some(asset.status.as_str()),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|value| value.to_ascii_lowercase().contains(needle))
+    {
+        return true;
+    }
+
+    if load_asset_tags(connection, asset_id)
+        .map(|tags| {
+            tags.iter()
+                .any(|tag| tag.to_ascii_lowercase().contains(needle))
+        })
+        .unwrap_or(false)
+    {
+        return true;
+    }
+
+    load_latest_generation_event(connection, asset_id)
+        .ok()
+        .flatten()
+        .map(|event| {
+            [
+                event.provider.as_str(),
+                event.provider_model.as_str(),
+                event.prompt.as_str(),
+            ]
+            .into_iter()
+            .any(|value| value.to_ascii_lowercase().contains(needle))
+        })
+        .unwrap_or(false)
+}
+
+fn default_title_from_prompt(prompt: &str) -> Option<String> {
+    let stop_words = [
+        "a", "an", "and", "as", "at", "by", "for", "from", "in", "into", "of", "on", "or", "the",
+        "to", "with",
+    ];
+    let words = prompt
+        .split(|character: char| !character.is_alphanumeric())
+        .filter_map(|word| {
+            let word = word.trim();
+            if word.is_empty() {
+                return None;
+            }
+            let lower = word.to_ascii_lowercase();
+            if stop_words.contains(&lower.as_str()) {
+                return None;
+            }
+            Some(title_case_word(&lower))
+        })
+        .take(6)
+        .collect::<Vec<_>>();
+
+    if words.is_empty() {
+        None
+    } else {
+        Some(words.join(" "))
+    }
+}
+
+fn title_case_word(word: &str) -> String {
+    let mut chars = word.chars();
+    match chars.next() {
+        Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
 fn validate_gallery_query(query: &GalleryQuery) -> DomainResult<()> {
     if let Some(min_rating) = query.min_rating {
         if !(1..=5).contains(&min_rating) {
@@ -1663,6 +1782,64 @@ fn validate_gallery_query(query: &GalleryQuery) -> DomainResult<()> {
             });
         }
     }
+    Ok(())
+}
+
+fn update_generation_event_output_version(
+    library_path: &Path,
+    event_id: &GenerationEventId,
+    output_version_id: &AssetVersionId,
+) -> DomainResult<()> {
+    let connection = LocalLibraryService::open_library_database(library_path)?;
+    connection
+        .execute(
+            "
+            UPDATE generation_events
+            SET output_version_id = ?1
+            WHERE id = ?2
+            ",
+            params![output_version_id.0, event_id.0],
+        )
+        .map_err(database_error)?;
+    Ok(())
+}
+
+fn mark_imported_version_as_generated(
+    library_path: &Path,
+    asset_id: &AssetId,
+    version_id: &AssetVersionId,
+    event_id: &GenerationEventId,
+) -> DomainResult<()> {
+    let connection = LocalLibraryService::open_library_database(library_path)?;
+    let now = timestamp_string();
+    let title = load_generation_event_detail(&connection, event_id)
+        .ok()
+        .and_then(|event| default_title_from_prompt(&event.prompt));
+    let transaction = connection.unchecked_transaction().map_err(database_error)?;
+    transaction
+        .execute(
+            "
+            UPDATE asset_versions
+            SET generation_event_id = ?1,
+                version_label = 'generated'
+            WHERE id = ?2
+            ",
+            params![event_id.0, version_id.0],
+        )
+        .map_err(database_error)?;
+    transaction
+        .execute(
+            "
+            UPDATE assets
+            SET title = COALESCE(title, ?1),
+                status = 'generated',
+                updated_at = ?2
+            WHERE id = ?3
+            ",
+            params![title, now, asset_id.0],
+        )
+        .map_err(database_error)?;
+    transaction.commit().map_err(database_error)?;
     Ok(())
 }
 
@@ -1714,6 +1891,7 @@ fn load_gallery_asset_views(connection: &Connection) -> DomainResult<Vec<Gallery
             status,
             provider: event.as_ref().map(|event| event.provider.clone()),
             model_label: event.as_ref().map(|event| event.provider_model.clone()),
+            prompt: event.as_ref().map(|event| event.prompt.clone()),
             tags: load_asset_tags(connection, &id)?,
             review_pending_count: pending_review_count(connection, &id)?,
             current_version_id: current_version.as_ref().map(|version| version.id.clone()),
@@ -2427,6 +2605,15 @@ mod tests {
             lineage[0].generation_event.as_ref().expect("event").id,
             event.id
         );
+        assert_eq!(
+            lineage[0]
+                .generation_event
+                .as_ref()
+                .expect("event")
+                .output_version_id
+                .as_ref(),
+            Some(&child.id)
+        );
         assert_eq!(lineage[1].version.id, parent.id);
         assert!(lineage[1].generation_event.is_none());
     }
@@ -2463,6 +2650,37 @@ mod tests {
 
         assert_eq!(versions.len(), 1);
         assert!(root.join(&versions[0].file_path).is_file());
+        assert!(versions[0].generation_event_id.is_some());
+
+        let gallery = library
+            .query_gallery(
+                &root,
+                GalleryQuery {
+                    text: Some("test image".to_string()),
+                    providers: vec!["fake".to_string()],
+                    min_rating: None,
+                    review_status: ReviewStatusFilter::Any,
+                    tags: vec![],
+                    album_id: None,
+                    sort: GallerySort::Newest,
+                },
+            )
+            .expect("gallery");
+        assert_eq!(gallery.len(), 1);
+        assert_eq!(gallery[0].id, versions[0].asset_id);
+        assert_eq!(gallery[0].title.as_deref(), Some("Make Test Image"));
+        assert_eq!(gallery[0].provider.as_deref(), Some("fake"));
+        assert_eq!(gallery[0].model_label.as_deref(), Some("fake-image"));
+        assert_eq!(gallery[0].prompt.as_deref(), Some("make a test image"));
+
+        let detail = library
+            .get_asset_detail(&root, &versions[0].asset_id, Some(&versions[0].id))
+            .expect("detail");
+        assert_eq!(detail.provider.as_deref(), Some("fake"));
+        assert_eq!(detail.title.as_deref(), Some("Make Test Image"));
+        assert_eq!(detail.model_label.as_deref(), Some("fake-image"));
+        assert_eq!(detail.prompt.as_deref(), Some("make a test image"));
+        assert_eq!(detail.parameters_json.as_deref(), Some("{}"));
     }
 
     #[test]
@@ -2560,8 +2778,10 @@ mod tests {
         service.add_asset(&album.id, &asset.id).expect("add asset");
         service
             .update_asset_metadata(UpdateAssetMetadataRequest {
-                library_path: root,
-                asset_id: asset.id,
+                library_path: root.clone(),
+                asset_id: asset.id.clone(),
+                title: None,
+                description: None,
                 rating: Some(5),
                 category: Some("icons".to_string()),
                 status: Some("curated".to_string()),
@@ -2583,6 +2803,59 @@ mod tests {
             .expect("search");
 
         assert_eq!(results.len(), 1);
+
+        service
+            .add_tag_to_asset(&root, &asset.id, "favorite")
+            .expect("tag asset");
+        service
+            .record_generation_event(CreateGenerationEventRequest {
+                library_path: root.clone(),
+                asset_id: Some(asset.id.clone()),
+                output_version_id: None,
+                provider: "fake".to_string(),
+                provider_model: "fake-image".to_string(),
+                operation_type: GenerationOperation::TextToImage,
+                prompt: "tiny icon sheet".to_string(),
+                negative_prompt: None,
+                input_asset_version_id: None,
+                parameters_json: "{}".to_string(),
+                raw_request_json: None,
+                raw_response_json: None,
+                status: "completed".to_string(),
+                error_code: None,
+                error_message: None,
+            })
+            .expect("record event");
+
+        let prompt_results = service
+            .search(
+                &library.id,
+                SearchQuery {
+                    text: Some("icon sheet".to_string()),
+                    tags: vec![],
+                    min_rating: None,
+                    provider: Some("fake".to_string()),
+                    status: None,
+                    category: None,
+                },
+            )
+            .expect("search by prompt");
+        assert_eq!(prompt_results.len(), 1);
+
+        let tag_text_results = service
+            .search(
+                &library.id,
+                SearchQuery {
+                    text: Some("favor".to_string()),
+                    tags: vec![],
+                    min_rating: None,
+                    provider: None,
+                    status: None,
+                    category: None,
+                },
+            )
+            .expect("search by tag text");
+        assert_eq!(tag_text_results.len(), 1);
     }
 
     #[test]
@@ -2620,6 +2893,8 @@ mod tests {
             .update_asset_metadata(UpdateAssetMetadataRequest {
                 library_path: root.clone(),
                 asset_id: first.id.clone(),
+                title: None,
+                description: None,
                 rating: Some(5),
                 category: Some("botanical".to_string()),
                 status: Some("curated".to_string()),
@@ -2629,6 +2904,8 @@ mod tests {
             .update_asset_metadata(UpdateAssetMetadataRequest {
                 library_path: root.clone(),
                 asset_id: second.id,
+                title: None,
+                description: None,
                 rating: Some(2),
                 category: Some("city".to_string()),
                 status: Some("imported".to_string()),

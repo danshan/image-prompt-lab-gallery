@@ -128,6 +128,7 @@ test("applyGalleryQuery filters by text, tags, review status, and rating", () =>
       status: "generated",
       provider: "Midjourney",
       modelLabel: "v6",
+      prompt: "macro botanical prompt with neon linework",
       tags: ["botanical", "neon"],
       reviewPendingCount: 1,
       createdAt: "1",
@@ -140,6 +141,7 @@ test("applyGalleryQuery filters by text, tags, review status, and rating", () =>
       status: "curated",
       provider: "DALL-E 3",
       modelLabel: "standard",
+      prompt: "rainy city prompt",
       tags: ["city", "rain"],
       reviewPendingCount: 0,
       createdAt: "2",
@@ -157,6 +159,31 @@ test("applyGalleryQuery filters by text, tags, review status, and rating", () =>
 
   assert.equal(results.length, 1);
   assert.equal(results[0].title, "Neon Botanical Study");
+});
+
+test("applyGalleryQuery matches prompt text", () => {
+  const assets = [
+    {
+      title: null,
+      category: null,
+      rating: null,
+      status: "generated",
+      provider: "fake",
+      modelLabel: "fake-image",
+      prompt: "tiny icon sheet with transparent background",
+      tags: [],
+      reviewPendingCount: 0,
+      createdAt: "1",
+      updatedAt: "1",
+    },
+  ];
+
+  const results = applyGalleryQuery(assets, {
+    ...defaultGalleryQuery,
+    text: "transparent",
+  });
+
+  assert.equal(results.length, 1);
 });
 
 test("applyGalleryQuery sorts by rating descending", () => {

@@ -82,6 +82,7 @@ struct GalleryAssetView {
     status: String,
     provider: Option<String>,
     model_label: Option<String>,
+    prompt: Option<String>,
     tags: Vec<String>,
     review_pending_count: u32,
     current_version_id: Option<String>,
@@ -283,6 +284,8 @@ struct GenerateImageInput {
 struct UpdateMetadataInput {
     library_path: PathBuf,
     asset_id: String,
+    title: Option<String>,
+    description: Option<String>,
     rating: Option<u8>,
     category: Option<String>,
     status: Option<String>,
@@ -671,6 +674,8 @@ fn update_asset_metadata(input: UpdateMetadataInput) -> Result<AssetView, Comman
         .update_asset_metadata(UpdateAssetMetadataRequest {
             library_path: input.library_path,
             asset_id: AssetId(input.asset_id),
+            title: input.title,
+            description: input.description,
             rating: input.rating,
             category: input.category,
             status: input.status,
@@ -861,6 +866,7 @@ fn gallery_asset_view(
         status: summary.status,
         provider: summary.provider,
         model_label: summary.model_label,
+        prompt: summary.prompt,
         tags: summary.tags,
         review_pending_count: summary.review_pending_count,
         current_version_id: summary.current_version_id.map(|id| id.0),

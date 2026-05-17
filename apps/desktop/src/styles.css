@@ -385,9 +385,27 @@ select {
   position: absolute;
 }
 
-.rating-line {
-  font-size: 13px;
+.star-rating {
+  align-items: center;
+  color: #8a6a00;
+  display: inline-flex;
+  font-size: 15px;
+  gap: 1px;
   letter-spacing: 0;
+}
+
+.star-rating.empty {
+  color: #8b867d;
+  font-size: 12px;
+}
+
+.star-rating .star {
+  color: #c7c0b4;
+  line-height: 1;
+}
+
+.star-rating .star.filled {
+  color: #c98a00;
 }
 
 .review-badge {
@@ -500,6 +518,18 @@ select {
   gap: 7px;
 }
 
+.editable-title {
+  cursor: text;
+}
+
+.title-input {
+  font-size: 14px;
+  font-weight: 700;
+  min-height: 30px;
+  padding: 4px 7px;
+  width: 100%;
+}
+
 .inspector-hero strong {
   border: 1px solid #efc77b;
   border-radius: 5px;
@@ -526,6 +556,13 @@ select {
 .mini-button {
   min-height: 24px;
   padding: 2px 8px;
+}
+
+.tag-input {
+  min-height: 24px;
+  min-width: 0;
+  padding: 2px 8px;
+  width: 96px;
 }
 
 .meta-row {
@@ -564,16 +601,30 @@ select {
   overflow-wrap: anywhere;
 }
 
-.rating {
-  min-width: 38px;
-  padding: 7px 0;
-  text-align: center;
+.star-rating-control {
+  display: flex;
+  gap: 4px;
 }
 
-.rating.active {
-  background: #07545a;
-  border-color: #07545a;
-  color: #ffffff;
+.star-button {
+  border-color: transparent;
+  color: #c7c0b4;
+  font-size: 22px;
+  line-height: 1;
+  min-height: 32px;
+  min-width: 32px;
+  padding: 0;
+}
+
+.star-button.active {
+  background: transparent;
+  color: #c98a00;
+}
+
+.star-button:hover {
+  background: #fff4d7;
+  border-color: #e6c165;
+  color: #a66f00;
 }
 
 .error-text {

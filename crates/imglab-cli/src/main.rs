@@ -311,6 +311,8 @@ fn rate(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainErro
     let asset = service.update_asset_metadata(imglab_core::UpdateAssetMetadataRequest {
         library_path: PathBuf::from(library_path),
         asset_id: imglab_core::AssetId(asset_id),
+        title: None,
+        description: None,
         rating: Some(rating),
         category: None,
         status: None,
