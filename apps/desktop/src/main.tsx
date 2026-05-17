@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { convertFileSrc, invoke as tauriInvoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   acceptSuggestionState,
   applyGalleryQuery,
@@ -10,6 +9,7 @@ import {
   completeDetailLoad,
   defaultGalleryQuery,
   failDetailLoad,
+  formatAspectRatio,
   rejectSuggestionState,
   resetGalleryQuery,
   toggleGalleryProvider,
@@ -830,14 +830,10 @@ function App() {
 
   return (
     <main className="workbench">
-      <AppTopBar
-        runningInTauri={runningInTauri}
-      />
       <Sidebar
         library={library}
         libraries={libraries}
         libraryStatus={libraryStatus}
-        selectedAsset={selectedAsset}
         activeView={activeView}
         reviewCount={pendingSuggestions.length}
         queueCount={queue.filter((job) => job.status === "queued" || job.status === "running").length}
@@ -917,31 +913,10 @@ function App() {
   );
 }
 
-function AppTopBar({
-  runningInTauri,
-}: {
-  runningInTauri: boolean;
-}) {
-  const appWindow = runningInTauri ? getCurrentWindow() : null;
-  return (
-    <header className="app-topbar" data-tauri-drag-region>
-      <div className="window-controls">
-        <button className="window-control close" aria-label="Close window" onClick={() => void appWindow?.close()} />
-        <button className="window-control minimize" aria-label="Minimize window" onClick={() => void appWindow?.minimize()} />
-        <button className="window-control maximize" aria-label="Maximize window" onClick={() => void appWindow?.toggleMaximize()} />
-      </div>
-      <div className="app-title" data-tauri-drag-region>
-        <strong>Image Prompt Lab</strong>
-      </div>
-    </header>
-  );
-}
-
 function Sidebar({
   library,
   libraries,
   libraryStatus,
-  selectedAsset,
   activeView,
   reviewCount,
   queueCount,
@@ -951,7 +926,6 @@ function Sidebar({
   library: Library | null;
   libraries: Library[];
   libraryStatus: LibraryStatus | null;
-  selectedAsset: GalleryAsset | null;
   activeView: View;
   reviewCount: number;
   queueCount: number;
@@ -984,12 +958,6 @@ function Sidebar({
         </select>
         <span className="library-chevron" aria-hidden="true" />
       </label>
-      <section className="asset-sidebar-summary">
-        <div>
-          <span>Resolution</span>
-          <strong>{formatResolution(selectedAsset?.width ?? null, selectedAsset?.height ?? null)}</strong>
-        </div>
-      </section>
       <nav className="nav">
         <NavButton active={activeView === "gallery"} label="Gallery" onClick={() => onViewChange("gallery")} />
         <NavButton active={activeView === "albums"} label="Albums" onClick={() => onViewChange("albums")} />
@@ -1470,6 +1438,9 @@ function Inspector({
         <p>{detail.prompt ?? "Prompt is unavailable for this version."}</p>
         <button className="text-button">Show full prompt</button>
       </InspectorSection>
+      <InspectorSection title="Rating">
+        <StarRatingControl rating={detail.rating} onChange={onUpdateRating} />
+      </InspectorSection>
       <InspectorSection title="Provider & Model">
         <MetaRow label="Provider" value={detail.provider ?? asset.provider ?? "-"} />
         <MetaRow label="Model" value={detail.modelLabel ?? asset.modelLabel ?? "-"} />
@@ -1543,15 +1514,13 @@ function Inspector({
             <MetaRow label="Location" value={detail.file.relativeLocation} />
             <MetaRow label="Size" value={formatBytes(detail.file.sizeBytes)} />
             <MetaRow label="Dimensions" value={formatDimensions(detail.file)} />
+            <MetaRow label="Aspect Ratio" value={formatAspectRatio(detail.file.width, detail.file.height)} />
             <MetaRow label="Integrity" value={detail.file.integrityStatus} />
             <MetaRow label="Checksum" value={formatChecksum(detail.file)} />
           </>
         ) : (
           <p>File context is unavailable.</p>
         )}
-      </InspectorSection>
-      <InspectorSection title="Rating">
-        <StarRatingControl rating={detail.rating} onChange={onUpdateRating} />
       </InspectorSection>
     </aside>
   );

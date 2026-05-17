@@ -238,3 +238,26 @@ function compareNullableText(left: string | null, right: string | null): number 
 function compareText(left: string, right: string): number {
   return left.localeCompare(right);
 }
+
+export function formatAspectRatio(width: number | null, height: number | null): string {
+  if (!isPositiveDimension(width) || !isPositiveDimension(height)) {
+    return "Unavailable";
+  }
+  const divisor = greatestCommonDivisor(width, height);
+  return `${width / divisor}:${height / divisor}`;
+}
+
+function isPositiveDimension(value: number | null): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
+function greatestCommonDivisor(left: number, right: number): number {
+  let a = Math.abs(left);
+  let b = Math.abs(right);
+  while (b !== 0) {
+    const next = a % b;
+    a = b;
+    b = next;
+  }
+  return a;
+}

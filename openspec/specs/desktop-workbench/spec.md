@@ -47,12 +47,12 @@
 
 ### Requirement: 提供产品化 Gallery 工作台
 
-桌面应用 SHALL 提供接近设计稿风格的 Gallery 工作台, 包含 app top bar, library sidebar, workspace toolbar, gallery card grid 和 asset Inspector, 并保持高信息密度与稳定布局. app top bar SHALL 提供应用内窗口标题栏和窗口控制, Library 切换 SHALL 位于 Sidebar 顶部, 且应用窗口 SHALL 只显示一组窗口控制.
+桌面应用 SHALL 提供接近设计稿风格的 Gallery 工作台, 包含 library sidebar, workspace toolbar, gallery card grid 和 asset Inspector, 并保持高信息密度与稳定布局. 桌面窗口 SHALL 使用系统原生标题栏和窗口控制, Library 切换 SHALL 位于 Sidebar 顶部, 且应用窗口 SHALL 只显示一组窗口控制.
 
 #### Scenario: 打开 Gallery 主工作流
 
 - **WHEN** 用户打开已注册资源库的 Gallery
-- **THEN** 桌面应用展示 app top bar, library sidebar, Gallery 查询工具栏, asset card grid 和当前选中 asset 的 Inspector
+- **THEN** 桌面应用展示系统原生标题栏, library sidebar, Gallery 查询工具栏, asset card grid 和当前选中 asset 的 Inspector
 
 #### Scenario: 选择 Gallery 图片
 
@@ -78,19 +78,19 @@
 - **WHEN** app-level registry 中没有可见 Library
 - **THEN** Sidebar Library selector 展示 empty state, 并提供创建或打开 Library 的入口
 
-### Requirement: 使用应用内标题栏替代系统默认标题栏
+### Requirement: 使用系统原生标题栏
 
-桌面应用 SHALL 去掉 Tauri 系统默认标题栏, 并使用应用内标题栏提供窗口标题, 拖拽区域和窗口控制.
+桌面应用 SHALL 使用系统原生标题栏和窗口控制. 桌面应用 MUST NOT 同时渲染应用内自定义窗口控制和系统窗口控制.
 
 #### Scenario: 打开桌面窗口
 
 - **WHEN** 用户打开桌面应用
-- **THEN** 窗口中只出现一组最小化, 最大化或关闭窗口控制, 不得同时显示系统标题栏和应用内标题栏两组控制
+- **THEN** 窗口使用系统原生标题栏, 且只出现一组最小化, 最大化或关闭窗口控制
 
-#### Scenario: 使用窗口控制
+#### Scenario: 使用系统窗口行为
 
-- **WHEN** 用户点击应用内标题栏的最小化, 最大化或关闭控制
-- **THEN** 桌面应用调用 Tauri window API 执行对应窗口操作
+- **WHEN** 用户使用系统标题栏拖动窗口, 或点击系统最小化, 最大化或关闭控制
+- **THEN** 宿主系统执行对应窗口操作
 
 ### Requirement: Sidebar 不出现内部滚动
 
@@ -119,19 +119,33 @@
 - **WHEN** 用户查看任意 selector 控件
 - **THEN** 控件使用一致的高度, 边框, 背景, focus state 和下拉 affordance, 不显示浏览器默认风格
 
-### Requirement: Sidebar 正确展示 Resolution
+### Requirement: Sidebar 不展示 Asset Resolution
 
-桌面应用 SHALL 在 Sidebar 或相关 asset summary 中只展示来自 core read model 的真实 resolution. 如果 width 或 height 缺失, UI MUST 展示 unavailable 状态.
+桌面应用 SHALL 避免在 Sidebar, Library Status 或 Gallery asset summary 中展示当前 asset 的文件 resolution. 文件级 resolution 信息 MUST 由 Inspector File section 承载.
 
-#### Scenario: Resolution 可用
+#### Scenario: 查看左侧 Sidebar
 
 - **WHEN** 当前 asset read model 包含 width 和 height
-- **THEN** Sidebar 使用 `$width x $height` 格式展示 resolution
+- **THEN** Sidebar 和 Library Status 不展示该 asset 的 `$width x $height` resolution
 
-#### Scenario: Resolution 缺失
+#### Scenario: 查看 Gallery asset summary
 
-- **WHEN** 当前 asset read model 缺少 width 或 height
-- **THEN** Sidebar 展示 unavailable 状态, 不展示错误尺寸或伪造尺寸
+- **WHEN** Gallery card 或左侧 summary 渲染 asset 摘要信息
+- **THEN** 摘要信息不展示文件 resolution, 但仍可展示 title, provider, rating, tags 和 version summary
+
+### Requirement: Inspector File Section 展示 Resolution 和 Aspect Ratio
+
+桌面应用 SHALL 在 Inspector File section 中展示文件 resolution 和 aspect ratio. aspect ratio MUST 只在 width 和 height 都可用且大于 0 时由真实尺寸计算, 不得使用伪造或默认比例.
+
+#### Scenario: Resolution 和 Aspect Ratio 可用
+
+- **WHEN** 当前 file context 包含有效 width 和 height
+- **THEN** Inspector File section 展示 `$width x $height` resolution 和约分后的 aspect ratio
+
+#### Scenario: Aspect Ratio 不可用
+
+- **WHEN** 当前 file context 缺少 width 或 height, 或 width 或 height 不是正数
+- **THEN** Inspector File section 不展示伪造 aspect ratio, 并展示 unavailable 状态或隐藏该字段
 
 ### Requirement: Checksum 展示算法标签
 
@@ -191,7 +205,7 @@
 
 ### Requirement: Inspector 支持编辑 Title 和星级 Rating
 
-桌面应用 SHALL 允许用户在 Inspector 中双击当前 title 后编辑 canonical title. 桌面应用 SHALL 使用星级控件展示和修改 rating, 不得使用 `*` 文本串作为主要 rating 表达.
+桌面应用 SHALL 允许用户在 Inspector 中双击当前 title 后编辑 canonical title. 桌面应用 SHALL 使用星级控件展示和修改 rating, 不得使用 `*` 文本串作为主要 rating 表达. Rating card SHALL 显示在 Prompt card 之下.
 
 #### Scenario: 编辑 Title
 
@@ -202,6 +216,11 @@
 
 - **WHEN** 用户在 Inspector 中点击某个星级
 - **THEN** 桌面应用通过 Rust core 更新 rating, 并使用星级显示更新后的评分
+
+#### Scenario: 查看 Rating Card 位置
+
+- **WHEN** 用户查看选中 asset 的 Inspector
+- **THEN** Rating card 显示在 Prompt card 之下
 
 ### Requirement: 提供可恢复错误和空状态
 

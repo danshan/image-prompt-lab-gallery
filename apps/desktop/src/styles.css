@@ -55,60 +55,8 @@ select {
 .workbench {
   display: grid;
   grid-template-columns: 286px minmax(520px, 1fr) 380px;
-  grid-template-rows: 48px minmax(0, 1fr);
   height: 100vh;
   overflow: hidden;
-}
-
-.app-topbar {
-  align-items: center;
-  background: #fbfaf7;
-  border-bottom: 1px solid #ddd8cf;
-  display: grid;
-  gap: 12px;
-  grid-column: 1 / -1;
-  grid-template-columns: 82px minmax(0, 1fr) 82px;
-  min-height: 48px;
-  padding: 0 14px;
-  user-select: none;
-}
-
-.app-title {
-  align-items: center;
-  display: flex;
-  font-size: 13px;
-  justify-content: flex-start;
-  min-width: 0;
-}
-
-.window-controls {
-  display: flex;
-  gap: 8px;
-}
-
-.window-controls button {
-  border: 0;
-  border-radius: 999px;
-  height: 13px;
-  min-height: 13px;
-  min-width: 13px;
-  padding: 0;
-  width: 13px;
-}
-
-.window-control.close {
-  background: #ff5f57;
-  box-shadow: inset 0 0 0 1px rgba(120, 0, 0, 0.14);
-}
-
-.window-control.minimize {
-  background: #febc2e;
-  box-shadow: inset 0 0 0 1px rgba(120, 72, 0, 0.14);
-}
-
-.window-control.maximize {
-  background: #28c840;
-  box-shadow: inset 0 0 0 1px rgba(0, 90, 20, 0.14);
 }
 
 .sidebar,
@@ -132,37 +80,6 @@ select {
   border-width: 0 0 0 1px;
   overflow: auto;
   padding: 18px;
-}
-
-.window-dots {
-  align-items: center;
-  display: flex;
-  gap: 10px;
-  padding: 2px 8px;
-}
-
-.window-dots strong {
-  font-size: 14px;
-  margin-left: 8px;
-}
-
-.dot {
-  border-radius: 50%;
-  display: inline-block;
-  height: 13px;
-  width: 13px;
-}
-
-.dot.red {
-  background: #ff5f57;
-}
-
-.dot.yellow {
-  background: #febc2e;
-}
-
-.dot.green {
-  background: #28c840;
 }
 
 .library-card {
@@ -294,7 +211,6 @@ select {
   text-align: center;
 }
 
-.asset-sidebar-summary,
 .library-status {
   border: 1px solid #ddd8cf;
   border-radius: 8px;
@@ -307,7 +223,6 @@ select {
   margin-top: auto;
 }
 
-.asset-sidebar-summary div,
 .library-status div {
   align-items: center;
   display: flex;
@@ -763,10 +678,6 @@ select {
     grid-template-columns: 250px minmax(0, 1fr);
   }
 
-  .app-topbar {
-    grid-template-columns: 82px minmax(0, 1fr) 82px;
-  }
-
   .inspector {
     display: none;
   }
@@ -775,11 +686,6 @@ select {
 @media (max-width: 760px) {
   .workbench {
     grid-template-columns: 1fr;
-    grid-template-rows: auto auto minmax(0, 1fr);
-  }
-
-  .app-topbar {
-    grid-template-columns: 82px minmax(0, 1fr);
   }
 
   .sidebar {

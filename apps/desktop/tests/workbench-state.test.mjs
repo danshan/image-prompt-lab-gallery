@@ -8,6 +8,7 @@ import {
   completeDetailLoad,
   defaultGalleryQuery,
   failDetailLoad,
+  formatAspectRatio,
   rejectSuggestionState,
   resetGalleryQuery,
   toggleGalleryProvider,
@@ -242,4 +243,17 @@ test("applyGalleryQuery sorts by rating descending", () => {
   });
 
   assert.equal(results[0].title, "Higher");
+});
+
+test("formatAspectRatio reduces valid dimensions", () => {
+  assert.equal(formatAspectRatio(1024, 1024), "1:1");
+  assert.equal(formatAspectRatio(1792, 1024), "7:4");
+  assert.equal(formatAspectRatio(1024, 1536), "2:3");
+});
+
+test("formatAspectRatio returns unavailable for missing or invalid dimensions", () => {
+  assert.equal(formatAspectRatio(null, 1024), "Unavailable");
+  assert.equal(formatAspectRatio(1024, null), "Unavailable");
+  assert.equal(formatAspectRatio(0, 1024), "Unavailable");
+  assert.equal(formatAspectRatio(1024, -1), "Unavailable");
 });
