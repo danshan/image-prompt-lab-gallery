@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Define local resource library layout, integrity checking, repair, import/export, and file context behavior.
+
+## Requirements
 
 ### Requirement: 创建受管理资源库
 
@@ -46,24 +50,29 @@
 - **WHEN** 两个不同源文件具有相同文件名
 - **THEN** 系统为每个 managed 图片文件生成不同 UUID 文件名, 并在 asset version 中记录各自相对路径
 
-### Requirement: 使用 MD5 Checksum 校验 Asset Version 文件
+### Requirement: 使用 SHA-256 Checksum 校验 Asset Version 文件
 
-系统 SHALL 对新写入的 asset version 文件计算 MD5 checksum, 并在 integrity check 和 file context 中使用对应 checksum algorithm 校验文件.
+系统 SHALL 对新写入的 asset version 文件计算 SHA-256 checksum, 并在 integrity check 和 file context 中使用对应 checksum algorithm 校验文件. 系统 MUST 保持对历史 MD5 metadata 的兼容读取, 但当前标准 checksum algorithm 是 `SHA-256`.
 
-#### Scenario: 新导入文件记录 MD5
+#### Scenario: 新导入文件记录 SHA-256
 
 - **WHEN** 用户导入一个图片文件
-- **THEN** 系统记录该 managed 文件的 checksum algorithm 为 `MD5`, 并记录 32 位十六进制 MD5 digest
+- **THEN** 系统记录该 managed 文件的 checksum algorithm 为 `SHA-256`, 并记录 64 位十六进制 SHA-256 digest
 
 #### Scenario: Integrity Check 使用记录的算法
 
 - **WHEN** integrity check 校验一个 asset version 文件
 - **THEN** 系统使用该 version 记录的 checksum algorithm 重新计算 digest, 并与记录的 checksum 比较
 
-#### Scenario: MD5 不匹配
+#### Scenario: SHA-256 不匹配
 
-- **WHEN** integrity check 发现文件当前 MD5 与记录的 MD5 不一致
+- **WHEN** integrity check 发现文件当前 SHA-256 与记录的 SHA-256 不一致
 - **THEN** 系统报告 `FileIntegrityMismatch` 并标明受影响的 version id
+
+#### Scenario: 历史 MD5 Metadata 保持可读
+
+- **WHEN** integrity check 校验一个历史 asset version 且其 checksum algorithm 为 `MD5`
+- **THEN** 系统使用 MD5 重新计算 digest, 并与该 version 记录的 checksum 比较
 
 ### Requirement: 提供资源库实际存储大小
 
@@ -95,7 +104,7 @@
 
 ### Requirement: 修复历史 Asset Version 文件元数据
 
-系统 SHALL 提供显式的资源库 repair 操作, 用于将历史 asset version 文件和 SQLite metadata 修复到当前 managed library 标准. repair MUST 支持 dry run, 并在执行模式下同步修复文件路径, checksum metadata 和图片分辨率.
+系统 SHALL 提供显式的资源库 repair 操作, 用于将历史 asset version 文件和 SQLite metadata 修复到当前 managed library 标准. repair MUST 支持 dry run, 并在执行模式下同步修复文件路径, checksum metadata 和图片分辨率. 当前 checksum 标准 MUST 为 SHA-256.
 
 #### Scenario: Dry Run 检查历史脏数据
 
@@ -114,8 +123,8 @@
 
 #### Scenario: 修复历史 Checksum Metadata
 
-- **WHEN** 某个 asset version 文件存在, 但 checksum algorithm 或 checksum 不符合当前 MD5 标准
-- **THEN** repair 操作重新计算文件 MD5, 并更新该 version 的 checksum algorithm 和 checksum
+- **WHEN** 某个 asset version 文件存在, 但 checksum algorithm 或 checksum 不符合当前 SHA-256 标准
+- **THEN** repair 操作重新计算文件 SHA-256, 并更新该 version 的 checksum algorithm 和 checksum
 
 #### Scenario: 文件缺失无法自动修复
 
@@ -129,7 +138,7 @@
 #### Scenario: 导入外部图片
 
 - **WHEN** 用户导入一个本地图片文件
-- **THEN** 系统复制图片到 `originals/$year/$month/$uuid.$extension`, 计算 MD5 checksum, 写入 SQLite, 并且后续不依赖原始外部路径
+- **THEN** 系统复制图片到 `originals/$year/$month/$uuid.$extension`, 计算 SHA-256 checksum, 写入 SQLite, 并且后续不依赖原始外部路径
 
 ### Requirement: 校验资源库完整性
 
@@ -159,10 +168,10 @@
 - **WHEN** 当前 version 记录了 width 和 height
 - **THEN** 系统在 File Context Read Model 中返回该 width 和 height
 
-#### Scenario: 展示 MD5 Checksum
+#### Scenario: 展示 SHA-256 Checksum
 
-- **WHEN** 当前 version 的 checksum algorithm 为 `MD5`
-- **THEN** UI 展示 `Checksum    MD5: $hash`
+- **WHEN** 当前 version 的 checksum algorithm 为 `SHA-256`
+- **THEN** UI 展示 `Checksum    SHA-256: $hash`
 
 ### Requirement: File Context 允许缺失的派生字段为空
 

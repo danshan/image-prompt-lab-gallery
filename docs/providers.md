@@ -40,6 +40,8 @@ Adapter 会:
 - 校验文件存在.
 - 读取文件 bytes, 再交给 core 导入 managed library.
 - 将 command, prompt, stdout 和 stderr 保存到 generation event raw payload.
+- 通过 core 的 generation request builder 复用 CLI 和 desktop 的 provider 名称归一化, operation 推断和 input image loading.
+- 由 core 写入当前标准 checksum metadata: `SHA-256` algorithm 和 64 位十六进制 digest.
 
 失败场景会归一化为 domain error:
 

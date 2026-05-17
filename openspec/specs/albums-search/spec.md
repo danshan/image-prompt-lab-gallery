@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Define album and search behavior for organizing assets through manual albums, smart albums, tags, ratings, and structured queries.
+
+## Requirements
 
 ### Requirement: 管理 Manual Albums
 

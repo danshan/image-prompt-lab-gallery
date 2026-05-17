@@ -1,16 +1,16 @@
 use imglab_core::{
+    prepare_generation_request, AssetId, CreateLibraryRequest, CreateMetadataSuggestionRequest,
+    DomainError, ExportLibraryRequest, GenerateImageRequest, GenerationOperation,
+    GenerationRequestInput, ImageProvider, ImportAssetRequest, LocalGenerationService,
+    LocalLibraryService, MetadataSuggestionId, RepairLibraryRequest,
+    ReviewMetadataSuggestionRequest, SearchQuery,
+};
+use imglab_core::{
     AlbumService, AssetService, GenerationService, LibraryService, MetadataReviewService,
     SearchService,
 };
-use imglab_core::{
-    AssetId, CreateLibraryRequest, CreateMetadataSuggestionRequest, DomainError,
-    ExportLibraryRequest, GenerateImageRequest, GenerationOperation, GenerationParameters,
-    ImageProvider, ImportAssetRequest, LocalGenerationService, LocalLibraryService,
-    MetadataSuggestionId, RepairLibraryRequest, ReviewMetadataSuggestionRequest, SearchQuery,
-};
 use imglab_provider_codex::CodexCliImageProvider;
 use serde_json::json;
-use std::fs;
 use std::path::PathBuf;
 
 fn main() {
@@ -164,7 +164,6 @@ fn import(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainEr
         "asset_id": asset.id.0,
         "version_id": version.id.0,
         "file_path": version.file_path,
-        "sha256": version.sha256,
         "checksum_algorithm": version.checksum_algorithm,
         "checksum": version.checksum
     }));
@@ -223,88 +222,46 @@ fn generate(args: &[String]) -> Result<(), DomainError> {
     let library_path = required_option(args, "--library")?;
     let prompt = required_option(args, "--prompt")?;
     let provider_name = option_value(args, "--provider").unwrap_or_else(|| "codex-cli".to_string());
-    let input_file = option_value(args, "--input-file");
-    let input_version_id = option_value(args, "--input-version").map(imglab_core::AssetVersionId);
-    let operation = if input_file.is_some() || input_version_id.is_some() {
-        GenerationOperation::ImageToImage
-    } else {
-        GenerationOperation::TextToImage
-    };
-
-    if operation == GenerationOperation::ImageToImage
-        && (input_file.is_none() || input_version_id.is_none())
-    {
-        return Err(DomainError::InvalidGenerationParameters {
-            message: "image-to-image generation requires --input-file and --input-version"
-                .to_string(),
-        });
-    }
-
-    let input_bytes = input_file
-        .as_ref()
-        .map(|path| {
-            fs::read(path).map_err(|error| DomainError::Io {
-                path: path.clone(),
-                message: error.to_string(),
-            })
-        })
-        .transpose()?;
-    let parameters = GenerationParameters {
-        library_path: Some(PathBuf::from(&library_path)),
-        provider: provider_name.clone(),
-        model: "imagegen-skill".to_string(),
+    let prepared = prepare_generation_request(GenerationRequestInput {
+        library_path: PathBuf::from(&library_path),
+        provider: provider_name,
         prompt,
         negative_prompt: option_value(args, "--negative-prompt"),
-        operation,
-        input_version_id,
-        parameters_json: option_value(args, "--parameters").unwrap_or_else(|| "{}".to_string()),
-    };
+        input_file: option_value(args, "--input-file").map(PathBuf::from),
+        input_version_id: option_value(args, "--input-version").map(imglab_core::AssetVersionId),
+        parameters_json: option_value(args, "--parameters"),
+    })?;
 
     if has_flag(args, "--dry-run") {
         print_json(json!({
             "dry_run": true,
             "library": library_path,
-            "provider": provider_name,
-            "operation": operation_name(operation),
-            "prompt": parameters.prompt
+            "provider": prepared.provider,
+            "operation": operation_name(prepared.request.parameters.operation),
+            "prompt": prepared.request.parameters.prompt
         }));
         return Ok(());
     }
 
-    match provider_name.as_str() {
+    match prepared.provider.as_str() {
         "codex" | "codex-cli" => generate_with_provider(
             CodexCliImageProvider::new("codex", &library_path),
-            library_path,
-            parameters,
-            input_bytes,
+            prepared.request,
         ),
         "fake" => generate_with_provider(
             imglab_core::FakeImageProvider::success("fake"),
-            library_path,
-            parameters,
-            input_bytes,
+            prepared.request,
         ),
-        _ => Err(DomainError::InvalidGenerationParameters {
-            message: format!("unsupported provider: {provider_name}"),
-        }),
+        _ => unreachable!("provider is normalized before dispatch"),
     }
 }
 
-fn generate_with_provider<P>(
-    provider: P,
-    library_path: String,
-    parameters: GenerationParameters,
-    input_bytes: Option<Vec<u8>>,
-) -> Result<(), DomainError>
+fn generate_with_provider<P>(provider: P, request: GenerateImageRequest) -> Result<(), DomainError>
 where
     P: ImageProvider,
 {
     let service = LocalGenerationService::new(provider);
-    let versions = service.generate(GenerateImageRequest {
-        library_path: PathBuf::from(library_path),
-        parameters,
-        input_bytes,
-    })?;
+    let versions = service.generate(request)?;
     print_json(json!({
         "versions": versions.into_iter().map(|version| {
             json!({
@@ -313,7 +270,6 @@ where
                 "parent_version_id": version.parent_version_id.map(|id| id.0),
                 "generation_event_id": version.generation_event_id.map(|id| id.0),
                 "file_path": version.file_path,
-                "sha256": version.sha256,
                 "checksum_algorithm": version.checksum_algorithm,
                 "checksum": version.checksum,
                 "mime_type": version.mime_type

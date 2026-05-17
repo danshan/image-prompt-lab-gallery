@@ -84,8 +84,7 @@ fn init_import_search_and_rate_emit_json() {
         ])
         .assert_success();
     let asset_id = imported["asset_id"].as_str().expect("asset id");
-    assert!(imported["sha256"].as_str().is_some());
-    assert_eq!(imported["checksum_algorithm"], "MD5");
+    assert_eq!(imported["checksum_algorithm"], "SHA-256");
     assert!(imported["checksum"].as_str().is_some());
 
     let search = workspace

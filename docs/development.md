@@ -75,7 +75,7 @@ npm run tauri dev
 资源库是 managed directory, 包含:
 
 - `manifest.json`.
-- `imglab.sqlite`.
+- `library.sqlite`.
 - `originals/imported`.
 - `originals/generated`.
 - `exports`.

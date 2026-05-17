@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Define review-first metadata suggestion behavior before writing canonical asset metadata.
+
+## Requirements
 
 ### Requirement: 创建 AI Metadata Suggestions
 

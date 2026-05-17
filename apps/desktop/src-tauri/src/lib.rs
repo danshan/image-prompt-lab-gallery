@@ -1,17 +1,15 @@
 use imglab_core::{
-    AlbumService, AssetId, AssetService, CreateLibraryRequest, CreateMetadataSuggestionRequest,
-    DomainError, ExportLibraryRequest, GalleryQuery, GalleryReadService, GallerySort,
-    GenerateImageRequest, GenerationOperation, GenerationParameters, GenerationService,
-    ImageProvider, ImportAssetRequest, LibraryId, LibraryService, LocalGenerationService,
-    LocalLibraryService, MetadataReviewService, MetadataSuggestionId, RepairLibraryRequest,
-    ReviewMetadataSuggestionRequest, ReviewStatusFilter, SearchQuery, SearchService,
-    UpdateAssetMetadataRequest,
+    prepare_generation_request, AlbumService, AssetId, AssetService, CreateLibraryRequest,
+    CreateMetadataSuggestionRequest, DomainError, ExportLibraryRequest, GalleryQuery,
+    GalleryReadService, GallerySort, GenerateImageRequest, GenerationOperation,
+    GenerationRequestInput, GenerationService, ImageProvider, ImportAssetRequest, LibraryId,
+    LibraryService, LocalGenerationService, LocalLibraryService, MetadataReviewService,
+    MetadataSuggestionId, RepairLibraryRequest, ReviewMetadataSuggestionRequest,
+    ReviewStatusFilter, SearchQuery, SearchService, UpdateAssetMetadataRequest,
 };
 use imglab_provider_codex::CodexCliImageProvider;
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -89,19 +87,6 @@ struct AssetView {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct GalleryItemView {
-    id: String,
-    title: Option<String>,
-    category: Option<String>,
-    rating: Option<u8>,
-    status: String,
-    image_path: Option<PathBuf>,
-    version_id: Option<String>,
-    mime_type: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
 struct GalleryAssetView {
     id: String,
     title: Option<String>,
@@ -131,7 +116,6 @@ struct VersionView {
     parent_version_id: Option<String>,
     generation_event_id: Option<String>,
     file_path: PathBuf,
-    sha256: String,
     checksum_algorithm: String,
     checksum: String,
     mime_type: String,
@@ -278,12 +262,6 @@ struct SearchInput {
     provider: Option<String>,
     status: Option<String>,
     category: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GalleryItemsInput {
-    library_path: PathBuf,
 }
 
 #[derive(Debug, Deserialize)]
@@ -483,65 +461,6 @@ fn search_assets(input: SearchInput) -> Result<Vec<AssetView>, CommandError> {
 }
 
 #[tauri::command]
-fn gallery_items(input: GalleryItemsInput) -> Result<Vec<GalleryItemView>, CommandError> {
-    let library_path = input.library_path;
-    let database_path = LocalLibraryService::database_path(&library_path);
-    let connection = Connection::open(&database_path).map_err(|error| CommandError {
-        code: "Database".to_string(),
-        message: error.to_string(),
-        recoverable: true,
-    })?;
-    let mut statement = connection
-        .prepare(
-            "
-            SELECT a.id, a.title, a.category, a.rating, a.status,
-                   av.id, av.file_path, av.mime_type
-            FROM assets a
-            LEFT JOIN asset_versions av
-              ON av.id = (
-                SELECT latest.id
-                FROM asset_versions latest
-                WHERE latest.asset_id = a.id
-                ORDER BY latest.created_at DESC
-                LIMIT 1
-              )
-            ORDER BY a.created_at DESC
-            ",
-        )
-        .map_err(|error| CommandError {
-            code: "Database".to_string(),
-            message: error.to_string(),
-            recoverable: true,
-        })?;
-    let rows = statement
-        .query_map([], |row| {
-            let relative_path: Option<String> = row.get(6)?;
-            Ok(GalleryItemView {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                category: row.get(2)?,
-                rating: row.get::<_, Option<u8>>(3)?,
-                status: row.get(4)?,
-                version_id: row.get(5)?,
-                image_path: relative_path.map(|path| library_path.join(path)),
-                mime_type: row.get(7)?,
-            })
-        })
-        .map_err(|error| CommandError {
-            code: "Database".to_string(),
-            message: error.to_string(),
-            recoverable: true,
-        })?;
-
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|error| CommandError {
-            code: "Database".to_string(),
-            message: error.to_string(),
-            recoverable: true,
-        })
-}
-
-#[tauri::command]
 fn query_gallery(input: QueryGalleryInput) -> Result<Vec<GalleryAssetView>, CommandError> {
     let library_path = input.library_path.clone();
     service()
@@ -648,75 +567,27 @@ fn execute_generation(
     input: GenerateImageInput,
     log_path: Option<PathBuf>,
 ) -> Result<Vec<VersionView>, CommandError> {
-    let operation = if input.input_file.is_some() || input.input_version_id.is_some() {
-        GenerationOperation::ImageToImage
-    } else {
-        GenerationOperation::TextToImage
-    };
-    let input_bytes = generation_input_bytes(&input)?;
-    let parameters = GenerationParameters {
-        library_path: Some(input.library_path.clone()),
-        provider: input.provider.clone(),
-        model: "imagegen-skill".to_string(),
+    let prepared = prepare_generation_request(GenerationRequestInput {
+        library_path: input.library_path,
+        provider: input.provider,
         prompt: input.prompt,
         negative_prompt: input.negative_prompt,
-        operation,
+        input_file: input.input_file,
         input_version_id: input.input_version_id.map(imglab_core::AssetVersionId),
-        parameters_json: input.parameters_json.unwrap_or_else(|| "{}".to_string()),
-    };
+        parameters_json: input.parameters_json,
+    })?;
 
-    match input.provider.as_str() {
+    match prepared.provider.as_str() {
         "codex" | "codex-cli" => run_generation(
-            codex_provider(&input.library_path, log_path),
-            input.library_path,
-            parameters,
-            input_bytes,
+            codex_provider(&prepared.request.library_path, log_path),
+            prepared.request,
         ),
         "fake" => run_generation(
             imglab_core::FakeImageProvider::success("fake"),
-            input.library_path,
-            parameters,
-            input_bytes,
+            prepared.request,
         ),
-        provider => Err(CommandError {
-            code: "InvalidGenerationParameters".to_string(),
-            message: format!("unsupported provider: {provider}"),
-            recoverable: true,
-        }),
+        _ => unreachable!("provider is normalized before dispatch"),
     }
-}
-
-fn generation_input_bytes(input: &GenerateImageInput) -> Result<Option<Vec<u8>>, DomainError> {
-    if let Some(path) = input.input_file.as_ref() {
-        return fs::read(path).map(Some).map_err(|error| DomainError::Io {
-            path: path.display().to_string(),
-            message: error.to_string(),
-        });
-    }
-
-    if let Some(version_id) = input.input_version_id.as_ref() {
-        let database_path = LocalLibraryService::database_path(&input.library_path);
-        let connection =
-            Connection::open(&database_path).map_err(|error| DomainError::Database {
-                message: error.to_string(),
-            })?;
-        let relative_path: String = connection
-            .query_row(
-                "SELECT file_path FROM asset_versions WHERE id = ?1",
-                [version_id],
-                |row| row.get(0),
-            )
-            .map_err(|error| DomainError::Database {
-                message: error.to_string(),
-            })?;
-        let path = input.library_path.join(relative_path);
-        return fs::read(&path).map(Some).map_err(|error| DomainError::Io {
-            path: path.display().to_string(),
-            message: error.to_string(),
-        });
-    }
-
-    Ok(None)
 }
 
 fn codex_provider(library_path: &PathBuf, log_path: Option<PathBuf>) -> CodexCliImageProvider {
@@ -821,20 +692,14 @@ fn reject_suggestion(library_path: PathBuf, suggestion_id: String) -> Result<(),
 
 fn run_generation<P>(
     provider: P,
-    library_path: PathBuf,
-    parameters: GenerationParameters,
-    input_bytes: Option<Vec<u8>>,
+    request: GenerateImageRequest,
 ) -> Result<Vec<VersionView>, CommandError>
 where
     P: ImageProvider,
 {
-    let library_root = library_path.clone();
+    let library_root = request.library_path.clone();
     LocalGenerationService::new(provider)
-        .generate(GenerateImageRequest {
-            library_path,
-            parameters,
-            input_bytes,
-        })
+        .generate(request)
         .map(|versions| {
             versions
                 .into_iter()
@@ -948,7 +813,6 @@ fn version_view(summary: imglab_core::VersionSummary) -> VersionView {
         parent_version_id: summary.parent_version_id.map(|id| id.0),
         generation_event_id: summary.generation_event_id.map(|id| id.0),
         file_path: summary.file_path,
-        sha256: summary.sha256,
         checksum_algorithm: summary.checksum_algorithm,
         checksum: summary.checksum,
         mime_type: summary.mime_type,
@@ -1131,7 +995,6 @@ pub fn run() {
             import_asset,
             export_library,
             search_assets,
-            gallery_items,
             query_gallery,
             get_asset_detail,
             generate_image,

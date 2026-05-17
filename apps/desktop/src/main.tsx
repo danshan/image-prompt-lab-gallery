@@ -81,7 +81,6 @@ type Version = {
   parentVersionId: string | null;
   generationEventId: string | null;
   filePath: string;
-  sha256: string;
   checksumAlgorithm: string;
   checksum: string;
   mimeType: string;
@@ -358,9 +357,8 @@ const mockDetail: AssetDetail = {
       parentVersionId: "version-botanical-2",
       generationEventId: "event-botanical-3",
       filePath: "originals/2026/05/0f18b4ef-8d2d-49bc-a2ef-8d8582386a20.png",
-      sha256: "4f72bd81d8c5f1a7f4e4d5e9c4a1b258",
-      checksumAlgorithm: "MD5",
-      checksum: "4f72bd81d8c5f1a7f4e4d5e9c4a1b258",
+      checksumAlgorithm: "SHA-256",
+      checksum: "4f72bd81d8c5f1a7f4e4d5e9c4a1b2584f72bd81d8c5f1a7f4e4d5e9c4a1b258",
       mimeType: "image/png",
     },
     {
@@ -369,9 +367,8 @@ const mockDetail: AssetDetail = {
       parentVersionId: "version-botanical-1",
       generationEventId: "event-botanical-2",
       filePath: "originals/2026/05/3f2f8444-8cc2-4e35-91a7-806d24213b10.png",
-      sha256: "97290b8d8c5f1a7f4e4d5e9c4a1b258",
-      checksumAlgorithm: "MD5",
-      checksum: "97290b8d8c5f1a7f4e4d5e9c4a1b258",
+      checksumAlgorithm: "SHA-256",
+      checksum: "97290b8d8c5f1a7f4e4d5e9c4a1b25897290b8d8c5f1a7f4e4d5e9c4a1b258",
       mimeType: "image/png",
     },
   ],
@@ -383,9 +380,8 @@ const mockDetail: AssetDetail = {
         parentVersionId: "version-botanical-2",
         generationEventId: "event-botanical-3",
         filePath: "originals/2026/05/0f18b4ef-8d2d-49bc-a2ef-8d8582386a20.png",
-        sha256: "4f72bd81d8c5f1a7f4e4d5e9c4a1b258",
-        checksumAlgorithm: "MD5",
-        checksum: "4f72bd81d8c5f1a7f4e4d5e9c4a1b258",
+        checksumAlgorithm: "SHA-256",
+        checksum: "4f72bd81d8c5f1a7f4e4d5e9c4a1b2584f72bd81d8c5f1a7f4e4d5e9c4a1b258",
         mimeType: "image/png",
       },
       generationEvent: {
@@ -408,8 +404,8 @@ const mockDetail: AssetDetail = {
     sizeBytes: 1240000,
     width: 1024,
     height: 1024,
-    checksumAlgorithm: "MD5",
-    checksum: "4f72bd81d8c5f1a7f4e4d5e9c4a1b258",
+    checksumAlgorithm: "SHA-256",
+    checksum: "4f72bd81d8c5f1a7f4e4d5e9c4a1b2584f72bd81d8c5f1a7f4e4d5e9c4a1b258",
     integrityStatus: "verified",
   },
 };

@@ -116,6 +116,23 @@ pub struct GenerateImageRequest {
 }
 
 #[derive(Debug, Clone)]
+pub struct GenerationRequestInput {
+    pub library_path: PathBuf,
+    pub provider: String,
+    pub prompt: String,
+    pub negative_prompt: Option<String>,
+    pub input_file: Option<PathBuf>,
+    pub input_version_id: Option<AssetVersionId>,
+    pub parameters_json: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PreparedGenerationRequest {
+    pub provider: String,
+    pub request: GenerateImageRequest,
+}
+
+#[derive(Debug, Clone)]
 pub struct GeneratedImage {
     pub bytes: Vec<u8>,
     pub mime_type: String,
@@ -145,7 +162,6 @@ pub struct VersionSummary {
     pub parent_version_id: Option<AssetVersionId>,
     pub generation_event_id: Option<GenerationEventId>,
     pub file_path: PathBuf,
-    pub sha256: String,
     pub checksum_algorithm: String,
     pub checksum: String,
     pub mime_type: String,

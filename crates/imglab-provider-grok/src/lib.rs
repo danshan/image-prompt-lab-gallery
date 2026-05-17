@@ -10,12 +10,6 @@ impl ImageProvider for GrokImageProvider {
     }
 
     fn validate_parameters(&self, parameters: &GenerationParameters) -> DomainResult<()> {
-        if parameters.provider != "grok" {
-            return Err(DomainError::InvalidGenerationParameters {
-                message: format!("provider mismatch: {}", parameters.provider),
-            });
-        }
-
         if parameters.prompt.trim().is_empty() {
             return Err(DomainError::InvalidGenerationParameters {
                 message: "prompt must not be empty".to_string(),
