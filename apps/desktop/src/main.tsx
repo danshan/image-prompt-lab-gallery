@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
-import { convertFileSrc, invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke as tauriInvoke, isTauri as tauriIsTauri } from "@tauri-apps/api/core";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import {
   acceptSuggestionState,
   addReviewFormTag,
@@ -11,16 +12,19 @@ import {
   buildBatchReviewPayloads,
   clearAlbumQuery,
   clearCurationStateForLibrarySwitch,
+  clearLibraryWorkspaceState,
   clearSelectionForLibrarySwitch,
   completeDetailLoad,
   completeReviewFieldGeneration,
   countActiveTasks,
   createReviewFormState,
+  defaultSettingsSection,
   defaultGalleryQuery,
   failDetailLoad,
   failReviewFieldGeneration,
   formatAspectRatio,
   isReviewFieldGenerating,
+  libraryMaintenanceActions,
   markAssetReviewPending,
   moveItem,
   moveQueuedTaskOrder,
@@ -44,6 +48,7 @@ import {
   type ReviewFieldName,
   type ReviewFormState,
   type ReviewStatusFilter,
+  type SettingsSection,
 } from "./workbench-state";
 import "./styles.css";
 
@@ -72,6 +77,11 @@ type LibraryStatus = {
   storageSizeBytes: number;
   integrityStatus: string;
   integrityIssueCount: number;
+};
+
+type LibraryBackup = {
+  library: Library;
+  cloned: boolean;
 };
 
 type GalleryAsset = {
@@ -688,8 +698,11 @@ function App() {
   const [composerOpen, setComposerOpen] = useState(false);
   const [status, setStatus] = useState(runningInTauri ? "Open or create a library" : "Preview mode");
   const [recoverableError, setRecoverableError] = useState<string | null>(null);
-  const [libraryPathInput, setLibraryPathInput] = useState("");
+  const [libraryFolderNameInput, setLibraryFolderNameInput] = useState("image-prompt-lab");
   const [libraryNameInput, setLibraryNameInput] = useState("Image Prompt Lab");
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>(defaultSettingsSection);
+  const [pendingLibraryActions, setPendingLibraryActions] = useState<string[]>([]);
+  const [missingLibraryPaths, setMissingLibraryPaths] = useState<string[]>([]);
   const [appLogs, setAppLogs] = useState<AppLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const [selectedLogPath, setSelectedLogPath] = useState<string | null>(null);
@@ -834,7 +847,6 @@ function App() {
       const nextLibrary = libraries[0] ?? null;
       setLibraries(libraries);
       setLibrary(nextLibrary);
-      setLibraryPathInput(nextLibrary?.rootPath ?? libraryPathInput);
       setStatus(nextLibrary ? "Library opened" : "No library registered");
       if (nextLibrary) {
         void refreshLibraryStatus(nextLibrary.rootPath);
@@ -842,6 +854,55 @@ function App() {
     } catch (error) {
       setStatus(errorMessage(error));
     }
+  }
+
+  function setLibraryActionPending(key: string, pending: boolean) {
+    setPendingLibraryActions((current) => {
+      if (pending) {
+        return current.includes(key) ? current : [...current, key];
+      }
+      return current.filter((item) => item !== key);
+    });
+  }
+
+  function rememberMissingLibraryPath(rootPath: string) {
+    setMissingLibraryPaths((current) => (current.includes(rootPath) ? current : [...current, rootPath]));
+  }
+
+  function forgetMissingLibraryPath(rootPath: string) {
+    setMissingLibraryPaths((current) => current.filter((path) => path !== rootPath));
+  }
+
+  function replaceRegisteredLibrary(updated: Library) {
+    setLibraries((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+    setLibrary((current) => (current?.id === updated.id ? updated : current));
+  }
+
+  function clearCurrentLibraryContext() {
+    const cleared = clearLibraryWorkspaceState<AssetDetail>();
+    setLibrary(null);
+    setLibraryStatus(null);
+    setGallery([]);
+    setSelectedGalleryAssetIds(cleared.selectedGalleryAssetIds);
+    setSelectedAssetId(cleared.selectedAssetId);
+    setDetailState(cleared.detailState);
+    setAlbums([]);
+    setSelectedAlbumId(cleared.selectedAlbumId);
+    setAlbumSearchInput("");
+    setAlbumNameInput("");
+    setAlbumCreateOpen(false);
+    setSuggestions([]);
+    setSelectedSuggestionId(cleared.selectedSuggestionId);
+    setSelectedSuggestionIds(cleared.selectedSuggestionIds);
+    setSuggestionHistory([]);
+    setReviewForm(cleared.reviewForm);
+    setTasks([]);
+    setSelectedTaskId(cleared.selectedTaskId);
+    setTaskDetail(null);
+    setQuery(clearAlbumQuery(query));
+    setLibraryFolderNameInput("image-prompt-lab");
+    setStatus("No library selected");
+    setRecoverableError(null);
   }
 
   async function refreshLibraryStatus(rootPath: string) {
@@ -999,7 +1060,6 @@ function App() {
     setSuggestions(runningInTauri ? [] : mockSuggestions);
     setQuery(clearAlbumQuery(query));
     setRecoverableError(null);
-    setLibraryPathInput(nextLibrary?.rootPath ?? "");
     setStatus(nextLibrary ? "Library switched" : "No library selected");
     if (runningInTauri && nextLibrary) {
       void refreshLibraryStatus(nextLibrary.rootPath);
@@ -1045,14 +1105,20 @@ function App() {
   }
 
   async function createLibrary() {
-    if (libraryPathInput.trim().length === 0) {
-      setStatus("Library path is required");
+    const folderName = libraryFolderNameInput.trim();
+    if (!validLibraryFolderName(folderName)) {
+      setStatus("Folder name must not be empty or contain path separators");
       return;
     }
     try {
+      const parentPath = await pickDirectory("Choose Library Parent Folder");
+      if (!parentPath) {
+        return;
+      }
+      const rootPath = buildChildPath(parentPath, folderName);
       const created = await invokeCommand<Library>("create_library", {
         input: {
-          rootPath: libraryPathInput,
+          rootPath,
           name: libraryNameInput.trim() || "Image Prompt Lab",
         },
       });
@@ -1078,17 +1144,18 @@ function App() {
     }
   }
 
-  async function openLibrary() {
-    if (libraryPathInput.trim().length === 0) {
-      setStatus("Library path is required");
-      return;
-    }
+  async function openExistingLibraryFromPrompt() {
     try {
+      const selectedPath = await pickDirectory("Open Existing Library");
+      if (!selectedPath) {
+        return;
+      }
       const opened = await invokeCommand<Library>("open_library", {
-        rootPath: libraryPathInput,
+        rootPath: selectedPath,
       });
       setLibraries((current) => [opened, ...current.filter((item) => item.id !== opened.id)]);
       setLibrary(opened);
+      forgetMissingLibraryPath(opened.rootPath);
       setLibraryStatus(null);
       setSelectedAlbumId(null);
       setSelectedSuggestionId(null);
@@ -1096,6 +1163,130 @@ function App() {
       setStatus("Library opened");
     } catch (error) {
       setStatus(errorMessage(error));
+    }
+  }
+
+  async function renameLibraryAlias(item: Library) {
+    const alias = window.prompt("Rename Library", item.name);
+    if (alias === null) {
+      return;
+    }
+    const actionKey = `rename:${item.id}`;
+    setLibraryActionPending(actionKey, true);
+    try {
+      const updated = await invokeCommand<Library>("rename_library_alias", {
+        input: {
+          libraryId: item.id,
+          alias,
+        },
+      });
+      replaceRegisteredLibrary(updated);
+      setStatus("Library renamed");
+    } catch (error) {
+      setStatus(errorMessage(error));
+    } finally {
+      setLibraryActionPending(actionKey, false);
+    }
+  }
+
+  async function unregisterLibrary(item: Library) {
+    const confirmed = window.confirm("Close this library in the app? Files on disk are not deleted.");
+    if (!confirmed) {
+      return;
+    }
+    const actionKey = `close:${item.id}`;
+    setLibraryActionPending(actionKey, true);
+    try {
+      await invokeCommand<void>("unregister_library", { libraryId: item.id });
+      setLibraries((current) => current.filter((library) => library.id !== item.id));
+      if (library?.id === item.id) {
+        clearCurrentLibraryContext();
+      } else {
+        setStatus("Library closed");
+      }
+    } catch (error) {
+      setStatus(errorMessage(error));
+    } finally {
+      setLibraryActionPending(actionKey, false);
+    }
+  }
+
+  async function exportLibraryBackup(item: Library) {
+    const defaultPath = `${item.rootPath.replace(/\/$/, "")}.zip`;
+    const actionKey = `export:${item.id}`;
+    setLibraryActionPending(actionKey, true);
+    try {
+      const outputZipPath = await pickSaveZipPath("Export Library Zip", defaultPath);
+      if (!outputZipPath) {
+        return;
+      }
+      await invokeCommand<void>("export_library_backup_zip", {
+        input: {
+          libraryPath: item.rootPath,
+          outputZipPath,
+        },
+      });
+      setStatus(`Library exported to ${outputZipPath}`);
+      forgetMissingLibraryPath(item.rootPath);
+    } catch (error) {
+      const message = errorMessage(error);
+      setStatus(message);
+      if (message.includes("not found") || message.includes("missing")) {
+        rememberMissingLibraryPath(item.rootPath);
+      }
+    } finally {
+      setLibraryActionPending(actionKey, false);
+    }
+  }
+
+  async function importLibraryBackup() {
+    const actionKey = "import";
+    setLibraryActionPending(actionKey, true);
+    try {
+      const zipPath = await pickZipFile("Import Library Zip");
+      if (!zipPath) {
+        return;
+      }
+      const destinationPath = await pickDirectory("Import Destination Folder");
+      if (!destinationPath) {
+        return;
+      }
+      const imported = await invokeCommand<LibraryBackup>("import_library_backup_zip", {
+        input: {
+          zipPath,
+          destinationPath,
+        },
+      });
+      setLibraries((current) => [imported.library, ...current.filter((item) => item.id !== imported.library.id)]);
+      setLibrary(imported.library);
+      forgetMissingLibraryPath(imported.library.rootPath);
+      setLibraryStatus(null);
+      setSelectedAlbumId(null);
+      setSelectedSuggestionId(null);
+      setReviewForm(null);
+      setStatus(imported.cloned ? "Library imported as copy" : "Library imported");
+    } catch (error) {
+      setStatus(errorMessage(error));
+    } finally {
+      setLibraryActionPending(actionKey, false);
+    }
+  }
+
+  async function revealLibraryFolder(item: Library) {
+    const actionKey = `reveal:${item.id}`;
+    setLibraryActionPending(actionKey, true);
+    try {
+      await invokeCommand<void>("reveal_library_folder", { rootPath: item.rootPath });
+      setStatus("Library folder opened");
+      forgetMissingLibraryPath(item.rootPath);
+    } catch (error) {
+      const message = errorMessage(error);
+      setStatus(message);
+      if (message.includes("missing") || message.includes("not found")) {
+        rememberMissingLibraryPath(item.rootPath);
+      }
+    } finally {
+      setLibraryActionPending(actionKey, false);
     }
   }
 
@@ -2235,15 +2426,25 @@ function App() {
           </div>
         )}
         {activeView === "settings" && (
-          <SettingsView
+          <SettingsWorkspace
             library={library}
             libraries={libraries}
-            libraryPath={libraryPathInput}
+            activeSection={settingsSection}
+            onSectionChange={setSettingsSection}
+            libraryFolderName={libraryFolderNameInput}
             libraryName={libraryNameInput}
-            onLibraryPathChange={setLibraryPathInput}
+            onLibraryFolderNameChange={setLibraryFolderNameInput}
             onLibraryNameChange={setLibraryNameInput}
             onCreate={createLibrary}
-            onOpen={openLibrary}
+            onOpenExisting={openExistingLibraryFromPrompt}
+            onImportZip={() => void importLibraryBackup()}
+            onSwitchLibrary={switchLibrary}
+            onRenameLibrary={(item) => void renameLibraryAlias(item)}
+            onCloseLibrary={(item) => void unregisterLibrary(item)}
+            onExportZip={(item) => void exportLibraryBackup(item)}
+            onReveal={(item) => void revealLibraryFolder(item)}
+            pendingLibraryActions={pendingLibraryActions}
+            missingLibraryPaths={missingLibraryPaths}
             logs={appLogs}
             logsLoading={logsLoading}
             selectedLogPath={selectedLogPath}
@@ -3709,15 +3910,25 @@ function TaskDetailPanel({
   );
 }
 
-function SettingsView({
+function SettingsWorkspace({
   library,
   libraries,
-  libraryPath,
+  activeSection,
+  onSectionChange,
+  libraryFolderName,
   libraryName,
-  onLibraryPathChange,
+  onLibraryFolderNameChange,
   onLibraryNameChange,
   onCreate,
-  onOpen,
+  onOpenExisting,
+  onImportZip,
+  onSwitchLibrary,
+  onRenameLibrary,
+  onCloseLibrary,
+  onExportZip,
+  onReveal,
+  pendingLibraryActions,
+  missingLibraryPaths,
   logs,
   logsLoading,
   selectedLogPath,
@@ -3728,12 +3939,22 @@ function SettingsView({
 }: {
   library: Library | null;
   libraries: Library[];
-  libraryPath: string;
+  activeSection: SettingsSection;
+  onSectionChange: (section: SettingsSection) => void;
+  libraryFolderName: string;
   libraryName: string;
-  onLibraryPathChange: (value: string) => void;
+  onLibraryFolderNameChange: (value: string) => void;
   onLibraryNameChange: (value: string) => void;
   onCreate: () => void;
-  onOpen: () => void;
+  onOpenExisting: () => void;
+  onImportZip: () => void;
+  onSwitchLibrary: (libraryId: string) => void;
+  onRenameLibrary: (library: Library) => void;
+  onCloseLibrary: (library: Library) => void;
+  onExportZip: (library: Library) => void;
+  onReveal: (library: Library) => void;
+  pendingLibraryActions: string[];
+  missingLibraryPaths: string[];
   logs: AppLog[];
   logsLoading: boolean;
   selectedLogPath: string | null;
@@ -3743,83 +3964,328 @@ function SettingsView({
   onSelectLog: (path: string) => void;
 }) {
   return (
-    <section className="settings-grid">
-      <div>
-        <h3>Library</h3>
-        <p>{library?.rootPath ?? "Not opened"}</p>
+    <section className="settings-workspace">
+      <div className="settings-tabs" role="tablist" aria-label="Settings sections">
+        <button className={activeSection === "libraries" ? "active" : ""} onClick={() => onSectionChange("libraries")}>
+          Libraries
+        </button>
+        <button className={activeSection === "logs" ? "active" : ""} onClick={() => onSectionChange("logs")}>
+          Logs
+        </button>
       </div>
-      <div>
-        <h3>Registered Libraries</h3>
-        <p>{libraries.length}</p>
-      </div>
-      <div>
-        <h3>Schema</h3>
-        <p>{library?.schemaVersion ?? "-"}</p>
-      </div>
-      <div className="library-form">
-        <label>
-          <span>Library path</span>
-          <input value={libraryPath} onChange={(event) => onLibraryPathChange(event.target.value)} />
-        </label>
-        <label>
-          <span>Library name</span>
-          <input value={libraryName} onChange={(event) => onLibraryNameChange(event.target.value)} />
-        </label>
-        <div className="row-actions">
-          <button onClick={onCreate}>Create Library</button>
-          <button onClick={onOpen}>Open Library</button>
+      {activeSection === "libraries" ? (
+        <SettingsLibrariesView
+          library={library}
+          libraries={libraries}
+          libraryFolderName={libraryFolderName}
+          libraryName={libraryName}
+          onLibraryFolderNameChange={onLibraryFolderNameChange}
+          onLibraryNameChange={onLibraryNameChange}
+          onCreate={onCreate}
+          onOpenExisting={onOpenExisting}
+          onImportZip={onImportZip}
+          onSwitchLibrary={onSwitchLibrary}
+          onRenameLibrary={onRenameLibrary}
+          onCloseLibrary={onCloseLibrary}
+          onExportZip={onExportZip}
+          onReveal={onReveal}
+          pendingLibraryActions={pendingLibraryActions}
+          missingLibraryPaths={missingLibraryPaths}
+        />
+      ) : (
+        <SettingsLogsView
+          logs={logs}
+          logsLoading={logsLoading}
+          selectedLogPath={selectedLogPath}
+          selectedLogContent={selectedLogContent}
+          logContentLoading={logContentLoading}
+          onRefreshLogs={onRefreshLogs}
+          onSelectLog={onSelectLog}
+        />
+      )}
+    </section>
+  );
+}
+
+function SettingsLibrariesView({
+  library,
+  libraries,
+  libraryFolderName,
+  libraryName,
+  onLibraryFolderNameChange,
+  onLibraryNameChange,
+  onCreate,
+  onOpenExisting,
+  onImportZip,
+  onSwitchLibrary,
+  onRenameLibrary,
+  onCloseLibrary,
+  onExportZip,
+  onReveal,
+  pendingLibraryActions,
+  missingLibraryPaths,
+}: {
+  library: Library | null;
+  libraries: Library[];
+  libraryFolderName: string;
+  libraryName: string;
+  onLibraryFolderNameChange: (value: string) => void;
+  onLibraryNameChange: (value: string) => void;
+  onCreate: () => void;
+  onOpenExisting: () => void;
+  onImportZip: () => void;
+  onSwitchLibrary: (libraryId: string) => void;
+  onRenameLibrary: (library: Library) => void;
+  onCloseLibrary: (library: Library) => void;
+  onExportZip: (library: Library) => void;
+  onReveal: (library: Library) => void;
+  pendingLibraryActions: string[];
+  missingLibraryPaths: string[];
+}) {
+  return (
+    <div className="settings-section">
+      <div className="panel-header">
+        <div>
+          <h3>Libraries</h3>
+          <p>
+            {libraries.length} registered{library ? `, current: ${library.name}` : ""}
+          </p>
         </div>
-      </div>
-      <div className="settings-logs-panel">
-        <div className="panel-header">
-          <div>
-            <h3>Logs</h3>
-            <p>{logsLoading ? "Loading logs..." : `${logs.length} recent log${logs.length === 1 ? "" : "s"}`}</p>
-          </div>
-          <button onClick={onRefreshLogs} disabled={logsLoading}>
-            {logsLoading ? "Refreshing..." : "Refresh"}
+        <div className="row-actions">
+          <button onClick={onOpenExisting}>Open Existing Library</button>
+          <button onClick={onImportZip} disabled={pendingLibraryActions.includes("import")}>
+            {pendingLibraryActions.includes("import") ? "Importing..." : "Import Zip"}
           </button>
         </div>
-        {logs.length === 0 ? (
-          <div className="empty-state compact">No app logs found.</div>
-        ) : (
-          <div className="logs-browser">
-            <div className="logs-list">
-              {logs.map((log) => (
-                <button
-                  key={log.path}
-                  className={log.path === selectedLogPath ? "log-list-item selected" : "log-list-item"}
-                  onClick={() => onSelectLog(log.path)}
-                >
-                  <span className="log-list-heading">
-                    <strong>{log.kind}</strong>
-                    <span>{formatBytes(log.sizeBytes)}</span>
-                  </span>
-                  <span className="log-list-meta">
-                    <span>{displayDate(log.modifiedAt)}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-            <div className="log-preview">
-              {logContentLoading ? (
-                <div className="empty-state compact">Loading log preview...</div>
-              ) : selectedLogContent ? (
-                <>
-                  <div className="log-preview-meta">
-                    <span className="mono-line">{selectedLogContent.path}</span>
-                    {selectedLogContent.truncated && <strong>Truncated</strong>}
-                  </div>
-                  <pre>{selectedLogContent.content || "Log is empty."}</pre>
-                </>
-              ) : (
-                <div className="empty-state compact">Select a log to preview.</div>
-              )}
-            </div>
-          </div>
-        )}
       </div>
-    </section>
+      <div className="library-create-strip">
+        <div className="library-section-heading">
+          <h4>Create Library</h4>
+          <p>Choose a parent folder after clicking Create. The library folder will be created inside it.</p>
+        </div>
+        <div className="library-create-controls">
+          <label>
+            <span>Library name</span>
+            <input value={libraryName} onChange={(event) => onLibraryNameChange(event.target.value)} />
+          </label>
+          <label>
+            <span>Folder name</span>
+            <input value={libraryFolderName} onChange={(event) => onLibraryFolderNameChange(event.target.value)} />
+          </label>
+          <button onClick={onCreate}>Create...</button>
+        </div>
+      </div>
+      <div className="library-section-heading library-list-heading">
+        <h4>Registered Libraries</h4>
+        <p>Switch, rename, close, export, or reveal libraries registered on this machine.</p>
+      </div>
+      {libraries.length === 0 ? (
+        <div className="empty-state compact">No library registered.</div>
+      ) : (
+        <div className="library-table" role="table" aria-label="Registered libraries">
+          <div className="library-table-row header" role="row">
+            <span>Name</span>
+            <span>Path</span>
+            <span>Actions</span>
+          </div>
+          {libraries.map((item) => {
+            const actions = libraryMaintenanceActions(item.rootPath, missingLibraryPaths);
+            const isCurrent = library?.id === item.id;
+            const busy = (name: string) => pendingLibraryActions.includes(`${name}:${item.id}`);
+            return (
+              <div
+                key={item.id}
+                className={isCurrent ? "library-table-row current" : "library-table-row"}
+                role="row"
+                tabIndex={isCurrent ? -1 : 0}
+                aria-label={isCurrent ? `${item.name}, current library` : `Switch to ${item.name}`}
+                onClick={() => {
+                  if (!isCurrent) {
+                    onSwitchLibrary(item.id);
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if (!isCurrent && (event.key === "Enter" || event.key === " ")) {
+                    event.preventDefault();
+                    onSwitchLibrary(item.id);
+                  }
+                }}
+              >
+                <span className="library-row-main">
+                  <strong>{item.name}</strong>
+                  {isCurrent && <small>Current</small>}
+                  {!actions.canReveal && <small>Missing on disk</small>}
+                </span>
+                <span className="mono-line" title={item.rootPath}>
+                  {item.rootPath}
+                </span>
+                <span className="row-actions library-row-actions">
+                  <button
+                    className="icon-button tooltip-button"
+                    aria-label="Rename library"
+                    data-tooltip={busy("rename") ? "Renaming..." : "Rename"}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onRenameLibrary(item);
+                    }}
+                    disabled={busy("rename")}
+                  >
+                    <LibraryActionIcon kind={busy("rename") ? "loading" : "rename"} />
+                  </button>
+                  <button
+                    className="icon-button tooltip-button"
+                    aria-label="Export library zip"
+                    data-tooltip={busy("export") ? "Exporting..." : "Export Zip"}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onExportZip(item);
+                    }}
+                    disabled={!actions.canExport || busy("export")}
+                  >
+                    <LibraryActionIcon kind={busy("export") ? "loading" : "export"} />
+                  </button>
+                  <button
+                    className="icon-button tooltip-button"
+                    aria-label="Reveal library in Finder"
+                    data-tooltip="Reveal in Finder"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onReveal(item);
+                    }}
+                    disabled={!actions.canReveal || busy("reveal")}
+                  >
+                    <LibraryActionIcon kind="reveal" />
+                  </button>
+                  <button
+                    className="icon-button tooltip-button"
+                    aria-label="Close library"
+                    data-tooltip={busy("close") ? "Closing..." : "Close"}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onCloseLibrary(item);
+                    }}
+                    disabled={!actions.canClose || busy("close")}
+                  >
+                    <LibraryActionIcon kind={busy("close") ? "loading" : "close"} />
+                  </button>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LibraryActionIcon({ kind }: { kind: "rename" | "export" | "reveal" | "close" | "loading" }) {
+  if (kind === "loading") {
+    return (
+      <svg className="button-icon spinner-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 3a9 9 0 1 1-8.2 5.3" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg className="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+      {kind === "rename" && (
+        <>
+          <path d="M4 20h4l11-11a2.8 2.8 0 0 0-4-4L4 16v4Z" />
+          <path d="m13.5 6.5 4 4" />
+        </>
+      )}
+      {kind === "export" && (
+        <>
+          <path d="M12 3v11" />
+          <path d="m8 10 4 4 4-4" />
+          <path d="M5 17v3h14v-3" />
+        </>
+      )}
+      {kind === "reveal" && (
+        <>
+          <path d="M3 7h7l2 2h9v10H3V7Z" />
+          <path d="M15 13h4" />
+          <path d="m17 11 2 2-2 2" />
+        </>
+      )}
+      {kind === "close" && (
+        <>
+          <path d="M6 6l12 12" />
+          <path d="M18 6 6 18" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+function SettingsLogsView({
+  logs,
+  logsLoading,
+  selectedLogPath,
+  selectedLogContent,
+  logContentLoading,
+  onRefreshLogs,
+  onSelectLog,
+}: {
+  logs: AppLog[];
+  logsLoading: boolean;
+  selectedLogPath: string | null;
+  selectedLogContent: AppLogContent | null;
+  logContentLoading: boolean;
+  onRefreshLogs: () => void;
+  onSelectLog: (path: string) => void;
+}) {
+  return (
+    <div className="settings-section settings-logs-panel">
+      <div className="panel-header">
+        <div>
+          <h3>Logs</h3>
+          <p>{logsLoading ? "Loading logs..." : `${logs.length} recent log${logs.length === 1 ? "" : "s"}`}</p>
+        </div>
+        <button onClick={onRefreshLogs} disabled={logsLoading}>
+          {logsLoading ? "Refreshing..." : "Refresh"}
+        </button>
+      </div>
+      {logs.length === 0 ? (
+        <div className="empty-state compact">No app logs found.</div>
+      ) : (
+        <div className="logs-browser">
+          <div className="logs-list">
+            {logs.map((log) => (
+              <button
+                key={log.path}
+                className={log.path === selectedLogPath ? "log-list-item selected" : "log-list-item"}
+                onClick={() => onSelectLog(log.path)}
+              >
+                <span className="log-list-heading">
+                  <strong>{log.kind}</strong>
+                  <span>{formatBytes(log.sizeBytes)}</span>
+                </span>
+                <span className="log-list-meta">
+                  <span>{displayDate(log.modifiedAt)}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="log-preview">
+            {logContentLoading ? (
+              <div className="empty-state compact">Loading log preview...</div>
+            ) : selectedLogContent ? (
+              <>
+                <div className="log-preview-meta">
+                  <span className="mono-line">{selectedLogContent.path}</span>
+                  {selectedLogContent.truncated && <strong>Truncated</strong>}
+                </div>
+                <pre>{selectedLogContent.content || "Log is empty."}</pre>
+              </>
+            ) : (
+              <div className="empty-state compact">Select a log to preview.</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -4148,8 +4614,53 @@ async function invokeCommand<T>(command: string, args?: Record<string, unknown>)
   return tauriInvoke<T>(command, args);
 }
 
+async function pickDirectory(title: string, defaultPath = "") {
+  if (!hasTauriRuntime()) {
+    return window.prompt(title, defaultPath);
+  }
+  const selected = await openDialog({
+    title,
+    directory: true,
+    multiple: false,
+    defaultPath: defaultPath || undefined,
+  });
+  return typeof selected === "string" ? selected : null;
+}
+
+async function pickZipFile(title: string) {
+  if (!hasTauriRuntime()) {
+    return window.prompt(title);
+  }
+  const selected = await openDialog({
+    title,
+    multiple: false,
+    filters: [{ name: "Library Backup", extensions: ["zip"] }],
+  });
+  return typeof selected === "string" ? selected : null;
+}
+
+async function pickSaveZipPath(title: string, defaultPath: string) {
+  if (!hasTauriRuntime()) {
+    return window.prompt(title, defaultPath);
+  }
+  return saveDialog({
+    title,
+    defaultPath,
+    filters: [{ name: "Library Backup", extensions: ["zip"] }],
+  });
+}
+
 function hasTauriRuntime() {
-  return typeof window !== "undefined" && Boolean(window.__TAURI_INTERNALS__);
+  return typeof window !== "undefined" && tauriIsTauri();
+}
+
+function validLibraryFolderName(folderName: string) {
+  return folderName.length > 0 && folderName !== "." && folderName !== ".." && !folderName.includes("/") && !folderName.includes("\\");
+}
+
+function buildChildPath(parentPath: string, folderName: string) {
+  const separator = parentPath.includes("\\") && !parentPath.includes("/") ? "\\" : "/";
+  return `${parentPath.replace(/[\\/]+$/, "")}${separator}${folderName}`;
 }
 
 function nextAnimationFrame() {

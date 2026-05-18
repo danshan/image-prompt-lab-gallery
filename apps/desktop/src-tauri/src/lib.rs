@@ -10,13 +10,14 @@ use daemon_client::{
 use imglab_core::{
     prepare_generation_request, AlbumId, AlbumService, AssetId, AssetService,
     BatchAddAssetsToAlbumRequest, BatchReviewMetadataSuggestionRequest, CreateLibraryRequest,
-    CreateMetadataSuggestionRequest, CreateSmartAlbumRequest, DomainError, ExportLibraryRequest,
-    GalleryQuery, GalleryReadService, GallerySort, GenerateImageRequest, GenerationOperation,
-    GenerationRequestInput, GenerationService, ImageProvider, ImportAssetRequest, LibraryId,
+    CreateMetadataSuggestionRequest, CreateSmartAlbumRequest, DomainError,
+    ExportLibraryBackupRequest, ExportLibraryRequest, GalleryQuery, GalleryReadService,
+    GallerySort, GenerateImageRequest, GenerationOperation, GenerationRequestInput,
+    GenerationService, ImageProvider, ImportAssetRequest, ImportLibraryBackupRequest, LibraryId,
     LibraryService, LocalGenerationService, LocalLibraryService, MetadataReviewService,
-    MetadataSuggestionId, ReorderAlbumItemsRequest, ReorderAlbumsRequest, RepairLibraryRequest,
-    ReviewMetadataSuggestionRequest, ReviewStatusFilter, SearchQuery, SearchService,
-    UpdateAssetMetadataRequest,
+    MetadataSuggestionId, RenameLibraryAliasRequest, ReorderAlbumItemsRequest,
+    ReorderAlbumsRequest, RepairLibraryRequest, ReviewMetadataSuggestionRequest,
+    ReviewStatusFilter, SearchQuery, SearchService, UpdateAssetMetadataRequest,
 };
 use imglab_provider_codex::CodexCliImageProvider;
 use metadata_generation::{
@@ -24,6 +25,7 @@ use metadata_generation::{
 };
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Default)]
@@ -65,6 +67,13 @@ struct LibraryStatusView {
     storage_size_bytes: u64,
     integrity_status: String,
     integrity_issue_count: u32,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LibraryBackupView {
+    library: LibraryView,
+    cloned: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -259,6 +268,27 @@ struct ExportLibraryInput {
     library_path: PathBuf,
     output_path: PathBuf,
     album_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RenameLibraryAliasInput {
+    library_id: String,
+    alias: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportLibraryBackupInput {
+    library_path: PathBuf,
+    output_zip_path: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ImportLibraryBackupInput {
+    zip_path: PathBuf,
+    destination_path: PathBuf,
 }
 
 #[derive(Debug, Deserialize)]
@@ -620,6 +650,24 @@ fn hide_library(library_id: String) -> Result<(), CommandError> {
 }
 
 #[tauri::command]
+fn rename_library_alias(input: RenameLibraryAliasInput) -> Result<LibraryView, CommandError> {
+    service()
+        .rename_library_alias(RenameLibraryAliasRequest {
+            library_id: LibraryId(input.library_id),
+            alias: input.alias,
+        })
+        .map(library_view)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+fn unregister_library(library_id: String) -> Result<(), CommandError> {
+    service()
+        .unregister_library(&LibraryId(library_id))
+        .map_err(Into::into)
+}
+
+#[tauri::command]
 fn import_asset(input: ImportAssetInput) -> Result<(AssetView, VersionView), CommandError> {
     service()
         .import_asset(ImportAssetRequest {
@@ -645,6 +693,47 @@ fn export_library(input: ExportLibraryInput) -> Result<serde_json::Value, Comman
             })
         })
         .map_err(Into::into)
+}
+
+#[tauri::command]
+fn export_library_backup_zip(input: ExportLibraryBackupInput) -> Result<(), CommandError> {
+    let library_path = normalize_library_root_path(input.library_path)?;
+    service()
+        .export_library_backup_zip(ExportLibraryBackupRequest {
+            library_path,
+            output_zip_path: input.output_zip_path,
+        })
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+fn import_library_backup_zip(
+    input: ImportLibraryBackupInput,
+) -> Result<LibraryBackupView, CommandError> {
+    let destination_path = normalize_library_root_path(input.destination_path)?;
+    service()
+        .import_library_backup_zip(ImportLibraryBackupRequest {
+            zip_path: input.zip_path,
+            destination_path,
+        })
+        .map(|summary| LibraryBackupView {
+            library: library_view(summary.library),
+            cloned: summary.cloned,
+        })
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+fn reveal_library_folder(root_path: PathBuf) -> Result<(), CommandError> {
+    let root_path = normalize_library_root_path(root_path)?;
+    if !root_path.is_dir() {
+        return Err(CommandError {
+            code: "LibraryNotFound".to_string(),
+            message: format!("library folder is missing: {}", root_path.display()),
+            recoverable: true,
+        });
+    }
+    reveal_path(&root_path)
 }
 
 #[tauri::command]
@@ -1296,6 +1385,31 @@ fn invalid_path_error(message: String) -> CommandError {
     }
 }
 
+fn reveal_path(path: &Path) -> Result<(), CommandError> {
+    let status = if cfg!(target_os = "macos") {
+        Command::new("open").arg(path).status()
+    } else if cfg!(target_os = "windows") {
+        Command::new("explorer").arg(path).status()
+    } else {
+        Command::new("xdg-open").arg(path).status()
+    }
+    .map_err(|error| CommandError {
+        code: "RevealFailed".to_string(),
+        message: format!("failed to open folder: {error}"),
+        recoverable: true,
+    })?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(CommandError {
+            code: "RevealFailed".to_string(),
+            message: format!("open folder command exited with status: {status}"),
+            recoverable: true,
+        })
+    }
+}
+
 fn library_view(summary: imglab_core::LibrarySummary) -> LibraryView {
     let root_path = expand_home_path(summary.root_path.clone()).unwrap_or(summary.root_path);
     LibraryView {
@@ -1664,6 +1778,7 @@ fn daemon_task_detail_view(
 pub fn run() {
     tauri::Builder::default()
         .manage(DesktopState::default())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             health,
             create_library,
@@ -1672,8 +1787,13 @@ pub fn run() {
             library_status,
             repair_library,
             hide_library,
+            rename_library_alias,
+            unregister_library,
             import_asset,
             export_library,
+            export_library_backup_zip,
+            import_library_backup_zip,
+            reveal_library_folder,
             search_assets,
             query_gallery,
             get_asset_detail,

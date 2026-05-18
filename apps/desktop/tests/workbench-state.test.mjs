@@ -9,17 +9,20 @@ import {
   buildBatchReviewPayloads,
   clearAlbumQuery,
   clearCurationStateForLibrarySwitch,
+  clearLibraryWorkspaceState,
   clearSelectionForLibrarySwitch,
   completeDetailLoad,
   completeReviewFieldGeneration,
   countActiveTasks,
   createReviewFormState,
+  defaultSettingsSection,
   defaultGalleryQuery,
   failReviewFieldGeneration,
   failDetailLoad,
   formatAspectRatio,
   addReviewFormTag,
   isReviewFieldGenerating,
+  libraryMaintenanceActions,
   markAssetReviewPending,
   moveItem,
   moveQueuedTaskOrder,
@@ -37,6 +40,10 @@ import {
   toggleGalleryTag,
   toggleSelection,
 } from "../.test-dist/workbench-state.js";
+
+test("settings defaults to libraries section", () => {
+  assert.equal(defaultSettingsSection, "libraries");
+});
 
 test("acceptSuggestionState applies metadata and removes pending item", () => {
   const assets = [
@@ -420,6 +427,31 @@ test("library switching clears album and review state", () => {
     selectedAlbumId: null,
     selectedSuggestionId: null,
     reviewForm: null,
+  });
+});
+
+test("close current library clears workspace selections", () => {
+  const cleared = clearLibraryWorkspaceState();
+  assert.equal(cleared.selectedAssetId, "");
+  assert.deepEqual(cleared.selectedGalleryAssetIds, []);
+  assert.equal(cleared.detailState.assetId, null);
+  assert.equal(cleared.selectedAlbumId, null);
+  assert.equal(cleared.selectedSuggestionId, null);
+  assert.deepEqual(cleared.selectedSuggestionIds, []);
+  assert.equal(cleared.reviewForm, null);
+  assert.equal(cleared.selectedTaskId, null);
+});
+
+test("missing library paths only keep close action enabled", () => {
+  assert.deepEqual(libraryMaintenanceActions("/tmp/missing", ["/tmp/missing"]), {
+    canClose: true,
+    canExport: false,
+    canReveal: false,
+  });
+  assert.deepEqual(libraryMaintenanceActions("/tmp/present", ["/tmp/missing"]), {
+    canClose: true,
+    canExport: true,
+    canReveal: true,
   });
 });
 

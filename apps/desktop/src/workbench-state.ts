@@ -1,5 +1,8 @@
 export type GallerySort = "newest" | "oldest" | "ratingDesc" | "titleAsc" | "providerAsc" | "albumOrder";
 export type ReviewStatusFilter = "any" | "pending";
+export type SettingsSection = "libraries" | "logs";
+
+export const defaultSettingsSection: SettingsSection = "libraries";
 
 export type AssetState = {
   id: string;
@@ -522,6 +525,43 @@ export function clearSelectionForLibrarySwitch<TDetail>(): DetailLoadState<TDeta
     detail: null,
     loading: false,
     error: null,
+  };
+}
+
+export type LibraryWorkspaceClearState<TDetail> = {
+  selectedAssetId: string;
+  selectedGalleryAssetIds: string[];
+  detailState: DetailLoadState<TDetail>;
+  selectedAlbumId: string | null;
+  selectedSuggestionId: string | null;
+  selectedSuggestionIds: string[];
+  reviewForm: ReviewFormState | null;
+  selectedTaskId: string | null;
+};
+
+export function clearLibraryWorkspaceState<TDetail>(): LibraryWorkspaceClearState<TDetail> {
+  return {
+    selectedAssetId: "",
+    selectedGalleryAssetIds: [],
+    detailState: clearSelectionForLibrarySwitch<TDetail>(),
+    selectedAlbumId: null,
+    selectedSuggestionId: null,
+    selectedSuggestionIds: [],
+    reviewForm: null,
+    selectedTaskId: null,
+  };
+}
+
+export function libraryPathExists(rootPath: string, missingPaths: string[]): boolean {
+  return !missingPaths.includes(rootPath);
+}
+
+export function libraryMaintenanceActions(rootPath: string, missingPaths: string[]) {
+  const exists = libraryPathExists(rootPath, missingPaths);
+  return {
+    canClose: true,
+    canExport: exists,
+    canReveal: exists,
   };
 }
 

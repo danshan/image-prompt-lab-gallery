@@ -6,7 +6,17 @@ pub trait LibraryService {
     fn open_library(&self, root_path: &std::path::Path) -> DomainResult<LibrarySummary>;
     fn list_libraries(&self, include_hidden: bool) -> DomainResult<Vec<LibrarySummary>>;
     fn hide_library(&self, library_id: &LibraryId) -> DomainResult<()>;
+    fn rename_library_alias(
+        &self,
+        request: RenameLibraryAliasRequest,
+    ) -> DomainResult<LibrarySummary>;
+    fn unregister_library(&self, library_id: &LibraryId) -> DomainResult<()>;
     fn export_library(&self, request: ExportLibraryRequest) -> DomainResult<ExportSummary>;
+    fn export_library_backup_zip(&self, request: ExportLibraryBackupRequest) -> DomainResult<()>;
+    fn import_library_backup_zip(
+        &self,
+        request: ImportLibraryBackupRequest,
+    ) -> DomainResult<LibraryBackupSummary>;
     fn repair_library(&self, request: RepairLibraryRequest) -> DomainResult<RepairSummary>;
     fn check_integrity(&self, root_path: &std::path::Path) -> DomainResult<Vec<IntegrityIssue>>;
     fn library_status(&self, root_path: &std::path::Path) -> DomainResult<LibraryStatusView>;

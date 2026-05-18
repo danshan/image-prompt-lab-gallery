@@ -1,10 +1,11 @@
 use crate::{
     AssetId, AssetService, AssetVersionId, CreateChildVersionRequest, CreateGenerationEventRequest,
     CreateLibraryRequest, CreateMetadataSuggestionRequest, DomainError, DomainResult,
-    ExportLibraryRequest, ExportSummary, GenerateImageRequest, GenerationOperation,
-    GenerationParameters, GenerationRequestInput, ImageProvider, ImportAssetRequest,
-    IntegrityIssue, IntegrityIssueKind, LibraryId, LibraryService, LibraryStatusView,
-    LibrarySummary, MetadataReviewService, PreparedGenerationRequest, RepairIssue,
+    ExportLibraryBackupRequest, ExportLibraryRequest, ExportSummary, GenerateImageRequest,
+    GenerationOperation, GenerationParameters, GenerationRequestInput, ImageProvider,
+    ImportAssetRequest, ImportLibraryBackupRequest, IntegrityIssue, IntegrityIssueKind,
+    LibraryBackupSummary, LibraryId, LibraryService, LibraryStatusView, LibrarySummary,
+    MetadataReviewService, PreparedGenerationRequest, RenameLibraryAliasRequest, RepairIssue,
     RepairLibraryRequest, RepairSummary, VersionSummary,
 };
 use rusqlite::{params, Connection};
@@ -19,6 +20,7 @@ mod schema;
 pub use schema::{migrate_library_database, CURRENT_SCHEMA_VERSION};
 mod albums;
 mod assets;
+mod backup;
 #[cfg(test)]
 use assets::load_asset_summary;
 use assets::{
@@ -144,6 +146,18 @@ impl LocalLibraryService {
             .map_err(database_error)?;
 
         Ok(())
+    }
+
+    fn registry_contains_library_id(&self, library_id: &str) -> DomainResult<bool> {
+        let connection = self.ensure_registry()?;
+        let count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM library_registry WHERE id = ?1",
+                params![library_id],
+                |row| row.get(0),
+            )
+            .map_err(database_error)?;
+        Ok(count > 0)
     }
 
     fn read_manifest(root_path: &Path) -> DomainResult<LibraryManifest> {
@@ -611,6 +625,69 @@ impl LibraryService for LocalLibraryService {
         Ok(())
     }
 
+    fn rename_library_alias(
+        &self,
+        request: RenameLibraryAliasRequest,
+    ) -> DomainResult<LibrarySummary> {
+        let library_id = request.library_id.0;
+        let alias = request.alias.trim();
+        if alias.is_empty() {
+            return Err(DomainError::InvalidLibraryAlias {
+                message: "library alias cannot be empty".to_string(),
+            });
+        }
+
+        let connection = self.ensure_registry()?;
+        let updated = connection
+            .execute(
+                "UPDATE library_registry SET name = ?1 WHERE id = ?2",
+                params![alias, &library_id],
+            )
+            .map_err(database_error)?;
+        if updated == 0 {
+            return Err(DomainError::LibraryNotFound { path: library_id });
+        }
+
+        let mut statement = connection
+            .prepare(
+                "
+                SELECT id, name, root_path, hidden, schema_version
+                FROM library_registry
+                WHERE id = ?1
+                ",
+            )
+            .map_err(database_error)?;
+        statement
+            .query_row(params![&library_id], |row| {
+                Ok(LibrarySummary {
+                    id: LibraryId(row.get(0)?),
+                    name: row.get(1)?,
+                    root_path: PathBuf::from(row.get::<_, String>(2)?),
+                    hidden: row.get::<_, i64>(3)? != 0,
+                    schema_version: row.get::<_, u32>(4)?,
+                })
+            })
+            .map_err(database_error)
+    }
+
+    fn unregister_library(&self, library_id: &LibraryId) -> DomainResult<()> {
+        let connection = self.ensure_registry()?;
+        let updated = connection
+            .execute(
+                "DELETE FROM library_registry WHERE id = ?1",
+                params![library_id.0],
+            )
+            .map_err(database_error)?;
+
+        if updated == 0 {
+            return Err(DomainError::LibraryNotFound {
+                path: library_id.0.clone(),
+            });
+        }
+
+        Ok(())
+    }
+
     fn export_library(&self, request: ExportLibraryRequest) -> DomainResult<ExportSummary> {
         let connection = Self::open_library_database(&request.library_path)?;
         fs::create_dir_all(request.output_path.join("originals"))
@@ -671,6 +748,27 @@ impl LibraryService for LocalLibraryService {
         Ok(ExportSummary {
             exported_files,
             exported_sidecars,
+        })
+    }
+
+    fn export_library_backup_zip(&self, request: ExportLibraryBackupRequest) -> DomainResult<()> {
+        backup::export_backup_zip(&request.library_path, &request.output_zip_path)
+    }
+
+    fn import_library_backup_zip(
+        &self,
+        request: ImportLibraryBackupRequest,
+    ) -> DomainResult<LibraryBackupSummary> {
+        let (manifest, cloned) = backup::import_backup_zip(
+            &request.zip_path,
+            &request.destination_path,
+            |library_id| self.registry_contains_library_id(library_id),
+        )?;
+        let summary = Self::summary_from_manifest(&request.destination_path, &manifest, false);
+        self.upsert_registry(&summary, &manifest.created_at, false)?;
+        Ok(LibraryBackupSummary {
+            library: summary,
+            cloned,
         })
     }
 
@@ -1376,6 +1474,221 @@ mod tests {
             .join("sidecars")
             .join(format!("{}.json", asset.id.0))
             .is_file());
+    }
+
+    #[test]
+    fn renames_registry_alias_without_changing_manifest() {
+        let root = test_root("rename-library-alias");
+        let registry = test_root("rename-library-alias-registry").join("registry.sqlite");
+        let service = LocalLibraryService::new(registry);
+        let created = service
+            .create_library(CreateLibraryRequest {
+                root_path: root.clone(),
+                name: "Manifest Name".to_string(),
+            })
+            .expect("create library");
+        let original_manifest =
+            LocalLibraryService::read_manifest(&root).expect("read original manifest");
+
+        let renamed = service
+            .rename_library_alias(RenameLibraryAliasRequest {
+                library_id: created.id.clone(),
+                alias: "Local Alias".to_string(),
+            })
+            .expect("rename alias");
+
+        assert_eq!(renamed.name, "Local Alias");
+        let manifest = LocalLibraryService::read_manifest(&root).expect("read manifest");
+        assert_eq!(manifest.name, original_manifest.name);
+        assert_eq!(manifest.id, original_manifest.id);
+        let libraries = service.list_libraries(false).expect("list libraries");
+        assert_eq!(libraries[0].name, "Local Alias");
+    }
+
+    #[test]
+    fn rejects_empty_registry_alias() {
+        let root = test_root("rename-empty-library-alias");
+        let registry = test_root("rename-empty-library-alias-registry").join("registry.sqlite");
+        let service = LocalLibraryService::new(registry);
+        let created = service
+            .create_library(CreateLibraryRequest {
+                root_path: root,
+                name: "Alias".to_string(),
+            })
+            .expect("create library");
+
+        let error = service
+            .rename_library_alias(RenameLibraryAliasRequest {
+                library_id: created.id,
+                alias: "   ".to_string(),
+            })
+            .expect_err("empty alias rejected");
+
+        assert_eq!(error.code(), "InvalidLibraryAlias");
+    }
+
+    #[test]
+    fn unregisters_library_without_deleting_files() {
+        let root = test_root("unregister-library");
+        let registry = test_root("unregister-library-registry").join("registry.sqlite");
+        let service = LocalLibraryService::new(registry);
+        let created = service
+            .create_library(CreateLibraryRequest {
+                root_path: root.clone(),
+                name: "Unregister".to_string(),
+            })
+            .expect("create library");
+
+        service
+            .unregister_library(&created.id)
+            .expect("unregister library");
+
+        assert!(root.join(MANIFEST_FILE).is_file());
+        assert!(root.join(DATABASE_FILE).is_file());
+        assert!(service
+            .list_libraries(true)
+            .expect("list libraries")
+            .is_empty());
+    }
+
+    #[test]
+    fn unregister_unknown_library_returns_not_found() {
+        let registry = test_root("unregister-missing-registry").join("registry.sqlite");
+        let service = LocalLibraryService::new(registry);
+
+        let error = service
+            .unregister_library(&LibraryId("missing".to_string()))
+            .expect_err("missing library");
+
+        assert_eq!(error.code(), "LibraryNotFound");
+    }
+
+    #[test]
+    fn exports_and_imports_library_backup_zip() {
+        let root = test_root("backup-export-library");
+        let registry = test_root("backup-export-registry").join("registry.sqlite");
+        let zip_path = test_root("backup-export-output").join("library.zip");
+        let import_root = test_root("backup-import-library");
+        let import_registry = test_root("backup-import-registry").join("registry.sqlite");
+        let source_dir = test_root("backup-export-source");
+        fs::create_dir_all(&source_dir).expect("create source dir");
+        let source = source_dir.join("input.png");
+        fs::write(&source, png_bytes(10, 10)).expect("write source");
+
+        let service = LocalLibraryService::new(registry);
+        service
+            .create_library(CreateLibraryRequest {
+                root_path: root.clone(),
+                name: "Backup".to_string(),
+            })
+            .expect("create library");
+        let (_, version) = service
+            .import_asset(ImportAssetRequest {
+                library_path: root.clone(),
+                source_path: source,
+            })
+            .expect("import asset");
+        service
+            .export_library_backup_zip(ExportLibraryBackupRequest {
+                library_path: root.clone(),
+                output_zip_path: zip_path.clone(),
+            })
+            .expect("export backup");
+
+        assert!(zip_path.is_file());
+
+        let import_service = LocalLibraryService::new(import_registry);
+        let summary = import_service
+            .import_library_backup_zip(ImportLibraryBackupRequest {
+                zip_path,
+                destination_path: import_root.clone(),
+            })
+            .expect("import backup");
+
+        assert!(!summary.cloned);
+        assert!(import_root.join(MANIFEST_FILE).is_file());
+        assert!(import_root.join(DATABASE_FILE).is_file());
+        assert!(import_root.join(version.file_path).is_file());
+        import_service
+            .open_library(&import_root)
+            .expect("open imported library");
+    }
+
+    #[test]
+    fn import_backup_zip_clones_conflicting_library_id() {
+        let root = test_root("backup-conflict-library");
+        let registry = test_root("backup-conflict-registry").join("registry.sqlite");
+        let zip_path = test_root("backup-conflict-output").join("library.zip");
+        let import_root = test_root("backup-conflict-import");
+        let service = LocalLibraryService::new(registry);
+        let created = service
+            .create_library(CreateLibraryRequest {
+                root_path: root.clone(),
+                name: "Conflict".to_string(),
+            })
+            .expect("create library");
+        service
+            .export_library_backup_zip(ExportLibraryBackupRequest {
+                library_path: root,
+                output_zip_path: zip_path.clone(),
+            })
+            .expect("export backup");
+
+        let summary = service
+            .import_library_backup_zip(ImportLibraryBackupRequest {
+                zip_path,
+                destination_path: import_root.clone(),
+            })
+            .expect("import backup");
+
+        assert!(summary.cloned);
+        assert_ne!(summary.library.id, created.id);
+        let manifest = LocalLibraryService::read_manifest(&import_root).expect("read manifest");
+        assert_eq!(manifest.id, summary.library.id.0);
+        assert!(manifest.name.ends_with(" Copy"));
+    }
+
+    #[test]
+    fn import_invalid_backup_zip_does_not_register_library() {
+        let registry = test_root("backup-invalid-registry").join("registry.sqlite");
+        let zip_dir = test_root("backup-invalid-zip");
+        let zip_path = zip_dir.join("invalid.zip");
+        let import_root = test_root("backup-invalid-import");
+        fs::create_dir_all(&zip_dir).expect("create zip dir");
+        fs::write(&zip_path, b"not a zip").expect("write invalid zip");
+
+        let service = LocalLibraryService::new(registry);
+        let error = service
+            .import_library_backup_zip(ImportLibraryBackupRequest {
+                zip_path,
+                destination_path: import_root,
+            })
+            .expect_err("invalid zip");
+
+        assert_eq!(error.code(), "InvalidLibraryBackup");
+        assert!(service
+            .list_libraries(true)
+            .expect("list libraries")
+            .is_empty());
+    }
+
+    #[test]
+    fn import_backup_zip_rejects_non_empty_destination() {
+        let registry = test_root("backup-non-empty-registry").join("registry.sqlite");
+        let zip_path = test_root("backup-non-empty-zip").join("library.zip");
+        let import_root = test_root("backup-non-empty-import");
+        fs::create_dir_all(&import_root).expect("create import dir");
+        fs::write(import_root.join("existing.txt"), b"existing").expect("write existing");
+
+        let service = LocalLibraryService::new(registry);
+        let error = service
+            .import_library_backup_zip(ImportLibraryBackupRequest {
+                zip_path,
+                destination_path: import_root,
+            })
+            .expect_err("non-empty destination");
+
+        assert_eq!(error.code(), "ImportDestinationNotEmpty");
     }
 
     #[test]

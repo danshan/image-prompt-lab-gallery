@@ -30,7 +30,7 @@ pub struct TaskEventId(pub String);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskOutputId(pub String);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LibrarySummary {
     pub id: LibraryId,
     pub name: String,
@@ -56,6 +56,30 @@ pub struct ExportLibraryRequest {
     pub library_path: PathBuf,
     pub output_path: PathBuf,
     pub album_id: Option<AlbumId>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RenameLibraryAliasRequest {
+    pub library_id: LibraryId,
+    pub alias: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExportLibraryBackupRequest {
+    pub library_path: PathBuf,
+    pub output_zip_path: PathBuf,
+}
+
+#[derive(Debug, Clone)]
+pub struct ImportLibraryBackupRequest {
+    pub zip_path: PathBuf,
+    pub destination_path: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibraryBackupSummary {
+    pub library: LibrarySummary,
+    pub cloned: bool,
 }
 
 #[derive(Debug, Clone)]

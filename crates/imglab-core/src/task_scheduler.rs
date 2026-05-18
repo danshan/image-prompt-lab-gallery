@@ -184,9 +184,13 @@ pub fn classify_task_error(error: &DomainError) -> TaskErrorClassification {
         | DomainError::InvalidTaskReference { .. }
         | DomainError::InvalidSmartAlbumQuery { .. }
         | DomainError::InvalidGalleryQuery { .. }
+        | DomainError::InvalidLibraryBackup { .. }
+        | DomainError::InvalidLibraryAlias { .. }
+        | DomainError::ImportDestinationNotEmpty { .. }
         | DomainError::SchemaMismatch { .. }
         | DomainError::FileIntegrityMismatch { .. }
         | DomainError::LibraryNotFound { .. }
+        | DomainError::ZipIoError { .. }
         | DomainError::Database { .. }
         | DomainError::Serialization { .. } => TaskErrorClassification::Final,
     }

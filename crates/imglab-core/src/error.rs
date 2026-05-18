@@ -41,6 +41,19 @@ pub enum DomainError {
     InvalidGalleryQuery {
         message: String,
     },
+    InvalidLibraryBackup {
+        message: String,
+    },
+    InvalidLibraryAlias {
+        message: String,
+    },
+    ImportDestinationNotEmpty {
+        path: String,
+    },
+    ZipIoError {
+        path: String,
+        message: String,
+    },
     UnsupportedProvider {
         provider: String,
     },
@@ -77,6 +90,10 @@ impl DomainError {
             Self::ConcurrentWriteConflict { .. } => "ConcurrentWriteConflict",
             Self::InvalidSmartAlbumQuery { .. } => "InvalidSmartAlbumQuery",
             Self::InvalidGalleryQuery { .. } => "InvalidGalleryQuery",
+            Self::InvalidLibraryBackup { .. } => "InvalidLibraryBackup",
+            Self::InvalidLibraryAlias { .. } => "InvalidLibraryAlias",
+            Self::ImportDestinationNotEmpty { .. } => "ImportDestinationNotEmpty",
+            Self::ZipIoError { .. } => "ZipIoError",
             Self::UnsupportedProvider { .. } => "UnsupportedProvider",
             Self::UnsupportedProviderCapability { .. } => "UnsupportedProviderCapability",
             Self::InvalidGenerationParameters { .. } => "InvalidGenerationParameters",
@@ -123,6 +140,14 @@ impl Display for DomainError {
             Self::InvalidGalleryQuery { message } => {
                 write!(f, "invalid gallery query: {message}")
             }
+            Self::InvalidLibraryBackup { message } => {
+                write!(f, "invalid library backup: {message}")
+            }
+            Self::InvalidLibraryAlias { message } => write!(f, "invalid library alias: {message}"),
+            Self::ImportDestinationNotEmpty { path } => {
+                write!(f, "import destination is not empty: {path}")
+            }
+            Self::ZipIoError { path, message } => write!(f, "zip io error at {path}: {message}"),
             Self::UnsupportedProvider { provider } => write!(f, "unsupported provider: {provider}"),
             Self::UnsupportedProviderCapability {
                 provider,
