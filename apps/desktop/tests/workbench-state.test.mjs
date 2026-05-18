@@ -12,6 +12,7 @@ import {
   clearSelectionForLibrarySwitch,
   completeDetailLoad,
   completeReviewFieldGeneration,
+  countActiveTasks,
   createReviewFormState,
   defaultGalleryQuery,
   failReviewFieldGeneration,
@@ -24,12 +25,14 @@ import {
   moveQueuedTaskOrder,
   openAlbumQuery,
   parseTaskDraftImport,
+  pendingReviewItems,
   removeReviewFormTag,
   removeSuggestionState,
   reorderByIds,
   resetGalleryQuery,
   reviewFormTags,
   selectedOrCurrentIds,
+  sortedNonEmptyProviders,
   toggleGalleryProvider,
   toggleGalleryTag,
   toggleSelection,
@@ -145,6 +148,33 @@ test("moveQueuedTaskOrder only reorders queued tasks", () => {
 
   assert.deepEqual(moveQueuedTaskOrder(tasks, "queued-b", -1), ["queued-b", "queued-a"]);
   assert.deepEqual(moveQueuedTaskOrder(tasks, "running", 1), ["queued-a", "queued-b"]);
+});
+
+test("derived workbench helpers keep expensive render inputs stable", () => {
+  assert.equal(
+    countActiveTasks([
+      { id: "queued", status: "queued" },
+      { id: "retrying", status: "retry_waiting" },
+      { id: "done", status: "completed" },
+    ]),
+    2,
+  );
+  assert.deepEqual(
+    pendingReviewItems([
+      { id: "pending", status: "pending_review" },
+      { id: "accepted", status: "accepted" },
+    ]).map((item) => item.id),
+    ["pending"],
+  );
+  assert.deepEqual(
+    sortedNonEmptyProviders([
+      { provider: "fake" },
+      { provider: null },
+      { provider: "codex-cli" },
+      { provider: "fake" },
+    ]),
+    ["codex-cli", "fake"],
+  );
 });
 
 test("gallery query helpers toggle providers and tags", () => {

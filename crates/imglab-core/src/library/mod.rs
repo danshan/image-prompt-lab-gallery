@@ -903,12 +903,13 @@ mod tests {
     use crate::GenerationService;
     use crate::MetadataReviewService;
     use crate::{
-        AlbumKind, AlbumService, BatchAddAssetsToAlbumRequest,
+        AlbumId, AlbumKind, AlbumService, BatchAddAssetsToAlbumRequest,
         BatchReviewMetadataSuggestionRequest, GalleryQuery, GalleryReadService, GallerySort,
         GeneratedImage, GenerationResult, ReorderAlbumItemsRequest, ReorderAlbumsRequest,
         ReviewMetadataSuggestionRequest, ReviewStatusFilter, SearchQuery, SearchService,
         UpdateAssetMetadataRequest,
     };
+    use std::time::Instant;
 
     fn test_root(name: &str) -> PathBuf {
         let root = std::env::temp_dir().join(format!("imglab-core-{name}-{}", Uuid::new_v4()));
@@ -2066,6 +2067,279 @@ mod tests {
     }
 
     #[test]
+    fn gallery_query_aggregates_versions_events_tags_and_review_counts() {
+        let root = test_root("gallery-aggregate");
+        let registry = test_root("gallery-aggregate-registry").join("registry.sqlite");
+        let source_dir = test_root("gallery-aggregate-source");
+        fs::create_dir_all(&source_dir).expect("create source dir");
+        let source = source_dir.join("source.png");
+        let child_source = source_dir.join("child.png");
+        fs::write(&source, png_bytes(12, 8)).expect("write source");
+        fs::write(&child_source, png_bytes(24, 16)).expect("write child");
+
+        let service = LocalLibraryService::new(registry);
+        service
+            .create_library(CreateLibraryRequest {
+                root_path: root.clone(),
+                name: "Gallery Aggregate".to_string(),
+            })
+            .expect("create library");
+        let (asset, parent) = service
+            .import_asset(ImportAssetRequest {
+                library_path: root.clone(),
+                source_path: source,
+            })
+            .expect("import");
+        service
+            .add_tag_to_asset(&root, &asset.id, "alpha")
+            .expect("tag alpha");
+        service
+            .add_tag_to_asset(&root, &asset.id, "beta")
+            .expect("tag beta");
+        let event = service
+            .record_generation_event(CreateGenerationEventRequest {
+                library_path: root.clone(),
+                asset_id: Some(asset.id.clone()),
+                output_version_id: None,
+                provider: "codex-cli".to_string(),
+                provider_model: "codex-imagegen".to_string(),
+                operation_type: GenerationOperation::ImageToImage,
+                prompt: "aggregate prompt".to_string(),
+                negative_prompt: None,
+                input_asset_version_id: Some(parent.id.clone()),
+                parameters_json: "{}".to_string(),
+                raw_request_json: None,
+                raw_response_json: None,
+                status: "completed".to_string(),
+                error_code: None,
+                error_message: None,
+            })
+            .expect("event");
+        let child = service
+            .create_child_version(CreateChildVersionRequest {
+                library_path: root.clone(),
+                asset_id: asset.id.clone(),
+                parent_version_id: parent.id,
+                generation_event_id: Some(event.id),
+                source_path: child_source,
+                mime_type: "image/png".to_string(),
+                version_label: Some("variant".to_string()),
+            })
+            .expect("child");
+        service
+            .create_suggestion(crate::CreateMetadataSuggestionRequest {
+                library_path: root.clone(),
+                asset_id: asset.id.clone(),
+                source: "test".to_string(),
+                suggested_title: Some("Aggregate".to_string()),
+                suggested_description: None,
+                suggested_schema_prompt: None,
+                suggested_tags: vec!["alpha".to_string()],
+                suggested_category: None,
+                confidence_json: "{}".to_string(),
+            })
+            .expect("suggestion");
+
+        let items = service
+            .query_gallery(
+                &root,
+                GalleryQuery {
+                    text: Some("aggregate".to_string()),
+                    providers: vec!["codex-cli".to_string()],
+                    tags: vec!["alpha".to_string(), "beta".to_string()],
+                    review_status: ReviewStatusFilter::Pending,
+                    ..GalleryQuery::default()
+                },
+            )
+            .expect("query gallery");
+
+        assert_eq!(items.len(), 1);
+        let item = &items[0];
+        assert_eq!(item.id, asset.id);
+        assert_eq!(item.current_version_id.as_ref(), Some(&child.id));
+        assert_eq!(item.provider.as_deref(), Some("codex-cli"));
+        assert_eq!(item.model_label.as_deref(), Some("codex-imagegen"));
+        assert_eq!(item.prompt.as_deref(), Some("aggregate prompt"));
+        assert_eq!(item.tags, vec!["alpha".to_string(), "beta".to_string()]);
+        assert_eq!(item.review_pending_count, 1);
+        assert_eq!(item.version_count, 2);
+        assert_eq!(item.version_label.as_deref(), Some("variant"));
+        assert_eq!(item.width, Some(24));
+        assert_eq!(item.height, Some(16));
+    }
+
+    #[test]
+    #[ignore = "synthetic SQLite sufficiency checkpoint for 10k gallery/search assets"]
+    fn synthetic_gallery_search_checkpoint_10k_assets() {
+        let root = test_root("gallery-checkpoint-10k");
+        let registry = test_root("gallery-checkpoint-registry").join("registry.sqlite");
+        let service = LocalLibraryService::new(registry);
+        let library = service
+            .create_library(CreateLibraryRequest {
+                root_path: root.clone(),
+                name: "Gallery Checkpoint".to_string(),
+            })
+            .expect("create library");
+        let database_path = LocalLibraryService::database_path(&root);
+        let mut connection = Connection::open(database_path).expect("open database");
+        let now = "2026-05-18T00:00:00Z";
+
+        let seed_start = Instant::now();
+        let transaction = connection.transaction().expect("begin transaction");
+        for index in 0..8 {
+            transaction
+                .execute(
+                    "INSERT INTO tags (id, name, color, created_at) VALUES (?1, ?2, NULL, ?3)",
+                    params![format!("tag-{index}"), format!("tag-{index}"), now],
+                )
+                .expect("insert tag");
+        }
+        transaction
+            .execute(
+                "INSERT INTO albums (id, name, description, kind, smart_query_json, sort_order, created_at, updated_at)
+                 VALUES ('album-1', 'Synthetic', NULL, 'manual', NULL, 1, ?1, ?1)",
+                params![now],
+            )
+            .expect("insert album");
+
+        for index in 0..10_000 {
+            let asset_id = format!("asset-{index:05}");
+            let version_id = format!("version-{index:05}");
+            let event_id = format!("event-{index:05}");
+            let tag_a = format!("tag-{}", index % 8);
+            let tag_b = format!("tag-{}", (index + 3) % 8);
+            let provider = if index % 2 == 0 { "codex-cli" } else { "fake" };
+            let created_at = format!(
+                "2026-05-18T{:02}:{:02}:{:02}Z",
+                index / 3600,
+                (index / 60) % 60,
+                index % 60
+            );
+
+            transaction
+                .execute(
+                    "INSERT INTO assets (
+                        id, library_id, media_type, title, description, schema_prompt, category,
+                        rating, status, created_at, updated_at, captured_at
+                     ) VALUES (?1, ?2, 'image', ?3, NULL, NULL, ?4, ?5, 'generated', ?6, ?6, NULL)",
+                    params![
+                        asset_id,
+                        library.id.0,
+                        format!("Synthetic Asset {index:05}"),
+                        format!("category-{}", index % 4),
+                        (index % 5) + 1,
+                        created_at
+                    ],
+                )
+                .expect("insert asset");
+            transaction
+                .execute(
+                    "INSERT INTO asset_versions (
+                        id, asset_id, parent_version_id, generation_event_id, file_path, sha256,
+                        checksum_algorithm, checksum, width, height, mime_type, version_label, created_at
+                     ) VALUES (?1, ?2, NULL, ?3, ?4, 'sha', 'SHA-256', 'sha', 1024, 1024, 'image/png', 'v1', ?5)",
+                    params![
+                        version_id,
+                        asset_id,
+                        event_id,
+                        format!("originals/{index:05}.png"),
+                        created_at
+                    ],
+                )
+                .expect("insert version");
+            transaction
+                .execute(
+                    "INSERT INTO generation_events (
+                        id, asset_id, output_version_id, provider, provider_model, operation_type, prompt,
+                        negative_prompt, input_asset_version_id, parameters_json, raw_request_json,
+                        raw_response_json, status, started_at, completed_at, error_code, error_message
+                     ) VALUES (?1, ?2, ?3, ?4, 'synthetic-model', 'text_to_image', ?5, NULL, NULL, '{}', NULL, NULL, 'completed', ?6, ?6, NULL, NULL)",
+                    params![
+                        event_id,
+                        asset_id,
+                        version_id,
+                        provider,
+                        format!("synthetic botanical prompt {index:05}"),
+                        created_at
+                    ],
+                )
+                .expect("insert event");
+            for tag_id in [tag_a, tag_b] {
+                transaction
+                    .execute(
+                        "INSERT INTO asset_tags (asset_id, tag_id, source, confirmed_at) VALUES (?1, ?2, 'synthetic', ?3)",
+                        params![asset_id, tag_id, now],
+                    )
+                    .expect("insert asset tag");
+            }
+            if index % 5 == 0 {
+                transaction
+                    .execute(
+                        "INSERT INTO metadata_suggestions (
+                            id, asset_id, source, suggested_title, suggested_description,
+                            suggested_schema_prompt, suggested_tags_json, suggested_category,
+                            confidence_json, status, created_at, reviewed_at
+                         ) VALUES (?1, ?2, 'synthetic', NULL, NULL, NULL, '[]', NULL, '{}', 'pending_review', ?3, NULL)",
+                        params![format!("suggestion-{index:05}"), asset_id, created_at],
+                    )
+                    .expect("insert suggestion");
+            }
+            if index % 2 == 0 {
+                transaction
+                    .execute(
+                        "INSERT INTO album_items (album_id, asset_id, sort_order, added_at) VALUES ('album-1', ?1, ?2, ?3)",
+                        params![asset_id, index, created_at],
+                    )
+                    .expect("insert album item");
+            }
+        }
+        transaction.commit().expect("commit synthetic data");
+        eprintln!("synthetic seed 10k assets: {:?}", seed_start.elapsed());
+
+        let gallery_start = Instant::now();
+        let gallery = service
+            .query_gallery(&root, GalleryQuery::default())
+            .expect("query gallery");
+        let gallery_elapsed = gallery_start.elapsed();
+        assert_eq!(gallery.len(), 10_000);
+
+        let search_start = Instant::now();
+        let search = service
+            .search(
+                &library.id,
+                SearchQuery {
+                    text: Some("botanical".to_string()),
+                    tags: vec!["tag-0".to_string()],
+                    min_rating: None,
+                    provider: Some("codex-cli".to_string()),
+                    status: None,
+                    category: None,
+                },
+            )
+            .expect("search assets");
+        let search_elapsed = search_start.elapsed();
+        assert!(!search.is_empty());
+
+        let album_start = Instant::now();
+        let album = service
+            .query_gallery(
+                &root,
+                GalleryQuery {
+                    album_id: Some(AlbumId("album-1".to_string())),
+                    sort: GallerySort::AlbumOrder,
+                    ..GalleryQuery::default()
+                },
+            )
+            .expect("query album gallery");
+        let album_elapsed = album_start.elapsed();
+        assert_eq!(album.len(), 5_000);
+
+        eprintln!("synthetic gallery 10k assets: {gallery_elapsed:?}");
+        eprintln!("synthetic search 10k assets: {search_elapsed:?}");
+        eprintln!("synthetic album order 5k assets: {album_elapsed:?}");
+    }
+
+    #[test]
     fn asset_detail_aggregates_lineage_and_file_context() {
         let root = test_root("asset-detail");
         let registry = test_root("asset-detail-registry").join("registry.sqlite");
@@ -2294,6 +2568,14 @@ mod tests {
                 source_path: source_b,
             })
             .expect("import b");
+        let source_c = source_dir.join("c.png");
+        fs::write(&source_c, png_bytes(10, 10)).expect("write c");
+        let (asset_c, _) = service
+            .import_asset(ImportAssetRequest {
+                library_path: root.clone(),
+                source_path: source_c,
+            })
+            .expect("import c");
         service
             .batch_add_assets(BatchAddAssetsToAlbumRequest {
                 album_id: album_a.id.clone(),
@@ -2317,6 +2599,34 @@ mod tests {
             )
             .expect("album order query");
         assert_eq!(items[0].id, asset_b.id);
+        assert_eq!(items[1].id, asset_a.id);
+        assert!(!items.iter().any(|item| item.id == asset_c.id));
+    }
+
+    #[test]
+    fn album_path_helpers_do_not_depend_on_registry_lookup() {
+        let root = test_root("album-path-helpers");
+        let registry = test_root("album-path-registry").join("registry.sqlite");
+        let detached_registry = test_root("album-path-detached-registry").join("registry.sqlite");
+        let service = LocalLibraryService::new(registry);
+        service
+            .create_library(CreateLibraryRequest {
+                root_path: root.clone(),
+                name: "Album Path Helpers".to_string(),
+            })
+            .expect("create library");
+
+        let detached = LocalLibraryService::new(detached_registry);
+        let album = detached
+            .create_manual_album_in_library(&root, "Detached Album")
+            .expect("create album by path");
+        let albums = detached
+            .list_albums_in_library(&root)
+            .expect("list albums by path");
+
+        assert_eq!(albums.len(), 1);
+        assert_eq!(albums[0].id, album.id);
+        assert_eq!(albums[0].name, "Detached Album");
     }
 
     #[test]

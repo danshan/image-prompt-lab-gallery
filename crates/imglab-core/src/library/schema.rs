@@ -191,6 +191,33 @@ pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
             CREATE INDEX IF NOT EXISTS idx_task_outputs_task
                 ON task_outputs(task_id);
 
+            CREATE INDEX IF NOT EXISTS idx_assets_library_id
+                ON assets(library_id);
+
+            CREATE INDEX IF NOT EXISTS idx_asset_versions_asset_created
+                ON asset_versions(asset_id, created_at DESC, id DESC);
+
+            CREATE INDEX IF NOT EXISTS idx_asset_versions_generation_event
+                ON asset_versions(generation_event_id);
+
+            CREATE INDEX IF NOT EXISTS idx_generation_events_asset_started
+                ON generation_events(asset_id, started_at DESC, id DESC);
+
+            CREATE INDEX IF NOT EXISTS idx_metadata_suggestions_asset_status
+                ON metadata_suggestions(asset_id, status);
+
+            CREATE INDEX IF NOT EXISTS idx_album_items_asset
+                ON album_items(asset_id);
+
+            CREATE INDEX IF NOT EXISTS idx_album_items_album_sort
+                ON album_items(album_id, sort_order ASC, asset_id);
+
+            CREATE INDEX IF NOT EXISTS idx_asset_tags_asset
+                ON asset_tags(asset_id);
+
+            CREATE INDEX IF NOT EXISTS idx_asset_tags_tag
+                ON asset_tags(tag_id);
+
             ",
         )
         .map_err(database_error)?;

@@ -4,6 +4,7 @@ use crate::{
     AssetVersionId, DomainError, DomainResult,
 };
 use std::fs::{self, File};
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -55,7 +56,12 @@ pub(super) fn file_digest(path: &Path, algorithm: &str) -> DomainResult<String> 
 }
 
 pub(super) fn image_dimensions(path: &Path) -> DomainResult<(Option<u32>, Option<u32>)> {
-    let bytes = fs::read(path).map_err(|error| io_error(path, error))?;
+    const DIMENSION_PREFIX_BYTES: usize = 64 * 1024;
+    let file = File::open(path).map_err(|error| io_error(path, error))?;
+    let mut bytes = Vec::with_capacity(DIMENSION_PREFIX_BYTES);
+    file.take(DIMENSION_PREFIX_BYTES as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|error| io_error(path, error))?;
     Ok(parse_image_dimensions(&bytes).unwrap_or((None, None)))
 }
 
@@ -220,5 +226,57 @@ pub(super) fn extension_for_mime_type(mime_type: &str) -> &'static str {
         "image/gif" => "gif",
         "image/avif" => "avif",
         _ => "png",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn jpeg_with_sof(width: u16, height: u16) -> Vec<u8> {
+        let mut bytes = vec![0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x00];
+        bytes.extend_from_slice(&[0xff, 0xc0, 0x00, 0x11, 0x08]);
+        bytes.extend_from_slice(&height.to_be_bytes());
+        bytes.extend_from_slice(&width.to_be_bytes());
+        bytes.extend_from_slice(&[0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x00, 0x03, 0x11, 0x00]);
+        bytes
+    }
+
+    fn webp_vp8x(width: u32, height: u32) -> Vec<u8> {
+        let stored_width = width - 1;
+        let stored_height = height - 1;
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&22u32.to_le_bytes());
+        bytes.extend_from_slice(b"WEBP");
+        bytes.extend_from_slice(b"VP8X");
+        bytes.extend_from_slice(&10u32.to_le_bytes());
+        bytes.extend_from_slice(&[0, 0, 0, 0]);
+        bytes.extend_from_slice(&stored_width.to_le_bytes()[0..3]);
+        bytes.extend_from_slice(&stored_height.to_le_bytes()[0..3]);
+        bytes
+    }
+
+    #[test]
+    fn parses_png_jpeg_and_webp_dimensions_from_prefixes() {
+        let mut png = Vec::new();
+        png.extend_from_slice(b"\x89PNG\r\n\x1a\n");
+        png.extend_from_slice(&13u32.to_be_bytes());
+        png.extend_from_slice(b"IHDR");
+        png.extend_from_slice(&32u32.to_be_bytes());
+        png.extend_from_slice(&18u32.to_be_bytes());
+        png.extend_from_slice(&[8, 2, 0, 0, 0]);
+        png.extend_from_slice(&0u32.to_be_bytes());
+        png.extend_from_slice(&vec![0; 8_192]);
+
+        assert_eq!(parse_image_dimensions(&png), Some((Some(32), Some(18))));
+        assert_eq!(
+            parse_image_dimensions(&jpeg_with_sof(640, 480)),
+            Some((Some(640), Some(480)))
+        );
+        assert_eq!(
+            parse_image_dimensions(&webp_vp8x(800, 600)),
+            Some((Some(800), Some(600)))
+        );
     }
 }

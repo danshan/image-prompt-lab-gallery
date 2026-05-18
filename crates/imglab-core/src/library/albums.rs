@@ -14,6 +14,7 @@ use crate::{
 };
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
+use std::path::Path;
 use uuid::Uuid;
 
 impl AlbumService for LocalLibraryService {
@@ -217,6 +218,20 @@ impl AlbumService for LocalLibraryService {
 }
 
 impl LocalLibraryService {
+    pub fn list_albums_in_library(&self, library_path: &Path) -> DomainResult<Vec<AlbumListItem>> {
+        let connection = Self::open_library_database(library_path)?;
+        list_albums(&connection)
+    }
+
+    pub fn create_manual_album_in_library(
+        &self,
+        library_path: &Path,
+        name: &str,
+    ) -> DomainResult<AlbumSummary> {
+        let connection = Self::open_library_database(library_path)?;
+        create_album(&connection, name, AlbumKind::Manual, None)
+    }
+
     fn find_library_containing_album(
         &self,
         album_id: &AlbumId,

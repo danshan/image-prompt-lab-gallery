@@ -412,6 +412,9 @@ pub fn handle_http_request_with_shared_state(
     token: &str,
     state: &SharedDaemonState,
 ) -> HttpResponse {
+    if let Some(response) = handle_lock_free_shared_request(request, token) {
+        return response;
+    }
     match state.lock() {
         Ok(mut guard) => handle_http_request_with_state(request, token, &mut guard),
         Err(_) => error_response(
@@ -423,6 +426,35 @@ pub fn handle_http_request_with_shared_state(
             },
         ),
     }
+}
+
+fn handle_lock_free_shared_request(request: &str, token: &str) -> Option<HttpResponse> {
+    let request_line = request.lines().next()?;
+    let mut parts = request_line.split_whitespace();
+    let method = parts.next().unwrap_or_default();
+    let target = parts.next().unwrap_or_default();
+    let (path, _) = split_target(target);
+    if !matches!(
+        (method, path),
+        ("GET", HEALTH_PATH) | ("GET", CAPABILITIES_PATH)
+    ) {
+        return None;
+    }
+    if !request_has_valid_token(request, token) {
+        return Some(error_response(
+            401,
+            ApiErrorView {
+                code: "unauthorized".to_string(),
+                message: "unauthorized".to_string(),
+                recoverable: false,
+            },
+        ));
+    }
+    Some(match path {
+        HEALTH_PATH => json_response(200, &health_view()),
+        CAPABILITIES_PATH => json_response(200, &capabilities_view()),
+        _ => unreachable!("path checked above"),
+    })
 }
 
 pub fn serve_one(listener: &TcpListener, token: &str) -> DomainResult<()> {
@@ -501,13 +533,38 @@ pub fn run_scheduler_loop_iteration(
     config: &TaskSchedulerConfig,
     retry_policy: &RetryPolicy,
 ) -> DomainResult<Option<TaskSummary>> {
-    let mut snapshot = state
+    let guard = state
         .lock()
         .map_err(|_| DomainError::ConcurrentWriteConflict {
             message: "daemon state lock is poisoned".to_string(),
-        })?
-        .clone();
+        })?;
+    if guard.opened_libraries.is_empty() || !daemon_has_runnable_work(&guard)? {
+        return Ok(None);
+    }
+    let mut snapshot = guard.clone();
+    drop(guard);
     run_scheduler_tick(&mut snapshot, config, retry_policy)
+}
+
+fn daemon_has_runnable_work(state: &DaemonState) -> DomainResult<bool> {
+    let now = unix_timestamp_string(0);
+    for library_path in state.opened_libraries.values() {
+        for task in state.service.list_tasks(library_path)? {
+            match task.status {
+                TaskStatus::Queued => return Ok(true),
+                TaskStatus::RetryWaiting
+                    if task
+                        .next_retry_at
+                        .as_deref()
+                        .is_none_or(|next_retry_at| next_retry_at <= now.as_str()) =>
+                {
+                    return Ok(true);
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(false)
 }
 
 pub fn recover_open_libraries(
@@ -2383,6 +2440,21 @@ mod tests {
             &RetryPolicy::default(),
         )
         .expect("run tick");
+        assert!(executed.is_none());
+    }
+
+    #[test]
+    fn shared_scheduler_iteration_returns_no_work_without_open_libraries() {
+        let state = test_state("scheduler-no-open-library");
+        let shared = Arc::new(Mutex::new(state));
+
+        let executed = run_scheduler_loop_iteration(
+            &shared,
+            &TaskSchedulerConfig::default(),
+            &RetryPolicy::default(),
+        )
+        .expect("scheduler iteration");
+
         assert!(executed.is_none());
     }
 

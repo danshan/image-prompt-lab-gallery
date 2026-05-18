@@ -36,6 +36,14 @@ export type QueueTaskState = {
   status: string;
 };
 
+export type ProviderState = {
+  provider: string | null;
+};
+
+export type ReviewStatusState = {
+  status: string;
+};
+
 export type GalleryQueryState = {
   text: string;
   providers: string[];
@@ -76,6 +84,20 @@ export const defaultGalleryQuery: GalleryQueryState = {
   albumId: null,
   sort: "newest",
 };
+
+const activeTaskStatuses = new Set(["queued", "running", "retry_waiting", "interrupted_retryable"]);
+
+export function countActiveTasks<TTask extends QueueTaskState>(tasks: TTask[]): number {
+  return tasks.filter((task) => activeTaskStatuses.has(task.status)).length;
+}
+
+export function pendingReviewItems<TItem extends ReviewStatusState>(items: TItem[]): TItem[] {
+  return items.filter((item) => item.status === "pending_review");
+}
+
+export function sortedNonEmptyProviders<TItem extends ProviderState>(items: TItem[]): string[] {
+  return Array.from(new Set(items.map((item) => item.provider).filter((provider): provider is string => Boolean(provider)))).sort();
+}
 
 export function acceptSuggestionState<TAsset extends AssetState, TSuggestion extends SuggestionState>(
   assets: TAsset[],

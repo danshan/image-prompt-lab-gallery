@@ -14,6 +14,7 @@ import {
   clearSelectionForLibrarySwitch,
   completeDetailLoad,
   completeReviewFieldGeneration,
+  countActiveTasks,
   createReviewFormState,
   defaultGalleryQuery,
   failDetailLoad,
@@ -25,12 +26,14 @@ import {
   moveQueuedTaskOrder,
   openAlbumQuery,
   parseTaskDraftImport,
+  pendingReviewItems,
   removeSuggestionState,
   removeReviewFormTag,
   reorderByIds,
   resetGalleryQuery,
   reviewFormTags,
   selectedOrCurrentIds,
+  sortedNonEmptyProviders,
   toggleGalleryProvider,
   toggleGalleryTag,
   toggleSelection,
@@ -51,6 +54,11 @@ declare global {
 }
 
 type View = "gallery" | "albums" | "review" | "queue" | "settings";
+
+const GALLERY_REFRESH_DEBOUNCE_MS = 250;
+const METADATA_POLL_INTERVAL_MS = 800;
+const TASK_QUEUE_POLL_INTERVAL_MS = 1500;
+const TASK_QUEUE_BACKGROUND_POLL_INTERVAL_MS = 4000;
 
 type Library = {
   id: string;
@@ -690,6 +698,7 @@ function App() {
   const [lightboxImage, setLightboxImage] = useState<LightboxImage | null>(null);
   const logReadRequestRef = useRef<string | null>(null);
   const completedTaskKeysRef = useRef<Set<string>>(new Set());
+  const metadataPollTimeoutsRef = useRef<Set<number>>(new Set());
 
   const displayedGallery = useMemo(
     () => (runningInTauri ? gallery : applyGalleryQuery(mockGallery, query)),
@@ -699,9 +708,14 @@ function App() {
     () => displayedGallery.find((asset) => asset.id === selectedAssetId) ?? displayedGallery[0] ?? null,
     [displayedGallery, selectedAssetId],
   );
-  const pendingSuggestions = suggestions.filter((suggestion) => suggestion.status === "pending_review");
-  const selectedSuggestion =
-    pendingSuggestions.find((suggestion) => suggestion.id === selectedSuggestionId) ?? pendingSuggestions[0] ?? null;
+  const pendingSuggestions = useMemo(
+    () => pendingReviewItems(suggestions),
+    [suggestions],
+  );
+  const selectedSuggestion = useMemo(
+    () => pendingSuggestions.find((suggestion) => suggestion.id === selectedSuggestionId) ?? pendingSuggestions[0] ?? null,
+    [pendingSuggestions, selectedSuggestionId],
+  );
   const availableTags = useMemo(
     () => Array.from(new Set((runningInTauri ? gallery : mockGallery).flatMap((asset) => asset.tags))).sort(),
     [runningInTauri, gallery],
@@ -713,6 +727,14 @@ function App() {
       ).sort(),
     [runningInTauri, gallery],
   );
+  const availableProviders = useMemo(
+    () => sortedNonEmptyProviders(runningInTauri ? gallery : mockGallery),
+    [runningInTauri, gallery],
+  );
+  const queueCount = useMemo(
+    () => countActiveTasks(tasks),
+    [tasks],
+  );
 
   useEffect(() => {
     if (runningInTauri) {
@@ -721,10 +743,23 @@ function App() {
   }, [runningInTauri]);
 
   useEffect(() => {
-    if (runningInTauri && library) {
-      void refreshGallery();
+    if (!runningInTauri || !library) {
+      return;
     }
+    const timer = window.setTimeout(() => {
+      void refreshGallery();
+    }, GALLERY_REFRESH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
   }, [runningInTauri, library?.rootPath, query]);
+
+  useEffect(() => {
+    return () => {
+      for (const timer of metadataPollTimeoutsRef.current) {
+        window.clearTimeout(timer);
+      }
+      metadataPollTimeoutsRef.current.clear();
+    };
+  }, [library?.rootPath]);
 
   useEffect(() => {
     if (runningInTauri && library) {
@@ -737,16 +772,19 @@ function App() {
   }, [runningInTauri, library?.rootPath]);
 
   useEffect(() => {
-    if (!runningInTauri || !library || activeView !== "queue") {
+    if (!runningInTauri || !library) {
       return;
     }
-    void refreshTasks();
+    const showLoading = activeView === "queue";
+    const intervalMs = showLoading ? TASK_QUEUE_POLL_INTERVAL_MS : TASK_QUEUE_BACKGROUND_POLL_INTERVAL_MS;
+
+    void refreshTasks({ showLoading });
     const timer = window.setInterval(() => {
-      void refreshTasks();
-      if (selectedTaskId) {
+      void refreshTasks({ showLoading });
+      if (showLoading && selectedTaskId) {
         void loadTaskDetail(selectedTaskId);
       }
-    }, 1500);
+    }, intervalMs);
     return () => window.clearInterval(timer);
   }, [runningInTauri, library?.rootPath, activeView, selectedTaskId]);
 
@@ -1075,7 +1113,8 @@ function App() {
     }
   }
 
-  async function refreshTasks(): Promise<DaemonTask[]> {
+  async function refreshTasks(options: { showLoading?: boolean } = {}): Promise<DaemonTask[]> {
+    const showLoading = options.showLoading ?? true;
     if (!library) {
       setTasks([]);
       setSelectedTaskId(null);
@@ -1085,7 +1124,9 @@ function App() {
       setTasks(mockTasks);
       return mockTasks;
     }
-    setTasksLoading(true);
+    if (showLoading) {
+      setTasksLoading(true);
+    }
     try {
       const nextTasks = await invokeCommand<DaemonTask[]>("list_daemon_tasks", {
         input: { libraryPath: library.rootPath },
@@ -1114,7 +1155,9 @@ function App() {
       setRecoverableError(errorMessage(error));
       return [];
     } finally {
-      setTasksLoading(false);
+      if (showLoading) {
+        setTasksLoading(false);
+      }
     }
   }
 
@@ -1134,6 +1177,16 @@ function App() {
       setTaskDetail(null);
       setRecoverableError(errorMessage(error));
     }
+  }
+
+  function waitForMetadataPollDelay() {
+    return new Promise<void>((resolve) => {
+      const timer = window.setTimeout(() => {
+        metadataPollTimeoutsRef.current.delete(timer);
+        resolve();
+      }, METADATA_POLL_INTERVAL_MS);
+      metadataPollTimeoutsRef.current.add(timer);
+    });
   }
 
   async function waitForMetadataFieldResult(
@@ -1159,7 +1212,7 @@ function App() {
       if (isTerminalFailureStatus(detail.task.status)) {
         throw new Error(detail.task.lastErrorMessage ?? "Metadata field generation failed");
       }
-      await delay(800);
+      await waitForMetadataPollDelay();
     }
     throw new Error("Metadata field generation timed out");
   }
@@ -1177,7 +1230,7 @@ function App() {
       if (isTerminalFailureStatus(detail.task.status)) {
         throw new Error(detail.task.lastErrorMessage ?? "Metadata suggestion generation failed");
       }
-      await delay(800);
+      await waitForMetadataPollDelay();
     }
     throw new Error("Metadata suggestion generation timed out");
   }
@@ -1279,8 +1332,7 @@ function App() {
       await refreshTasks();
       await loadTaskDetail(task.id);
       if (task.status === "completed") {
-        await refreshGallery();
-        await refreshSuggestions();
+        await Promise.all([refreshGallery(), refreshSuggestions()]);
       }
     } catch (error) {
       const nextTasks = await refreshTasks();
@@ -1366,8 +1418,10 @@ function App() {
           tag: trimmed,
         },
       });
-      await refreshGallery();
-      await loadAssetDetail(detail.id, selectedAsset?.currentVersionId ?? null);
+      await Promise.all([
+        refreshGallery(),
+        loadAssetDetail(detail.id, selectedAsset?.currentVersionId ?? null),
+      ]);
       setStatus("Tag added");
       setRecoverableError(null);
     } catch (error) {
@@ -1501,8 +1555,7 @@ function App() {
       if (selectedAlbumId === albumId) {
         closeAlbum();
       }
-      await refreshAlbums();
-      await refreshGallery();
+      await Promise.all([refreshAlbums(), refreshGallery()]);
       setRecoverableError(null);
     } catch (error) {
       setRecoverableError(errorMessage(error));
@@ -1544,8 +1597,7 @@ function App() {
           assetId,
         },
       });
-      await refreshAlbums();
-      await refreshGallery();
+      await Promise.all([refreshAlbums(), refreshGallery()]);
       setRecoverableError(null);
     } catch (error) {
       setRecoverableError(errorMessage(error));
@@ -1596,8 +1648,7 @@ function App() {
           assetIds: selectedGalleryAssetIds,
         },
       });
-      await refreshAlbums();
-      await refreshGallery();
+      await Promise.all([refreshAlbums(), refreshGallery()]);
       setRecoverableError(null);
       setStatus("Selected assets added to album");
     } catch (error) {
@@ -1647,9 +1698,11 @@ function App() {
           assetId: detail.id,
         },
       });
-      await refreshAlbums();
-      await refreshGallery();
-      await loadAssetDetail(detail.id, selectedAsset?.currentVersionId ?? null);
+      await Promise.all([
+        refreshAlbums(),
+        refreshGallery(),
+        loadAssetDetail(detail.id, selectedAsset?.currentVersionId ?? null),
+      ]);
       setStatus("Asset added to album");
       setRecoverableError(null);
     } catch (error) {
@@ -1715,11 +1768,13 @@ function App() {
         return state.assets;
       });
       setSuggestions((current) => removeSuggestionState(current, suggestion.id));
-      await refreshGallery();
-      if (detailState.detail?.id === asset.id) {
-        await loadAssetDetail(asset.id, selectedAsset?.currentVersionId ?? null);
-      }
-      await refreshSuggestions();
+      await Promise.all([
+        refreshGallery(),
+        refreshSuggestions(),
+        detailState.detail?.id === asset.id
+          ? loadAssetDetail(asset.id, selectedAsset?.currentVersionId ?? null)
+          : Promise.resolve(),
+      ]);
       setSelectedSuggestionIds((current) => current.filter((id) => id !== suggestion.id));
       setReviewForm(null);
     } catch (error) {
@@ -1755,8 +1810,7 @@ function App() {
           suggestions: payloads,
         },
       });
-      await refreshGallery();
-      await refreshSuggestions();
+      await Promise.all([refreshGallery(), refreshSuggestions()]);
       setSelectedSuggestionIds([]);
       setReviewForm(null);
       setRecoverableError(null);
@@ -1781,8 +1835,7 @@ function App() {
           suggestionIds: ids,
         },
       });
-      await refreshGallery();
-      await refreshSuggestions();
+      await Promise.all([refreshGallery(), refreshSuggestions()]);
       setSelectedSuggestionIds([]);
       setReviewForm(null);
       setRecoverableError(null);
@@ -2035,11 +2088,11 @@ function App() {
       setGallery((current) => markAssetReviewPending(current, asset.id));
       setSelectedSuggestionId(suggestion.id);
       setActiveView("review");
-      await refreshGallery();
-      await refreshSuggestions();
-      if (detailState.detail?.id === asset.id) {
-        await loadAssetDetail(asset.id, asset.currentVersionId);
-      }
+      await Promise.all([
+        refreshGallery(),
+        refreshSuggestions(),
+        detailState.detail?.id === asset.id ? loadAssetDetail(asset.id, asset.currentVersionId) : Promise.resolve(),
+      ]);
     } catch (error) {
       setRecoverableError(errorMessage(error));
     }
@@ -2055,7 +2108,7 @@ function App() {
         libraryStatus={libraryStatus}
         activeView={activeView}
         reviewCount={pendingSuggestions.length}
-        queueCount={tasks.filter((task) => ["queued", "running", "retry_waiting", "interrupted_retryable"].includes(task.status)).length}
+        queueCount={queueCount}
         onViewChange={setActiveView}
         onLibraryChange={switchLibrary}
       />
@@ -2106,7 +2159,7 @@ function App() {
             albums={albums}
             availableTags={availableTags}
             availableCategories={availableCategories}
-            availableProviders={Array.from(new Set(gallery.map((asset) => asset.provider).filter((provider): provider is string => Boolean(provider))))}
+            availableProviders={availableProviders}
             selectedAlbumId={selectedAlbumId}
             gallery={displayedGallery}
             loading={albumLoading}
@@ -2548,7 +2601,14 @@ function Thumbnail({ asset, index }: { asset: GalleryAsset; index: number }) {
   const style = thumbnailStyle(index);
   return (
     <span className="thumbnail" style={style}>
-      {asset.imagePath && <img alt={asset.title ?? "Generated image"} src={convertImagePath(asset.imagePath)} />}
+      {asset.imagePath && (
+        <img
+          alt={asset.title ?? "Generated image"}
+          src={convertImagePath(asset.imagePath)}
+          loading="lazy"
+          decoding="async"
+        />
+      )}
     </span>
   );
 }
@@ -4095,12 +4155,6 @@ function hasTauriRuntime() {
 function nextAnimationFrame() {
   return new Promise<void>((resolve) => {
     window.requestAnimationFrame(() => resolve());
-  });
-}
-
-function delay(milliseconds: number) {
-  return new Promise<void>((resolve) => {
-    window.setTimeout(resolve, milliseconds);
   });
 }
 

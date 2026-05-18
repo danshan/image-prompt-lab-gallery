@@ -1,6 +1,6 @@
 use super::{
     albums::parse_smart_query,
-    assets::{load_generation_event, load_version, version_summary_from_row},
+    assets::{load_version, version_summary_from_row},
     database_error,
     storage::file_digest,
     LocalLibraryService,
@@ -8,11 +8,12 @@ use super::{
 use crate::{
     AlbumId, AlbumKind, AssetId, AssetService, AssetSummary, AssetVersionId, DomainError,
     DomainResult, FileContextView, GalleryAssetView, GalleryQuery, GalleryReadService, GallerySort,
-    GenerationEventId, GenerationEventSummary, LibraryService, ReviewStatusFilter, SearchQuery,
-    SearchService, VersionSummary,
+    GenerationEventId, LibraryService, ReviewStatusFilter, SearchQuery, SearchService,
+    VersionSummary,
 };
 use rusqlite::{params, Connection};
-use std::path::Path;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 impl SearchService for LocalLibraryService {
     fn search(
@@ -115,9 +116,8 @@ impl GalleryReadService for LocalLibraryService {
         if let Some(context) = &album_context {
             match context {
                 AlbumFilterContext::Manual(album_id) => {
-                    items.retain(|item| {
-                        asset_in_album(&connection, album_id, &item.id).unwrap_or(false)
-                    });
+                    let album_assets = load_album_asset_ids(&connection, album_id)?;
+                    items.retain(|item| album_assets.contains(&item.id.0));
                 }
                 AlbumFilterContext::Smart(smart_query) => {
                     apply_smart_album_query(&mut items, smart_query)
@@ -159,13 +159,13 @@ impl GalleryReadService for LocalLibraryService {
                         message: "album_order sort requires a manual album filter".to_string(),
                     });
                 };
+                let sort_orders = load_album_item_sort_orders(&connection, album_id)?;
                 items.sort_by(|left, right| {
-                    album_item_sort_order(&connection, album_id, &left.id)
+                    sort_orders
+                        .get(&left.id.0)
+                        .copied()
                         .unwrap_or(i64::MAX)
-                        .cmp(
-                            &album_item_sort_order(&connection, album_id, &right.id)
-                                .unwrap_or(i64::MAX),
-                        )
+                        .cmp(&sort_orders.get(&right.id.0).copied().unwrap_or(i64::MAX))
                 });
             }
         }
@@ -252,77 +252,42 @@ pub(super) fn validate_rating_range(
 }
 
 fn search_assets(connection: &Connection, query: SearchQuery) -> DomainResult<Vec<AssetSummary>> {
-    let mut assets = load_all_asset_summaries(connection)?;
-    if let Some(text) = query.text {
+    let mut items = load_gallery_asset_views(connection)?;
+    if let Some(text) = query
+        .text
+        .as_deref()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+    {
         let needle = text.to_ascii_lowercase();
-        assets.retain(|asset| asset_matches_search_text(connection, &asset.id, asset, &needle));
+        items.retain(|item| search_item_matches_text(item, &needle));
     }
     if let Some(provider) = query.provider {
-        assets.retain(|asset| {
-            load_latest_generation_event(connection, &asset.id)
-                .ok()
-                .flatten()
-                .map(|event| event.provider == provider)
-                .unwrap_or(false)
-        });
+        items.retain(|item| item.provider.as_deref() == Some(provider.as_str()));
     }
     if let Some(min_rating) = query.min_rating {
-        assets.retain(|asset| asset.rating.unwrap_or_default() >= min_rating);
+        items.retain(|item| item.rating.unwrap_or_default() >= min_rating);
     }
     if let Some(status) = query.status {
-        assets.retain(|asset| asset.status == status);
+        items.retain(|item| item.status == status);
     }
     if let Some(category) = query.category {
-        assets.retain(|asset| asset.category.as_deref() == Some(category.as_str()));
+        items.retain(|item| item.category.as_deref() == Some(category.as_str()));
     }
     if !query.tags.is_empty() {
         let wanted = query.tags;
-        assets.retain(|asset| asset_has_all_tags(connection, &asset.id, &wanted).unwrap_or(false));
+        items.retain(|item| wanted.iter().all(|tag| item.tags.contains(tag)));
     }
-    Ok(assets)
-}
-
-fn asset_matches_search_text(
-    connection: &Connection,
-    asset_id: &AssetId,
-    asset: &AssetSummary,
-    needle: &str,
-) -> bool {
-    if [
-        asset.title.as_deref(),
-        asset.category.as_deref(),
-        Some(asset.status.as_str()),
-    ]
-    .into_iter()
-    .flatten()
-    .any(|value| value.to_ascii_lowercase().contains(needle))
-    {
-        return true;
-    }
-
-    if load_asset_tags(connection, asset_id)
-        .map(|tags| {
-            tags.iter()
-                .any(|tag| tag.to_ascii_lowercase().contains(needle))
+    Ok(items
+        .into_iter()
+        .map(|item| AssetSummary {
+            id: item.id,
+            title: item.title,
+            category: item.category,
+            rating: item.rating,
+            status: item.status,
         })
-        .unwrap_or(false)
-    {
-        return true;
-    }
-
-    load_latest_generation_event(connection, asset_id)
-        .ok()
-        .flatten()
-        .map(|event| {
-            [
-                event.provider.as_str(),
-                event.provider_model.as_str(),
-                event.prompt.as_str(),
-            ]
-            .into_iter()
-            .any(|value| value.to_ascii_lowercase().contains(needle))
-        })
-        .unwrap_or(false)
+        .collect())
 }
 
 fn validate_gallery_query(query: &GalleryQuery) -> DomainResult<()> {
@@ -338,6 +303,11 @@ fn validate_gallery_query(query: &GalleryQuery) -> DomainResult<()> {
 }
 
 fn load_gallery_asset_views(connection: &Connection) -> DomainResult<Vec<GalleryAssetView>> {
+    let versions = load_latest_asset_versions(connection)?;
+    let events = load_gallery_events(connection)?;
+    let version_counts = load_asset_version_counts(connection)?;
+    let tags = load_all_asset_tags(connection)?;
+    let review_counts = load_pending_review_counts(connection)?;
     let mut statement = connection
         .prepare(
             "
@@ -365,22 +335,11 @@ fn load_gallery_asset_views(connection: &Connection) -> DomainResult<Vec<Gallery
     for row in rows {
         let (id, title, category, rating, status, created_at, updated_at) =
             row.map_err(database_error)?;
-        let current_version = load_latest_asset_version(connection, &id)?;
+        let current_version = versions.get(&id.0);
         let event = current_version
-            .as_ref()
             .and_then(|version| version.generation_event_id.as_ref())
-            .map(|event_id| load_generation_event(connection, event_id))
-            .transpose()?
-            .or_else(|| load_latest_generation_event(connection, &id).ok().flatten());
-        let version_count = count_asset_versions(connection, &id)?;
-        let version_label = current_version
-            .as_ref()
-            .and_then(|version| load_version_label(connection, &version.id).ok().flatten());
-        let (width, height) = current_version
-            .as_ref()
-            .map(|version| load_version_dimensions(connection, &version.id))
-            .transpose()?
-            .unwrap_or((None, None));
+            .and_then(|event_id| events.by_id.get(&event_id.0))
+            .or_else(|| events.latest_by_asset.get(&id.0));
 
         items.push(GalleryAssetView {
             id: id.clone(),
@@ -389,24 +348,208 @@ fn load_gallery_asset_views(connection: &Connection) -> DomainResult<Vec<Gallery
             rating,
             status,
             provider: event.as_ref().map(|event| event.provider.clone()),
-            model_label: event.as_ref().map(|event| event.provider_model.clone()),
+            model_label: event.as_ref().map(|event| event.model_label.clone()),
             prompt: event.as_ref().map(|event| event.prompt.clone()),
-            tags: load_asset_tags(connection, &id)?,
-            review_pending_count: pending_review_count(connection, &id)?,
+            tags: tags.get(&id.0).cloned().unwrap_or_default(),
+            review_pending_count: review_counts.get(&id.0).copied().unwrap_or_default(),
             current_version_id: current_version.as_ref().map(|version| version.id.clone()),
             image_path: current_version
                 .as_ref()
                 .map(|version| version.file_path.clone()),
-            width,
-            height,
-            version_label,
-            version_count,
+            width: current_version.and_then(|version| version.width),
+            height: current_version.and_then(|version| version.height),
+            version_label: current_version.and_then(|version| version.version_label.clone()),
+            version_count: version_counts.get(&id.0).copied().unwrap_or_default(),
             created_at,
             updated_at,
         });
     }
 
     Ok(items)
+}
+
+#[derive(Debug, Clone)]
+struct LatestVersionView {
+    id: AssetVersionId,
+    generation_event_id: Option<GenerationEventId>,
+    file_path: PathBuf,
+    width: Option<u32>,
+    height: Option<u32>,
+    version_label: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct GalleryEventView {
+    provider: String,
+    model_label: String,
+    prompt: String,
+}
+
+#[derive(Debug, Default)]
+struct GalleryEvents {
+    by_id: HashMap<String, GalleryEventView>,
+    latest_by_asset: HashMap<String, GalleryEventView>,
+}
+
+fn load_latest_asset_versions(
+    connection: &Connection,
+) -> DomainResult<HashMap<String, LatestVersionView>> {
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT av.id, av.asset_id, av.generation_event_id, av.file_path,
+                   av.width, av.height, av.version_label
+            FROM asset_versions av
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM asset_versions newer
+                WHERE newer.asset_id = av.asset_id
+                  AND (
+                    newer.created_at > av.created_at
+                    OR (newer.created_at = av.created_at AND newer.id > av.id)
+                  )
+            )
+            ",
+        )
+        .map_err(database_error)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(1)?,
+                LatestVersionView {
+                    id: AssetVersionId(row.get(0)?),
+                    generation_event_id: row.get::<_, Option<String>>(2)?.map(GenerationEventId),
+                    file_path: PathBuf::from(row.get::<_, String>(3)?),
+                    width: row.get(4)?,
+                    height: row.get(5)?,
+                    version_label: row.get(6)?,
+                },
+            ))
+        })
+        .map_err(database_error)?;
+    collect_string_map(rows)
+}
+
+fn load_gallery_events(connection: &Connection) -> DomainResult<GalleryEvents> {
+    let mut events = GalleryEvents::default();
+
+    let mut by_id_statement = connection
+        .prepare("SELECT id, provider, provider_model, prompt FROM generation_events")
+        .map_err(database_error)?;
+    let by_id_rows = by_id_statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                GalleryEventView {
+                    provider: row.get(1)?,
+                    model_label: row.get(2)?,
+                    prompt: row.get(3)?,
+                },
+            ))
+        })
+        .map_err(database_error)?;
+    events.by_id = collect_string_map(by_id_rows)?;
+
+    let mut latest_statement = connection
+        .prepare(
+            "
+            SELECT ge.asset_id, ge.provider, ge.provider_model, ge.prompt
+            FROM generation_events ge
+            WHERE ge.asset_id IS NOT NULL
+              AND NOT EXISTS (
+                SELECT 1
+                FROM generation_events newer
+                WHERE newer.asset_id = ge.asset_id
+                  AND (
+                    newer.started_at > ge.started_at
+                    OR (newer.started_at = ge.started_at AND newer.id > ge.id)
+                  )
+              )
+            ",
+        )
+        .map_err(database_error)?;
+    let latest_rows = latest_statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                GalleryEventView {
+                    provider: row.get(1)?,
+                    model_label: row.get(2)?,
+                    prompt: row.get(3)?,
+                },
+            ))
+        })
+        .map_err(database_error)?;
+    events.latest_by_asset = collect_string_map(latest_rows)?;
+    Ok(events)
+}
+
+fn load_asset_version_counts(connection: &Connection) -> DomainResult<HashMap<String, u32>> {
+    let mut statement = connection
+        .prepare("SELECT asset_id, COUNT(*) FROM asset_versions GROUP BY asset_id")
+        .map_err(database_error)?;
+    let rows = statement
+        .query_map([], |row| {
+            let count: i64 = row.get(1)?;
+            Ok((row.get::<_, String>(0)?, count.max(0) as u32))
+        })
+        .map_err(database_error)?;
+    collect_string_map(rows)
+}
+
+fn load_all_asset_tags(connection: &Connection) -> DomainResult<HashMap<String, Vec<String>>> {
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT at.asset_id, t.name
+            FROM asset_tags at
+            INNER JOIN tags t ON t.id = at.tag_id
+            ORDER BY at.asset_id, t.name
+            ",
+        )
+        .map_err(database_error)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(database_error)?;
+    let mut tags: HashMap<String, Vec<String>> = HashMap::new();
+    for row in rows {
+        let (asset_id, tag) = row.map_err(database_error)?;
+        tags.entry(asset_id).or_default().push(tag);
+    }
+    Ok(tags)
+}
+
+fn load_pending_review_counts(connection: &Connection) -> DomainResult<HashMap<String, u32>> {
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT asset_id, COUNT(*)
+            FROM metadata_suggestions
+            WHERE status = 'pending_review'
+            GROUP BY asset_id
+            ",
+        )
+        .map_err(database_error)?;
+    let rows = statement
+        .query_map([], |row| {
+            let count: i64 = row.get(1)?;
+            Ok((row.get::<_, String>(0)?, count.max(0) as u32))
+        })
+        .map_err(database_error)?;
+    collect_string_map(rows)
+}
+
+fn collect_string_map<T>(
+    rows: impl Iterator<Item = rusqlite::Result<(String, T)>>,
+) -> DomainResult<HashMap<String, T>> {
+    let mut map = HashMap::new();
+    for row in rows {
+        let (key, value) = row.map_err(database_error)?;
+        map.insert(key, value);
+    }
+    Ok(map)
 }
 
 #[derive(Debug, Clone)]
@@ -485,15 +628,6 @@ fn load_generation_event_detail(
         .map_err(database_error)
 }
 
-fn load_latest_generation_event(
-    connection: &Connection,
-    asset_id: &AssetId,
-) -> DomainResult<Option<GenerationEventSummary>> {
-    load_latest_generation_event_id(connection, asset_id)?
-        .map(|id| load_generation_event(connection, &GenerationEventId(id)))
-        .transpose()
-}
-
 fn load_latest_generation_event_detail(
     connection: &Connection,
     asset_id: &AssetId,
@@ -545,69 +679,6 @@ fn load_asset_versions(
         .query_map(params![asset_id.0], version_summary_from_row)
         .map_err(database_error)?;
     rows.collect::<Result<Vec<_>, _>>().map_err(database_error)
-}
-
-fn load_latest_asset_version(
-    connection: &Connection,
-    asset_id: &AssetId,
-) -> DomainResult<Option<VersionSummary>> {
-    let version_id = connection
-        .query_row(
-            "
-            SELECT id
-            FROM asset_versions
-            WHERE asset_id = ?1
-            ORDER BY created_at DESC
-            LIMIT 1
-            ",
-            params![asset_id.0],
-            |row| row.get::<_, String>(0),
-        )
-        .map(Some)
-        .or_else(|error| match error {
-            rusqlite::Error::QueryReturnedNoRows => Ok(None),
-            other => Err(database_error(other)),
-        })?;
-    version_id
-        .map(|id| load_version(connection, &AssetVersionId(id)))
-        .transpose()
-}
-
-fn count_asset_versions(connection: &Connection, asset_id: &AssetId) -> DomainResult<u32> {
-    let count: i64 = connection
-        .query_row(
-            "SELECT COUNT(*) FROM asset_versions WHERE asset_id = ?1",
-            params![asset_id.0],
-            |row| row.get(0),
-        )
-        .map_err(database_error)?;
-    Ok(count.max(0) as u32)
-}
-
-fn load_version_label(
-    connection: &Connection,
-    version_id: &AssetVersionId,
-) -> DomainResult<Option<String>> {
-    connection
-        .query_row(
-            "SELECT version_label FROM asset_versions WHERE id = ?1",
-            params![version_id.0],
-            |row| row.get(0),
-        )
-        .map_err(database_error)
-}
-
-fn load_version_dimensions(
-    connection: &Connection,
-    version_id: &AssetVersionId,
-) -> DomainResult<(Option<u32>, Option<u32>)> {
-    connection
-        .query_row(
-            "SELECT width, height FROM asset_versions WHERE id = ?1",
-            params![version_id.0],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .map_err(database_error)
 }
 
 fn load_asset_tags(connection: &Connection, asset_id: &AssetId) -> DomainResult<Vec<String>> {
@@ -675,23 +746,21 @@ fn pending_review_count(connection: &Connection, asset_id: &AssetId) -> DomainRe
     Ok(count.max(0) as u32)
 }
 
-fn asset_in_album(
+fn load_album_asset_ids(
     connection: &Connection,
     album_id: &AlbumId,
-    asset_id: &AssetId,
-) -> DomainResult<bool> {
-    let count: i64 = connection
-        .query_row(
-            "
-            SELECT COUNT(*)
-            FROM album_items
-            WHERE album_id = ?1 AND asset_id = ?2
-            ",
-            params![album_id.0, asset_id.0],
-            |row| row.get(0),
-        )
+) -> DomainResult<HashSet<String>> {
+    let mut statement = connection
+        .prepare("SELECT asset_id FROM album_items WHERE album_id = ?1")
         .map_err(database_error)?;
-    Ok(count > 0)
+    let rows = statement
+        .query_map(params![album_id.0], |row| row.get::<_, String>(0))
+        .map_err(database_error)?;
+    let mut asset_ids = HashSet::new();
+    for row in rows {
+        asset_ids.insert(row.map_err(database_error)?);
+    }
+    Ok(asset_ids)
 }
 
 enum AlbumFilterContext {
@@ -797,18 +866,23 @@ fn gallery_item_matches_text(item: &GalleryAssetView, needle: &str) -> bool {
             .any(|tag| tag.to_ascii_lowercase().contains(needle))
 }
 
-fn album_item_sort_order(
+fn search_item_matches_text(item: &GalleryAssetView, needle: &str) -> bool {
+    gallery_item_matches_text(item, needle) || item.status.to_ascii_lowercase().contains(needle)
+}
+
+fn load_album_item_sort_orders(
     connection: &Connection,
     album_id: &AlbumId,
-    asset_id: &AssetId,
-) -> DomainResult<i64> {
-    connection
-        .query_row(
-            "SELECT sort_order FROM album_items WHERE album_id = ?1 AND asset_id = ?2",
-            params![album_id.0, asset_id.0],
-            |row| row.get(0),
-        )
-        .map_err(database_error)
+) -> DomainResult<HashMap<String, i64>> {
+    let mut statement = connection
+        .prepare("SELECT asset_id, sort_order FROM album_items WHERE album_id = ?1")
+        .map_err(database_error)?;
+    let rows = statement
+        .query_map(params![album_id.0], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .map_err(database_error)?;
+    collect_string_map(rows)
 }
 
 fn load_file_context(
@@ -852,47 +926,4 @@ fn load_file_context(
         checksum: version.checksum.clone(),
         integrity_status: integrity_status.to_string(),
     })
-}
-
-fn load_all_asset_summaries(connection: &Connection) -> DomainResult<Vec<AssetSummary>> {
-    let mut statement = connection
-        .prepare("SELECT id, title, category, rating, status FROM assets ORDER BY created_at")
-        .map_err(database_error)?;
-    let rows = statement
-        .query_map([], |row| {
-            Ok(AssetSummary {
-                id: AssetId(row.get(0)?),
-                title: row.get(1)?,
-                category: row.get(2)?,
-                rating: row.get::<_, Option<u8>>(3)?,
-                status: row.get(4)?,
-            })
-        })
-        .map_err(database_error)?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(database_error)
-}
-
-fn asset_has_all_tags(
-    connection: &Connection,
-    asset_id: &AssetId,
-    tags: &[String],
-) -> DomainResult<bool> {
-    for tag in tags {
-        let count: i64 = connection
-            .query_row(
-                "
-                SELECT COUNT(*)
-                FROM asset_tags at
-                INNER JOIN tags t ON t.id = at.tag_id
-                WHERE at.asset_id = ?1 AND t.name = ?2
-                ",
-                params![asset_id.0, tag],
-                |row| row.get(0),
-            )
-            .map_err(database_error)?;
-        if count == 0 {
-            return Ok(false);
-        }
-    }
-    Ok(true)
 }

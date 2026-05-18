@@ -124,6 +124,12 @@ impl CodexCliImageProvider {
         self.validate_parameters(parameters)?;
         let command = self.build_command(parameters)?;
         let log_path = self.log_path();
+        if let Some(parent) = log_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|error| DomainError::Io {
+                path: parent.display().to_string(),
+                message: error.to_string(),
+            })?;
+        }
         let mut log_file = OpenOptions::new()
             .create(true)
             .truncate(true)
@@ -240,7 +246,9 @@ impl CodexCliImageProvider {
             .duration_since(UNIX_EPOCH)
             .map(|duration| duration.as_millis())
             .unwrap_or_default();
-        std::env::temp_dir().join(format!("imglab-codex-cli-{millis}.log"))
+        std::env::temp_dir()
+            .join("imglab-codex-logs")
+            .join(format!("imglab-codex-cli-{millis}.log"))
     }
 }
 

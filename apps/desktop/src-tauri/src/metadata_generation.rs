@@ -111,6 +111,9 @@ impl CodexCliMetadataGenerator {
     ) -> Result<GeneratedReviewFieldView, CommandError> {
         let command = self.build_command(input);
         let log_path = self.log_path();
+        if let Some(parent) = log_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|error| io_command_error(parent, error))?;
+        }
         let mut log_file = OpenOptions::new()
             .create(true)
             .truncate(true)
@@ -188,7 +191,7 @@ impl CodexCliMetadataGenerator {
             .duration_since(UNIX_EPOCH)
             .map(|duration| duration.as_nanos())
             .unwrap_or_default();
-        std::env::temp_dir().join(format!(
+        std::env::temp_dir().join("imglab-codex-logs").join(format!(
             "imglab-codex-metadata-{}-{nanos}.log",
             std::process::id()
         ))

@@ -698,8 +698,14 @@ fn get_asset_detail(input: AssetDetailInput) -> Result<AssetDetailView, CommandE
 }
 
 #[tauri::command]
-fn generate_image(input: GenerateImageInput) -> Result<Vec<VersionView>, CommandError> {
-    execute_generation(input, None)
+async fn generate_image(input: GenerateImageInput) -> Result<Vec<VersionView>, CommandError> {
+    tauri::async_runtime::spawn_blocking(move || execute_generation(input, None))
+        .await
+        .map_err(|error| CommandError {
+            code: "GenerationFailed".to_string(),
+            message: format!("generation worker failed: {error}"),
+            recoverable: true,
+        })?
 }
 
 #[tauri::command]
@@ -889,20 +895,16 @@ fn add_tag_to_asset(input: AddTagInput) -> Result<(), CommandError> {
 
 #[tauri::command]
 fn list_albums(library_path: PathBuf) -> Result<Vec<AlbumListItemView>, CommandError> {
-    let service = service();
-    let library = service.open_library(&library_path)?;
-    service
-        .list_albums(&library.id)
+    service()
+        .list_albums_in_library(&library_path)
         .map(|albums| albums.into_iter().map(album_list_item_view).collect())
         .map_err(Into::into)
 }
 
 #[tauri::command]
 fn create_manual_album(input: CreateAlbumInput) -> Result<AlbumView, CommandError> {
-    let service = service();
-    let library = service.open_library(&input.library_path)?;
-    service
-        .create_manual_album(&library.id, &input.name)
+    service()
+        .create_manual_album_in_library(&input.library_path, &input.name)
         .map(album_view)
         .map_err(Into::into)
 }

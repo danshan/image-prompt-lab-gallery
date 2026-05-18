@@ -54,10 +54,11 @@ pub fn read_app_log(path: &Path) -> Result<AppLogContentView, CommandError> {
 }
 
 fn app_log_roots() -> Vec<PathBuf> {
-    let mut roots = vec![std::env::temp_dir()];
+    let mut roots = vec![std::env::temp_dir().join("imglab-codex-logs")];
     let daemon_runtime_dir = std::env::var_os("IMGLAB_DAEMON_RUNTIME_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| std::env::temp_dir().join("imglab-desktop-daemon"));
+    roots.push(daemon_runtime_dir.join("task-logs"));
     roots.push(daemon_runtime_dir.join("logs"));
     roots.push(std::env::temp_dir().join("imglab-daemon-logs"));
     roots
@@ -306,8 +307,25 @@ mod tests {
     }
 
     #[test]
+    fn app_log_roots_do_not_include_system_temp_root() {
+        let temp_dir = std::env::temp_dir();
+        assert!(!app_log_roots().iter().any(|root| root == &temp_dir));
+    }
+
+    #[test]
+    fn app_log_roots_include_desktop_daemon_task_logs() {
+        let runtime_dir = std::env::var_os("IMGLAB_DAEMON_RUNTIME_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| std::env::temp_dir().join("imglab-desktop-daemon"));
+        assert!(app_log_roots()
+            .iter()
+            .any(|root| root == &runtime_dir.join("task-logs")));
+    }
+
+    #[test]
     fn reads_allowed_log_content_with_limit() {
-        let dir = std::env::temp_dir();
+        let dir = unique_dir();
+        fs::create_dir_all(&dir).expect("dir");
         let path = dir.join("imglab-codex-metadata-test-read.log");
         fs::write(&path, "hello").expect("write");
 

@@ -1,30 +1,35 @@
 ## Purpose
 
 Define the desktop workbench, gallery, inspector, generation queue, and core read model integration.
-
 ## Requirements
-
 ### Requirement: 提供三栏桌面工作台
-
-桌面应用 SHALL 提供 `Library Sidebar | Workspace | Inspector` 三栏工作台, 并允许 Inspector 在窄窗口中折叠.
+桌面应用 SHALL 提供 `Library Sidebar | Workspace | Inspector` 三栏工作台, 并允许 Inspector 在窄窗口中折叠. Workbench implementation MUST 按 workflow 组件和 data hooks 划分职责, 避免单个入口组件长期承载 Gallery, Albums, Review, Queue, Settings, Inspector 和 IPC orchestration 的全部逻辑.
 
 #### Scenario: 选择 Gallery 图片
-
 - **WHEN** 用户在 Gallery 中选择一个 asset
 - **THEN** Workspace 保持图片网格上下文, Inspector 展示该 asset 的 metadata, prompt, tags, albums 和 versions
 
+#### Scenario: Workflow 边界清晰
+- **WHEN** 开发者维护 desktop workbench
+- **THEN** Gallery, Albums, Review, Task, Settings 和 Inspector 的主要 rendering 与 data orchestration 位于职责明确的组件或 hooks 中
+
 ### Requirement: 提供 Gallery 和 Albums 视图
 
-桌面应用 SHALL 展示导入和生成的图片, 并支持进入 manual album 和 smart album 视图.
+桌面应用 SHALL 展示导入和生成的图片, 并支持进入 manual album 和 smart album 视图. Albums 视图 SHALL 支持 album list 排序, album rename/delete, manual album item 排序, 从 manual album 移除 asset, 批量添加 selected assets, 以及 Smart Album builder.
 
 #### Scenario: 打开智能相册
 
 - **WHEN** 用户打开一个 smart album
 - **THEN** Workspace 展示当前满足 smart query 的 asset 列表
 
+#### Scenario: 打开 Albums 管理视图
+
+- **WHEN** 用户打开 Albums 视图
+- **THEN** Workspace 展示 album list, album detail 区域, 并提供 manual album 和 smart album 管理入口
+
 ### Requirement: Albums Workspace 使用真实 Album 数据
 
-桌面应用 SHALL 提供 Albums workspace, 展示真实 albums 列表, 支持创建 manual album, 打开 album detail, 并复用 Gallery card 展示 album 内容.
+桌面应用 SHALL 提供 Albums workspace, 展示真实 albums 列表, 支持创建 manual album, 打开 album detail, 并复用 Gallery card 展示 album 内容. Albums workspace SHALL 支持 album list drag reorder, rename, delete, manual album item drag reorder, remove asset, batch add selected assets, and Smart Album builder.
 
 #### Scenario: 查看 Albums Workspace
 
@@ -40,6 +45,41 @@ Define the desktop workbench, gallery, inspector, generation queue, and core rea
 
 - **WHEN** 用户点击一个 manual album
 - **THEN** Workspace 展示该 album 的 header 和 album-scoped Gallery cards
+
+#### Scenario: 拖拽排序 Album List
+
+- **WHEN** 用户在 Albums workspace 拖拽调整 album list 顺序
+- **THEN** 桌面应用调用 Rust core 保存 album sort order, 并按保存后的顺序渲染 album list
+
+#### Scenario: 重命名 Album
+
+- **WHEN** 用户在 Albums workspace 重命名 album
+- **THEN** 桌面应用调用 Rust core 更新 album name, 刷新 album list 和当前 album detail header
+
+#### Scenario: 删除 Album
+
+- **WHEN** 用户在 Albums workspace 删除 album
+- **THEN** 桌面应用调用 Rust core 删除 album, 清理当前 selected album, 并刷新 album list 和 Gallery query
+
+#### Scenario: 拖拽排序 Manual Album Assets
+
+- **WHEN** 用户在 manual album detail 中拖拽 asset cards
+- **THEN** 桌面应用调用 Rust core 保存 album item sort order, 并按 album order 重新渲染该 album
+
+#### Scenario: 从 Manual Album 移除 Asset
+
+- **WHEN** 用户在 manual album detail 中移除某个 asset
+- **THEN** 桌面应用调用 Rust core 删除 membership, 刷新 album detail 和 album list item count
+
+#### Scenario: 批量添加 Gallery Assets 到 Manual Album
+
+- **WHEN** 用户选择多个 Gallery assets 并添加到 manual album
+- **THEN** 桌面应用调用 Rust core 批量写入 memberships, 刷新 album list, Gallery 和受影响 asset detail
+
+#### Scenario: 构建 Smart Album
+
+- **WHEN** 用户在 Smart Album builder 中设置 text, tags, providers, min rating, review status, category, status, created date range 或 sort
+- **THEN** 桌面应用将 typed query 提交给 Rust core validation, 并展示满足 query 的 live preview
 
 ### Requirement: Inspector 支持 Album Membership 和 Add To Album
 
@@ -66,16 +106,26 @@ Define the desktop workbench, gallery, inspector, generation queue, and core rea
 
 ### Requirement: 提供 Review Inbox
 
-桌面应用 SHALL 提供 Review Inbox, 用于处理 pending metadata suggestions.
+桌面应用 SHALL 提供 Review Inbox, 用于处理 pending metadata suggestions. Review Inbox SHALL 支持单选查看, 多选 batch actions, batch accept/reject, suggestion history compare, full suggestion regeneration, confidence visualization, 以及将当前或选中 suggestions 对应 assets 加入 manual album.
 
 #### Scenario: 接受 Suggestion
 
 - **WHEN** 用户在 Review Inbox 接受某条 suggestion
 - **THEN** 应用调用 Rust core 写入 canonical metadata, 并从 pending 列表中移除该 suggestion
 
+#### Scenario: 批量接受 Suggestions
+
+- **WHEN** 用户在 Review Inbox 选择多条 pending suggestions 并点击批量接受
+- **THEN** 桌面应用将当前打开 suggestion 的 draft 和其他选中 suggestions 的 persisted values 作为 final payloads 提交给 Rust core
+
+#### Scenario: 批量拒绝 Suggestions
+
+- **WHEN** 用户在 Review Inbox 选择多条 pending suggestions 并点击批量拒绝
+- **THEN** 桌面应用调用 Rust core 批量标记 rejected, 并刷新 pending list, Review badge 和 Gallery
+
 ### Requirement: Review Inbox Workspace 支持 Editable Detail
 
-桌面应用 SHALL 提供 Review Inbox workspace, 包含 pending suggestion list 和 selected suggestion editable detail form. Review 表单 SHALL 支持 title, description 和 JSON schema prompt 的字段级 Codex CLI 重新生成, 并在字段生成期间展示 loading 状态.
+桌面应用 SHALL 提供 Review Inbox workspace, 包含 pending suggestion list 和 selected suggestion editable detail form. Review 表单 SHALL 支持 title, description 和 JSON schema prompt 的字段级 Codex CLI 重新生成, 并在字段生成期间展示 loading 状态. Review detail SHALL 展示 suggestion history, 支持从 history pick 字段值到本地 draft, 支持 full suggestion regeneration, 并展示 confidence score.
 
 #### Scenario: 选择 Pending Suggestion
 
@@ -121,6 +171,31 @@ Define the desktop workbench, gallery, inspector, generation queue, and core rea
 
 - **WHEN** 用户在 Gallery asset card 中点击重新 review
 - **THEN** 桌面应用调用 Rust core 创建 pending suggestion, 刷新 Review badge, Gallery 和受影响的 Inspector detail
+
+#### Scenario: 展示 Suggestion History
+
+- **WHEN** 用户打开 selected suggestion detail
+- **THEN** 桌面应用展示同一 asset 的 suggestion history, 并标识每条 suggestion 的 status, created time 和 reviewed time
+
+#### Scenario: 从 History Pick 字段
+
+- **WHEN** 用户从 suggestion history 中选择某个字段值
+- **THEN** 桌面应用只更新当前本地 Review draft, 不调用 Rust core 写入 canonical metadata
+
+#### Scenario: 重新生成完整 Suggestion
+
+- **WHEN** 用户点击 full suggestion regeneration
+- **THEN** 桌面应用调用后端生成新的 pending suggestion record, 刷新 history 和 pending list, 并保留当前 draft 的可恢复状态
+
+#### Scenario: 展示 Confidence Score
+
+- **WHEN** selected suggestion 包含可解析 confidence_json
+- **THEN** 桌面应用展示 normalized overall score 和字段级 score chips
+
+#### Scenario: Review 中加入 Album
+
+- **WHEN** 用户在 Review 中选择一个 manual album 并执行 Add to Album
+- **THEN** 桌面应用将 selected suggestions 对应 assets 或当前 suggestion asset 批量添加到该 album, 并保持 suggestion status 不变
 
 ### Requirement: Settings 展示 App Logs
 
@@ -482,3 +557,39 @@ Define the desktop workbench, gallery, inspector, generation queue, and core rea
 
 - **WHEN** metadata field generation 完成但用户已切换 suggestion 或修改 base revision
 - **THEN** Review Inbox 显示 generated result available, 不得静默覆盖当前 draft
+
+### Requirement: Desktop Gallery 图片加载必须惰性且异步解码
+桌面应用 SHALL 在 Gallery grid 中避免一次性解码所有 full-resolution 图片, 并为图片元素提供 lazy loading 和 async decoding.
+
+#### Scenario: 渲染 Gallery 图片
+- **WHEN** Gallery card 渲染图片元素
+- **THEN** 图片元素使用 lazy loading 和 async decoding, 且 card 尺寸在加载前后保持稳定
+
+### Requirement: Desktop Query Refresh 必须防抖
+桌面应用 SHALL 对 IPC-backed Gallery query refresh 使用 debounce 或等价机制, 避免用户每输入一个字符就触发完整 Tauri IPC 和数据库查询.
+
+#### Scenario: 输入搜索文本
+- **WHEN** 用户连续输入 Gallery 搜索文本
+- **THEN** 桌面应用只在输入稳定后刷新 Gallery query, 不得按每个 key stroke 触发后端查询
+
+### Requirement: Desktop Derived State 必须稳定
+桌面应用 SHALL 对会传入大型子组件的 derived data 使用 memoized derivation 或等价稳定引用, 包括 provider list, queue count, filtered gallery 和 smart album preview.
+
+#### Scenario: 非相关状态变化
+- **WHEN** 用户修改与 Gallery 过滤无关的局部状态
+- **THEN** provider list, queue count 和 filtered gallery 等 derived values 不应产生不必要的新引用导致大型子组件重渲染
+
+### Requirement: Desktop Refresh Actions 避免无必要 Waterfall
+桌面应用 SHALL 将语义独立的 refresh 操作并发执行, 不得无原因串行调用多个 IPC refresh.
+
+#### Scenario: 接受 Metadata Suggestion
+- **WHEN** 用户接受一条 metadata suggestion
+- **THEN** Gallery refresh 和 suggestions refresh 可并发执行; 只有依赖当前 selection 的 detail refresh 需要条件化执行
+
+### Requirement: Desktop Polling 必须可清理
+桌面应用 SHALL 跟踪 polling 或 delayed wait 的 timeout handle, 并在组件 unmount, library switch 或任务结束时清理.
+
+#### Scenario: 切换 Library 时存在 Polling
+- **WHEN** 用户切换 library 且旧 library 存在任务轮询 timeout
+- **THEN** 桌面应用清理旧 timeout, 不得在旧请求完成后更新新 library state
+

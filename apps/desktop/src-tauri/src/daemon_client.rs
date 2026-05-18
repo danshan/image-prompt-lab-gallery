@@ -11,7 +11,9 @@ use std::time::{Duration, Instant};
 
 const API_VERSION: &str = "v1";
 const HEALTH_PATH: &str = "/v1/health";
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
+const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
+const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+const LOG_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 #[allow(dead_code)]
 const SIDECAR_START_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -256,6 +258,7 @@ impl DaemonClient {
         path: &str,
         body: Option<Value>,
     ) -> Result<String, CommandError> {
+        let timeout = request_timeout(path);
         let request = build_http_request(method, path, &self.token, body)?;
         let mut stream =
             TcpStream::connect(("127.0.0.1", self.port)).map_err(|error| CommandError {
@@ -264,10 +267,10 @@ impl DaemonClient {
                 recoverable: true,
             })?;
         stream
-            .set_read_timeout(Some(REQUEST_TIMEOUT))
+            .set_read_timeout(Some(timeout))
             .map_err(daemon_io_error)?;
         stream
-            .set_write_timeout(Some(REQUEST_TIMEOUT))
+            .set_write_timeout(Some(timeout))
             .map_err(daemon_io_error)?;
         stream
             .write_all(request.as_bytes())
@@ -281,6 +284,16 @@ impl DaemonClient {
             return Err(map_daemon_error(parsed));
         }
         Ok(parsed.body)
+    }
+}
+
+fn request_timeout(path: &str) -> Duration {
+    if path == HEALTH_PATH {
+        HEALTH_TIMEOUT
+    } else if path.ends_with("/logs/tail") {
+        LOG_REQUEST_TIMEOUT
+    } else {
+        DEFAULT_REQUEST_TIMEOUT
     }
 }
 
@@ -316,7 +329,9 @@ pub fn start_daemon_sidecar(
         if let Some(client) = discover_daemon(&runtime_path)? {
             return Ok(DaemonSidecar { client, child });
         }
-        thread::sleep(Duration::from_millis(100));
+        let elapsed = started_at.elapsed().as_millis() as u64;
+        let sleep_ms = (100 + elapsed / 4).min(500);
+        thread::sleep(Duration::from_millis(sleep_ms));
     }
     let _ = child.kill();
     let _ = child.wait();
@@ -440,5 +455,18 @@ mod tests {
         let path = std::env::temp_dir().join("imglab-missing-runtime-file.json");
         let client = discover_daemon(&path).expect("discovery");
         assert!(client.is_none());
+    }
+
+    #[test]
+    fn request_timeout_depends_on_request_type() {
+        assert_eq!(request_timeout("/v1/health"), HEALTH_TIMEOUT);
+        assert_eq!(
+            request_timeout("/v1/tasks/task-id/logs/tail"),
+            LOG_REQUEST_TIMEOUT
+        );
+        assert_eq!(
+            request_timeout("/v1/tasks/task-id"),
+            DEFAULT_REQUEST_TIMEOUT
+        );
     }
 }
