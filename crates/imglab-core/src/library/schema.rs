@@ -2,7 +2,7 @@ use super::database_error;
 use crate::{DomainError, DomainResult};
 use rusqlite::Connection;
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 4;
+pub const CURRENT_SCHEMA_VERSION: u32 = 5;
 
 pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
     let user_version: u32 = connection
@@ -121,6 +121,76 @@ pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
                 PRIMARY KEY(album_id, asset_id)
             );
 
+            CREATE TABLE IF NOT EXISTS tasks (
+                id TEXT PRIMARY KEY,
+                library_id TEXT NOT NULL,
+                task_type TEXT NOT NULL,
+                status TEXT NOT NULL,
+                queue_position INTEGER NOT NULL,
+                priority INTEGER NOT NULL DEFAULT 0,
+                provider TEXT,
+                operation_type TEXT,
+                concurrency_group TEXT,
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                max_attempts INTEGER NOT NULL DEFAULT 3,
+                next_retry_at TEXT,
+                input_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                last_error_code TEXT,
+                last_error_message TEXT,
+                error_classification TEXT,
+                wait_reason TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_tasks_library_status_order
+                ON tasks(library_id, status, priority DESC, queue_position ASC, created_at ASC);
+
+            CREATE TABLE IF NOT EXISTS task_attempts (
+                id TEXT PRIMARY KEY,
+                task_id TEXT NOT NULL,
+                attempt_number INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                completed_at TEXT,
+                log_path TEXT,
+                exit_code INTEGER,
+                error_code TEXT,
+                error_message TEXT,
+                error_classification TEXT,
+                FOREIGN KEY(task_id) REFERENCES tasks(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_task_attempts_task
+                ON task_attempts(task_id, attempt_number ASC);
+
+            CREATE TABLE IF NOT EXISTS task_events (
+                id TEXT PRIMARY KEY,
+                task_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                message TEXT,
+                payload_json TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(task_id) REFERENCES tasks(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_task_events_task_created
+                ON task_events(task_id, created_at ASC);
+
+            CREATE TABLE IF NOT EXISTS task_outputs (
+                id TEXT PRIMARY KEY,
+                task_id TEXT NOT NULL,
+                output_type TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                payload_json TEXT,
+                created_at TEXT NOT NULL,
+                UNIQUE(task_id, output_type, target_id),
+                FOREIGN KEY(task_id) REFERENCES tasks(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_task_outputs_task
+                ON task_outputs(task_id);
+
             ",
         )
         .map_err(database_error)?;
@@ -185,7 +255,8 @@ fn backfill_album_sort_order(connection: &Connection) -> DomainResult<()> {
         let rows = statement
             .query_map([], |row| row.get::<_, String>(0))
             .map_err(database_error)?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(database_error)?
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(database_error)?
     };
 
     for (index, album_id) in album_ids.iter().enumerate() {

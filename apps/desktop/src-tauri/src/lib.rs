@@ -1,7 +1,12 @@
 mod app_logs;
+mod daemon_client;
 mod metadata_generation;
 
 use app_logs::{AppLogContentView, AppLogView, ReadAppLogInput};
+use daemon_client::{
+    BatchCreateTasksInput, DaemonSidecar, DaemonTask, DaemonTaskAttempt, DaemonTaskDetail,
+    DaemonTaskEvent, DaemonTaskInput, DaemonTaskOutput,
+};
 use imglab_core::{
     prepare_generation_request, AlbumId, AlbumService, AssetId, AssetService,
     BatchAddAssetsToAlbumRequest, BatchReviewMetadataSuggestionRequest, CreateLibraryRequest,
@@ -18,14 +23,12 @@ use metadata_generation::{
     CodexCliMetadataGenerator, GenerateReviewFieldInput, GeneratedReviewFieldView, ReviewField,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Default)]
 struct DesktopState {
-    generation_jobs: Arc<Mutex<HashMap<String, GenerationJobState>>>,
+    daemon_sidecar: Arc<Mutex<Option<DaemonSidecar>>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -236,29 +239,6 @@ struct ConfidenceScoreView {
     category: Option<u8>,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct GenerationJobView {
-    id: String,
-    provider: String,
-    prompt: String,
-    status: String,
-    log_path: PathBuf,
-    error: Option<String>,
-    versions: Vec<VersionView>,
-}
-
-#[derive(Debug, Clone)]
-struct GenerationJobState {
-    id: String,
-    provider: String,
-    prompt: String,
-    status: String,
-    log_path: PathBuf,
-    error: Option<String>,
-    versions: Vec<VersionView>,
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CreateLibraryInput {
@@ -331,6 +311,120 @@ struct GenerateImageInput {
     input_file: Option<PathBuf>,
     input_version_id: Option<String>,
     parameters_json: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DaemonTaskQueryInput {
+    library_path: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnqueueGenerationTasksInput {
+    library_path: PathBuf,
+    tasks: Vec<GenerationTaskDraftInput>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReorderDaemonTasksInput {
+    library_path: PathBuf,
+    task_ids: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DaemonTaskActionInput {
+    task_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GenerationTaskDraftInput {
+    task_type: Option<String>,
+    provider: String,
+    prompt: String,
+    negative_prompt: Option<String>,
+    operation: Option<String>,
+    input_version_id: Option<String>,
+    parameters_json: Option<String>,
+    priority: Option<i64>,
+    max_attempts: Option<u32>,
+    input: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DaemonTaskView {
+    id: String,
+    library_id: String,
+    task_type: String,
+    status: String,
+    queue_position: i64,
+    priority: i64,
+    provider: Option<String>,
+    operation: Option<String>,
+    concurrency_group: Option<String>,
+    attempt_count: u32,
+    max_attempts: u32,
+    next_retry_at: Option<String>,
+    input: serde_json::Value,
+    created_at: String,
+    updated_at: String,
+    last_error_code: Option<String>,
+    last_error_message: Option<String>,
+    error_classification: Option<String>,
+    wait_reason: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DaemonTaskAttemptView {
+    id: String,
+    task_id: String,
+    attempt_number: u32,
+    status: String,
+    started_at: String,
+    completed_at: Option<String>,
+    log_path: Option<PathBuf>,
+    exit_code: Option<i32>,
+    error_code: Option<String>,
+    error_message: Option<String>,
+    error_classification: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DaemonTaskEventView {
+    id: String,
+    task_id: String,
+    event_type: String,
+    message: Option<String>,
+    payload: Option<serde_json::Value>,
+    created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DaemonTaskOutputView {
+    id: String,
+    task_id: String,
+    output_type: String,
+    target_id: String,
+    payload: Option<serde_json::Value>,
+    created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DaemonTaskDetailView {
+    task: DaemonTaskView,
+    attempts: Vec<DaemonTaskAttemptView>,
+    events: Vec<DaemonTaskEventView>,
+    outputs: Vec<DaemonTaskOutputView>,
+    log_tail: String,
+    log_tail_truncated: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -471,9 +565,10 @@ fn health() -> &'static str {
 
 #[tauri::command]
 fn create_library(input: CreateLibraryInput) -> Result<LibraryView, CommandError> {
+    let root_path = normalize_library_root_path(input.root_path)?;
     service()
         .create_library(CreateLibraryRequest {
-            root_path: input.root_path,
+            root_path,
             name: input.name,
         })
         .map(library_view)
@@ -490,6 +585,7 @@ fn list_libraries(include_hidden: bool) -> Result<Vec<LibraryView>, CommandError
 
 #[tauri::command]
 fn open_library(root_path: PathBuf) -> Result<LibraryView, CommandError> {
+    let root_path = normalize_library_root_path(root_path)?;
     service()
         .open_library(&root_path)
         .map(library_view)
@@ -498,6 +594,7 @@ fn open_library(root_path: PathBuf) -> Result<LibraryView, CommandError> {
 
 #[tauri::command]
 fn library_status(root_path: PathBuf) -> Result<LibraryStatusView, CommandError> {
+    let root_path = normalize_library_root_path(root_path)?;
     service()
         .library_status(&root_path)
         .map(library_status_view)
@@ -606,71 +703,129 @@ fn generate_image(input: GenerateImageInput) -> Result<Vec<VersionView>, Command
 }
 
 #[tauri::command]
-fn start_generation(
-    input: GenerateImageInput,
-    state: tauri::State<'_, DesktopState>,
-) -> Result<GenerationJobView, CommandError> {
-    let job_id = generation_job_id();
-    let log_path = std::env::temp_dir().join(format!("imglab-codex-cli-{job_id}.log"));
-    let job = GenerationJobState {
-        id: job_id.clone(),
-        provider: input.provider.clone(),
-        prompt: input.prompt.clone(),
-        status: "running".to_string(),
-        log_path: log_path.clone(),
-        error: None,
-        versions: Vec::new(),
-    };
-    let jobs = state.generation_jobs.clone();
-    {
-        let mut guard = jobs.lock().map_err(|_| CommandError {
-            code: "ConcurrentWriteConflict".to_string(),
-            message: "generation job state lock poisoned".to_string(),
-            recoverable: false,
-        })?;
-        guard.insert(job_id.clone(), job.clone());
-    }
-
-    std::thread::spawn(move || {
-        let result = execute_generation(input, Some(log_path.clone()));
-        if let Ok(mut guard) = jobs.lock() {
-            if let Some(job) = guard.get_mut(&job_id) {
-                match result {
-                    Ok(versions) => {
-                        job.status = "completed".to_string();
-                        job.versions = versions;
-                    }
-                    Err(error) => {
-                        job.status = "failed".to_string();
-                        job.error = Some(error.message);
-                    }
-                }
-            }
-        }
-    });
-
-    Ok(generation_job_view(job))
+fn daemon_health(state: tauri::State<'_, DesktopState>) -> Result<bool, CommandError> {
+    ensure_daemon_client(&state).map(|_| true)
 }
 
 #[tauri::command]
-fn get_generation_job(
-    job_id: String,
+fn enqueue_generation_tasks(
+    input: EnqueueGenerationTasksInput,
     state: tauri::State<'_, DesktopState>,
-) -> Result<GenerationJobView, CommandError> {
-    let guard = state.generation_jobs.lock().map_err(|_| CommandError {
-        code: "ConcurrentWriteConflict".to_string(),
-        message: "generation job state lock poisoned".to_string(),
-        recoverable: false,
-    })?;
-    guard
-        .get(&job_id)
-        .cloned()
-        .map(generation_job_view)
-        .ok_or_else(|| CommandError {
-            code: "InvalidGenerationJob".to_string(),
-            message: format!("generation job not found: {job_id}"),
+) -> Result<Vec<DaemonTaskView>, CommandError> {
+    let client = ensure_daemon_client(&state)?;
+    let library_id = client.open_library(&input.library_path)?;
+    let tasks = input
+        .tasks
+        .into_iter()
+        .map(generation_draft_to_daemon_task)
+        .collect::<Result<Vec<_>, _>>()?;
+    client
+        .batch_create_tasks(BatchCreateTasksInput { library_id, tasks })
+        .map(|tasks| tasks.into_iter().map(daemon_task_view).collect())
+}
+
+#[tauri::command]
+fn list_daemon_tasks(
+    input: DaemonTaskQueryInput,
+    state: tauri::State<'_, DesktopState>,
+) -> Result<Vec<DaemonTaskView>, CommandError> {
+    let client = ensure_daemon_client(&state)?;
+    let library_id = client.open_library(&input.library_path)?;
+    client
+        .list_tasks(&library_id)
+        .map(|tasks| tasks.into_iter().map(daemon_task_view).collect())
+}
+
+#[tauri::command]
+fn get_daemon_task_detail(
+    input: DaemonTaskActionInput,
+    state: tauri::State<'_, DesktopState>,
+) -> Result<DaemonTaskDetailView, CommandError> {
+    let client = ensure_daemon_client(&state)?;
+    let detail = client.get_task(&input.task_id)?;
+    let tail = client.tail_task_log(&input.task_id)?;
+    Ok(daemon_task_detail_view(
+        detail,
+        tail.content,
+        tail.truncated,
+    ))
+}
+
+#[tauri::command]
+fn reorder_daemon_tasks(
+    input: ReorderDaemonTasksInput,
+    state: tauri::State<'_, DesktopState>,
+) -> Result<(), CommandError> {
+    let client = ensure_daemon_client(&state)?;
+    let library_id = client.open_library(&input.library_path)?;
+    client.reorder_tasks(library_id, input.task_ids)
+}
+
+#[tauri::command]
+fn cancel_daemon_task(
+    input: DaemonTaskActionInput,
+    state: tauri::State<'_, DesktopState>,
+) -> Result<DaemonTaskView, CommandError> {
+    ensure_daemon_client(&state)?
+        .cancel_task(&input.task_id)
+        .map(daemon_task_view)
+}
+
+#[tauri::command]
+fn retry_daemon_task(
+    input: DaemonTaskActionInput,
+    state: tauri::State<'_, DesktopState>,
+) -> Result<DaemonTaskView, CommandError> {
+    ensure_daemon_client(&state)?
+        .retry_task(&input.task_id)
+        .map(daemon_task_view)
+}
+
+#[tauri::command]
+fn duplicate_daemon_task(
+    input: DaemonTaskActionInput,
+    state: tauri::State<'_, DesktopState>,
+) -> Result<DaemonTaskView, CommandError> {
+    ensure_daemon_client(&state)?
+        .duplicate_task(&input.task_id)
+        .map(daemon_task_view)
+}
+
+fn generation_draft_to_daemon_task(
+    input: GenerationTaskDraftInput,
+) -> Result<DaemonTaskInput, CommandError> {
+    let parameters = input
+        .parameters_json
+        .as_deref()
+        .map(serde_json::from_str::<serde_json::Value>)
+        .transpose()
+        .map_err(|error| CommandError {
+            code: "InvalidGenerationParameters".to_string(),
+            message: format!("invalid generation parameters JSON: {error}"),
             recoverable: true,
-        })
+        })?;
+    Ok(DaemonTaskInput {
+        task_type: input
+            .task_type
+            .unwrap_or_else(|| "image_generation".to_string()),
+        provider: Some(input.provider),
+        operation: Some(
+            input
+                .operation
+                .unwrap_or_else(|| "text_to_image".to_string()),
+        ),
+        priority: input.priority,
+        concurrency_group: None,
+        max_attempts: input.max_attempts,
+        input: input.input.unwrap_or_else(|| {
+            serde_json::json!({
+                "prompt": input.prompt,
+                "negativePrompt": input.negative_prompt,
+                "inputVersionId": input.input_version_id,
+                "parametersJson": parameters,
+            })
+        }),
+    })
 }
 
 fn execute_generation(
@@ -801,7 +956,9 @@ fn rename_album(input: RenameAlbumInput) -> Result<AlbumView, CommandError> {
 
 #[tauri::command]
 fn delete_album(album_id: String) -> Result<(), CommandError> {
-    service().delete_album(&AlbumId(album_id)).map_err(Into::into)
+    service()
+        .delete_album(&AlbumId(album_id))
+        .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -917,7 +1074,9 @@ fn batch_reject_suggestions(input: BatchRejectSuggestionsInput) -> Result<(), Co
 }
 
 #[tauri::command]
-fn list_suggestion_history(input: SuggestionHistoryInput) -> Result<Vec<SuggestionView>, CommandError> {
+fn list_suggestion_history(
+    input: SuggestionHistoryInput,
+) -> Result<Vec<SuggestionView>, CommandError> {
     service()
         .list_history(&input.library_path, &AssetId(input.asset_id))
         .map(|suggestions| suggestions.into_iter().map(suggestion_view).collect())
@@ -1028,11 +1187,119 @@ fn default_registry_path() -> PathBuf {
         .unwrap_or_else(|| std::env::temp_dir().join("imglab-desktop-registry.sqlite"))
 }
 
+fn ensure_daemon_client(
+    state: &tauri::State<'_, DesktopState>,
+) -> Result<daemon_client::DaemonClient, CommandError> {
+    let runtime_dir = daemon_runtime_dir();
+    let runtime_path = runtime_dir.join("runtime.json");
+    {
+        let guard = state.daemon_sidecar.lock().map_err(|_| CommandError {
+            code: "ConcurrentWriteConflict".to_string(),
+            message: "daemon sidecar state lock poisoned".to_string(),
+            recoverable: false,
+        })?;
+        if let Some(sidecar) = guard.as_ref() {
+            if sidecar.client.health().is_ok() {
+                return Ok(sidecar.client.clone());
+            }
+        }
+    }
+
+    match daemon_client::discover_daemon(&runtime_path) {
+        Ok(Some(client)) => return Ok(client),
+        Ok(None) => {}
+        Err(error) if error.recoverable => {}
+        Err(error) => return Err(error),
+    }
+
+    let daemon_bin = daemon_binary_path()?;
+    let sidecar = daemon_client::start_daemon_sidecar(&daemon_bin, &runtime_dir)?;
+    let client = sidecar.client.clone();
+    let mut guard = state.daemon_sidecar.lock().map_err(|_| CommandError {
+        code: "ConcurrentWriteConflict".to_string(),
+        message: "daemon sidecar state lock poisoned".to_string(),
+        recoverable: false,
+    })?;
+    *guard = Some(sidecar);
+    Ok(client)
+}
+
+fn daemon_runtime_dir() -> PathBuf {
+    std::env::var_os("IMGLAB_DAEMON_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("imglab-desktop-daemon"))
+}
+
+fn daemon_binary_path() -> Result<PathBuf, CommandError> {
+    if let Some(path) = std::env::var_os("IMGLAB_DAEMON_BIN").map(PathBuf::from) {
+        return Ok(path);
+    }
+    let exe = std::env::current_exe().map_err(|error| CommandError {
+        code: "DaemonStartFailed".to_string(),
+        message: format!("failed to locate current executable: {error}"),
+        recoverable: true,
+    })?;
+    let Some(dir) = exe.parent() else {
+        return Err(CommandError {
+            code: "DaemonStartFailed".to_string(),
+            message: "failed to resolve daemon binary directory".to_string(),
+            recoverable: true,
+        });
+    };
+    Ok(dir.join("imglab-daemon"))
+}
+
+fn normalize_library_root_path(path: PathBuf) -> Result<PathBuf, CommandError> {
+    let path = expand_home_path(path)?;
+    if path.is_absolute() {
+        Ok(path)
+    } else {
+        Err(invalid_path_error(
+            "library path must be absolute or start with ~/".to_string(),
+        ))
+    }
+}
+
+fn expand_home_path(path: PathBuf) -> Result<PathBuf, CommandError> {
+    let raw = path.to_string_lossy();
+    if raw == "~" {
+        return home_dir();
+    }
+
+    if let Some(rest) = raw.strip_prefix("~/") {
+        return home_dir().map(|home| home.join(rest));
+    }
+
+    if raw.starts_with('~') {
+        return Err(invalid_path_error(
+            "library path only supports ~ for the current user".to_string(),
+        ));
+    }
+
+    Ok(path)
+}
+
+fn home_dir() -> Result<PathBuf, CommandError> {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .ok_or_else(|| invalid_path_error("HOME is not set to an absolute path".to_string()))
+}
+
+fn invalid_path_error(message: String) -> CommandError {
+    CommandError {
+        code: "InvalidPath".to_string(),
+        message,
+        recoverable: true,
+    }
+}
+
 fn library_view(summary: imglab_core::LibrarySummary) -> LibraryView {
+    let root_path = expand_home_path(summary.root_path.clone()).unwrap_or(summary.root_path);
     LibraryView {
         id: summary.id.0,
         name: summary.name,
-        root_path: summary.root_path,
+        root_path,
         hidden: summary.hidden,
         schema_version: summary.schema_version,
     }
@@ -1303,24 +1570,93 @@ fn confidence_score_view(summary: imglab_core::ConfidenceScoreView) -> Confidenc
     }
 }
 
-fn generation_job_view(job: GenerationJobState) -> GenerationJobView {
-    GenerationJobView {
-        id: job.id,
-        provider: job.provider,
-        prompt: job.prompt,
-        status: job.status,
-        log_path: job.log_path,
-        error: job.error,
-        versions: job.versions,
+fn daemon_task_view(task: DaemonTask) -> DaemonTaskView {
+    DaemonTaskView {
+        id: task.id,
+        library_id: task.library_id,
+        task_type: task.task_type,
+        status: task.status,
+        queue_position: task.queue_position,
+        priority: task.priority,
+        provider: task.provider,
+        operation: task.operation,
+        concurrency_group: task.concurrency_group,
+        attempt_count: task.attempt_count,
+        max_attempts: task.max_attempts,
+        next_retry_at: task.next_retry_at,
+        input: task.input,
+        created_at: task.created_at,
+        updated_at: task.updated_at,
+        last_error_code: task.last_error_code,
+        last_error_message: task.last_error_message,
+        error_classification: task.error_classification,
+        wait_reason: task.wait_reason,
     }
 }
 
-fn generation_job_id() -> String {
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis())
-        .unwrap_or_default();
-    format!("{millis}")
+fn daemon_task_attempt_view(attempt: DaemonTaskAttempt) -> DaemonTaskAttemptView {
+    DaemonTaskAttemptView {
+        id: attempt.id,
+        task_id: attempt.task_id,
+        attempt_number: attempt.attempt_number,
+        status: attempt.status,
+        started_at: attempt.started_at,
+        completed_at: attempt.completed_at,
+        log_path: attempt.log_path,
+        exit_code: attempt.exit_code,
+        error_code: attempt.error_code,
+        error_message: attempt.error_message,
+        error_classification: attempt.error_classification,
+    }
+}
+
+fn daemon_task_event_view(event: DaemonTaskEvent) -> DaemonTaskEventView {
+    DaemonTaskEventView {
+        id: event.id,
+        task_id: event.task_id,
+        event_type: event.event_type,
+        message: event.message,
+        payload: event.payload,
+        created_at: event.created_at,
+    }
+}
+
+fn daemon_task_output_view(output: DaemonTaskOutput) -> DaemonTaskOutputView {
+    DaemonTaskOutputView {
+        id: output.id,
+        task_id: output.task_id,
+        output_type: output.output_type,
+        target_id: output.target_id,
+        payload: output.payload,
+        created_at: output.created_at,
+    }
+}
+
+fn daemon_task_detail_view(
+    detail: DaemonTaskDetail,
+    log_tail: String,
+    log_tail_truncated: bool,
+) -> DaemonTaskDetailView {
+    DaemonTaskDetailView {
+        task: daemon_task_view(detail.task),
+        attempts: detail
+            .attempts
+            .into_iter()
+            .map(daemon_task_attempt_view)
+            .collect(),
+        events: detail
+            .events
+            .into_iter()
+            .map(daemon_task_event_view)
+            .collect(),
+        outputs: detail
+            .outputs
+            .into_iter()
+            .map(daemon_task_output_view)
+            .collect(),
+        log_tail,
+        log_tail_truncated,
+    }
 }
 
 pub fn run() {
@@ -1340,8 +1676,14 @@ pub fn run() {
             query_gallery,
             get_asset_detail,
             generate_image,
-            start_generation,
-            get_generation_job,
+            daemon_health,
+            enqueue_generation_tasks,
+            list_daemon_tasks,
+            get_daemon_task_detail,
+            reorder_daemon_tasks,
+            cancel_daemon_task,
+            retry_daemon_task,
+            duplicate_daemon_task,
             update_asset_metadata,
             add_tag_to_asset,
             list_albums,
@@ -1394,6 +1736,25 @@ mod tests {
         .into();
 
         assert_eq!(error.code, "UnsupportedProviderCapability");
+        assert!(error.recoverable);
+    }
+
+    #[test]
+    fn expands_home_relative_library_path() {
+        let normalized = normalize_library_root_path(PathBuf::from("~/Documents/image-prompt-lab"))
+            .expect("normalized path");
+
+        assert!(normalized.is_absolute());
+        assert!(normalized.ends_with("Documents/image-prompt-lab"));
+        assert!(!normalized.to_string_lossy().starts_with('~'));
+    }
+
+    #[test]
+    fn rejects_relative_library_path() {
+        let error = normalize_library_root_path(PathBuf::from("relative/image-prompt-lab"))
+            .expect_err("error");
+
+        assert_eq!(error.code, "InvalidPath");
         assert!(error.recoverable);
     }
 }

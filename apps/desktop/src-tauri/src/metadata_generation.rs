@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -127,7 +127,20 @@ impl CodexCliMetadataGenerator {
         )
         .map_err(|error| io_command_error(&log_path, error))?;
 
-        let mut child = Command::new(&command.program)
+        let program = resolve_codex_program(&command.program).ok_or_else(|| {
+            generation_command_error(
+                input.field,
+                &log_path,
+                format!(
+                    "codex CLI executable not found. Set CODEX_CLI_BIN to the absolute codex path, or ensure codex is available in PATH. Requested: {}",
+                    command.program.display()
+                ),
+            )
+        })?;
+        writeln!(log_file, "resolved_program: {}\n", program.display())
+            .map_err(|error| io_command_error(&log_path, error))?;
+
+        let mut child = Command::new(&program)
             .args(&command.args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -446,6 +459,62 @@ fn join_stream(
     Ok(String::from_utf8_lossy(&bytes).to_string())
 }
 
+fn resolve_codex_program(requested: &Path) -> Option<PathBuf> {
+    if let Some(configured) = std::env::var_os("CODEX_CLI_BIN").map(PathBuf::from) {
+        if configured.is_file() {
+            return Some(configured);
+        }
+    }
+    if has_path_component(requested) {
+        return requested.is_file().then(|| requested.to_path_buf());
+    }
+    search_executable(requested.to_str().unwrap_or("codex"))
+}
+
+fn has_path_component(path: &Path) -> bool {
+    path.is_absolute()
+        || path
+            .components()
+            .any(|component| matches!(component, Component::ParentDir | Component::CurDir))
+        || path.parent().is_some_and(|parent| parent != Path::new(""))
+}
+
+fn search_executable(binary_name: &str) -> Option<PathBuf> {
+    executable_search_dirs()
+        .into_iter()
+        .map(|directory| directory.join(binary_name))
+        .find(|candidate| candidate.is_file())
+}
+
+fn executable_search_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(path) = std::env::var_os("PATH") {
+        dirs.extend(std::env::split_paths(&path));
+    }
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        dirs.push(home.join(".asdf/shims"));
+        dirs.push(home.join(".cargo/bin"));
+        dirs.push(home.join(".local/bin"));
+    }
+    dirs.extend([
+        PathBuf::from("/opt/homebrew/bin"),
+        PathBuf::from("/usr/local/bin"),
+        PathBuf::from("/usr/bin"),
+        PathBuf::from("/bin"),
+    ]);
+    dedupe_paths(dirs)
+}
+
+fn dedupe_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut unique = Vec::new();
+    for path in paths {
+        if !unique.iter().any(|item| item == &path) {
+            unique.push(path);
+        }
+    }
+    unique
+}
+
 fn io_command_error(path: &Path, error: std::io::Error) -> CommandError {
     CommandError {
         code: "Io".to_string(),
@@ -506,6 +575,14 @@ mod tests {
         assert!(command.prompt.contains("Field: title"));
         assert!(command.prompt.contains("Simplified Chinese"));
         assert!(!command.prompt.contains("Use the imagegen skill"));
+    }
+
+    #[test]
+    fn resolves_codex_from_configured_or_common_paths() {
+        let resolved = resolve_codex_program(Path::new("codex"));
+        if let Some(path) = resolved {
+            assert!(path.ends_with("codex"));
+        }
     }
 
     #[test]

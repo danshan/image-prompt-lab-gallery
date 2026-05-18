@@ -37,6 +37,7 @@ use storage::{
     extension_for_mime_type, file_digest, image_dimensions, is_safe_relative_path,
     managed_original_path, managed_storage_size, normalized_extension, timestamp_string,
 };
+mod tasks;
 
 const CHECKSUM_MD5: &str = "MD5";
 const CHECKSUM_SHA256: &str = "SHA-256";
@@ -902,10 +903,11 @@ mod tests {
     use crate::GenerationService;
     use crate::MetadataReviewService;
     use crate::{
-        AlbumKind, AlbumService, GalleryQuery, GalleryReadService, GallerySort, GeneratedImage,
-        BatchAddAssetsToAlbumRequest, BatchReviewMetadataSuggestionRequest, GenerationResult,
-        ReorderAlbumItemsRequest, ReorderAlbumsRequest, ReviewMetadataSuggestionRequest,
-        ReviewStatusFilter, SearchQuery, SearchService, UpdateAssetMetadataRequest,
+        AlbumKind, AlbumService, BatchAddAssetsToAlbumRequest,
+        BatchReviewMetadataSuggestionRequest, GalleryQuery, GalleryReadService, GallerySort,
+        GeneratedImage, GenerationResult, ReorderAlbumItemsRequest, ReorderAlbumsRequest,
+        ReviewMetadataSuggestionRequest, ReviewStatusFilter, SearchQuery, SearchService,
+        UpdateAssetMetadataRequest,
     };
 
     fn test_root(name: &str) -> PathBuf {
@@ -2342,8 +2344,8 @@ mod tests {
             .create_smart_album(crate::CreateSmartAlbumRequest {
                 library_path: root.clone(),
                 name: "Recent".to_string(),
-                smart_query_json:
-                    "{\"createdAtFrom\":\"0\",\"createdAtTo\":\"999999999999999\"}".to_string(),
+                smart_query_json: "{\"createdAtFrom\":\"0\",\"createdAtTo\":\"999999999999999\"}"
+                    .to_string(),
             })
             .expect("smart album");
         let items = service
@@ -2460,9 +2462,7 @@ mod tests {
         .expect("load asset");
         assert!(asset_a_after.title.is_none());
 
-        let history = service
-            .list_history(&root, &asset_a.id)
-            .expect("history");
+        let history = service.list_history(&root, &asset_a.id).expect("history");
         assert_eq!(history.len(), 1);
         let confidence = service.normalize_confidence(&history[0].confidence_json);
         assert_eq!(confidence.overall, Some(75));

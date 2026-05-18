@@ -1505,6 +1505,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "imglab-daemon"
+version = "0.1.0"
+dependencies = [
+ "imglab-core",
+ "imglab-provider-codex",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "imglab-desktop"
 version = "0.1.0"
 dependencies = [

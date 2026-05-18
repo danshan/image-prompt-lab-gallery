@@ -119,7 +119,9 @@ impl GalleryReadService for LocalLibraryService {
                         asset_in_album(&connection, album_id, &item.id).unwrap_or(false)
                     });
                 }
-                AlbumFilterContext::Smart(smart_query) => apply_smart_album_query(&mut items, smart_query),
+                AlbumFilterContext::Smart(smart_query) => {
+                    apply_smart_album_query(&mut items, smart_query)
+                }
             }
         }
 

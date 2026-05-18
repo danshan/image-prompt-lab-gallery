@@ -106,6 +106,42 @@ pub trait GalleryReadService {
     ) -> DomainResult<AssetDetailView>;
 }
 
+pub trait TaskService {
+    fn create_tasks(&self, request: BatchCreateTasksRequest) -> DomainResult<Vec<TaskSummary>>;
+    fn list_tasks(&self, library_path: &std::path::Path) -> DomainResult<Vec<TaskSummary>>;
+    fn get_task_detail(
+        &self,
+        library_path: &std::path::Path,
+        task_id: &TaskId,
+    ) -> DomainResult<TaskDetail>;
+    fn update_task_status(&self, request: UpdateTaskStatusRequest) -> DomainResult<TaskSummary>;
+    fn append_task_event(&self, request: AppendTaskEventRequest) -> DomainResult<TaskEvent>;
+    fn append_task_attempt(&self, request: AppendTaskAttemptRequest) -> DomainResult<TaskAttempt>;
+    fn complete_task_attempt(
+        &self,
+        request: CompleteTaskAttemptRequest,
+    ) -> DomainResult<TaskAttempt>;
+    fn append_task_output(&self, request: AppendTaskOutputRequest) -> DomainResult<TaskOutput>;
+    fn has_task_output(
+        &self,
+        library_path: &std::path::Path,
+        task_id: &TaskId,
+        output_type: TaskOutputType,
+        target_id: &str,
+    ) -> DomainResult<bool>;
+    fn reorder_queued_tasks(&self, request: ReorderQueuedTasksRequest) -> DomainResult<()>;
+    fn retry_task(
+        &self,
+        library_path: &std::path::Path,
+        task_id: &TaskId,
+    ) -> DomainResult<TaskSummary>;
+    fn duplicate_task(
+        &self,
+        library_path: &std::path::Path,
+        task_id: &TaskId,
+    ) -> DomainResult<TaskSummary>;
+}
+
 pub trait ImageProvider {
     fn name(&self) -> &'static str;
     fn supports_operation(&self, operation: GenerationOperation) -> bool {

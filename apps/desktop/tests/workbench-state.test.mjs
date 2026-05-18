@@ -21,7 +21,9 @@ import {
   isReviewFieldGenerating,
   markAssetReviewPending,
   moveItem,
+  moveQueuedTaskOrder,
   openAlbumQuery,
+  parseTaskDraftImport,
   removeReviewFormTag,
   removeSuggestionState,
   reorderByIds,
@@ -31,7 +33,6 @@ import {
   toggleGalleryProvider,
   toggleGalleryTag,
   toggleSelection,
-  updateQueueJobStatus,
 } from "../.test-dist/workbench-state.js";
 
 test("acceptSuggestionState applies metadata and removes pending item", () => {
@@ -115,16 +116,35 @@ test("markAssetReviewPending raises pending count without touching other assets"
   assert.equal(next[1].reviewPendingCount, 2);
 });
 
-test("updateQueueJobStatus updates only the targeted job", () => {
-  const queue = [
-    { id: "job-1", status: "running" },
-    { id: "job-2", status: "queued" },
+test("parseTaskDraftImport keeps multi-line prompts inside one task", () => {
+  const drafts = parseTaskDraftImport(
+    JSON.stringify({
+      tasks: [
+        {
+          prompt: "line one\nline two\nline three",
+          provider: "fake",
+          parameters: { size: "1024x1024" },
+        },
+      ],
+    }),
+  );
+
+  assert.equal(drafts.length, 1);
+  assert.equal(drafts[0].prompt, "line one\nline two\nline three");
+  assert.equal(drafts[0].provider, "fake");
+  assert.equal(drafts[0].parametersJson, "{\n  \"size\": \"1024x1024\"\n}");
+});
+
+test("moveQueuedTaskOrder only reorders queued tasks", () => {
+  const tasks = [
+    { id: "running", status: "running" },
+    { id: "queued-a", status: "queued" },
+    { id: "failed", status: "failed_final" },
+    { id: "queued-b", status: "queued" },
   ];
 
-  const next = updateQueueJobStatus(queue, "job-1", "completed");
-
-  assert.equal(next[0].status, "completed");
-  assert.equal(next[1].status, "queued");
+  assert.deepEqual(moveQueuedTaskOrder(tasks, "queued-b", -1), ["queued-b", "queued-a"]);
+  assert.deepEqual(moveQueuedTaskOrder(tasks, "running", 1), ["queued-a", "queued-b"]);
 });
 
 test("gallery query helpers toggle providers and tags", () => {

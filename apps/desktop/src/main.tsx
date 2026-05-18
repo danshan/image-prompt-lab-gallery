@@ -22,7 +22,9 @@ import {
   isReviewFieldGenerating,
   markAssetReviewPending,
   moveItem,
+  moveQueuedTaskOrder,
   openAlbumQuery,
+  parseTaskDraftImport,
   removeSuggestionState,
   removeReviewFormTag,
   reorderByIds,
@@ -33,11 +35,9 @@ import {
   toggleGalleryTag,
   toggleSelection,
   updateGalleryQuery,
-  updateQueueJobStatus,
   type DetailLoadState,
   type GalleryQueryState,
   type GallerySort,
-  type JobStatus,
   type ReviewFieldName,
   type ReviewFormState,
   type ReviewStatusFilter,
@@ -202,24 +202,91 @@ type Suggestion = {
   confidence?: ConfidenceScore;
 };
 
-type QueueJob = {
+type TaskStatus =
+  | "queued"
+  | "running"
+  | "retry_waiting"
+  | "failed_retryable"
+  | "failed_final"
+  | "cancel_requested"
+  | "canceled"
+  | "completed"
+  | "interrupted_retryable"
+  | "interrupted_final";
+
+type TaskDraft = {
   id: string;
   prompt: string;
   provider: string;
-  status: JobStatus;
-  logPath?: string;
-  error?: string | null;
-  versions?: Version[];
+  operation: "text_to_image" | "image_to_image";
+  negativePrompt: string;
+  inputVersionId: string | null;
+  parametersJson: string;
+  priority: number;
+  maxAttempts: number;
 };
 
-type GenerationJob = {
+type DaemonTask = {
   id: string;
-  provider: string;
-  prompt: string;
-  status: JobStatus;
-  logPath: string;
-  error: string | null;
-  versions: Version[];
+  libraryId: string;
+  taskType: string;
+  status: TaskStatus;
+  queuePosition: number;
+  priority: number;
+  provider: string | null;
+  operation: string | null;
+  concurrencyGroup: string | null;
+  attemptCount: number;
+  maxAttempts: number;
+  nextRetryAt: string | null;
+  input: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+  lastErrorCode: string | null;
+  lastErrorMessage: string | null;
+  errorClassification: string | null;
+  waitReason: string | null;
+};
+
+type DaemonTaskAttempt = {
+  id: string;
+  taskId: string;
+  attemptNumber: number;
+  status: string;
+  startedAt: string;
+  completedAt: string | null;
+  logPath: string | null;
+  exitCode: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  errorClassification: string | null;
+};
+
+type DaemonTaskEvent = {
+  id: string;
+  taskId: string;
+  eventType: string;
+  message: string | null;
+  payload: Record<string, unknown> | null;
+  createdAt: string;
+};
+
+type DaemonTaskOutput = {
+  id: string;
+  taskId: string;
+  outputType: string;
+  targetId: string;
+  payload: Record<string, unknown> | null;
+  createdAt: string;
+};
+
+type DaemonTaskDetail = {
+  task: DaemonTask;
+  attempts: DaemonTaskAttempt[];
+  events: DaemonTaskEvent[];
+  outputs: DaemonTaskOutput[];
+  logTail: string;
+  logTailTruncated: boolean;
 };
 
 type CommandError = {
@@ -528,12 +595,42 @@ const mockSuggestions: Suggestion[] = [
   },
 ];
 
-const mockQueue: QueueJob[] = [
-  {
-    id: "job-1",
+function createTaskDraft(patch: Partial<TaskDraft> = {}): TaskDraft {
+  return {
+    id: crypto.randomUUID(),
+    prompt: "",
     provider: "codex-cli",
-    prompt: "Retro UI poster with a glass scanner bed and annotated prompt tokens.",
+    operation: "text_to_image",
+    negativePrompt: "",
+    inputVersionId: null,
+    parametersJson: "{}",
+    priority: 0,
+    maxAttempts: 3,
+    ...patch,
+  };
+}
+
+const mockTasks: DaemonTask[] = [
+  {
+    id: "task-1",
+    libraryId: mockLibrary.id,
+    taskType: "image_generation",
+    provider: "codex-cli",
+    operation: "text_to_image",
+    input: { prompt: "Retro UI poster with a glass scanner bed and annotated prompt tokens." },
     status: "queued",
+    queuePosition: 1,
+    priority: 0,
+    concurrencyGroup: null,
+    attemptCount: 0,
+    maxAttempts: 3,
+    nextRetryAt: null,
+    createdAt: "2026-05-18T00:00:00Z",
+    updatedAt: "2026-05-18T00:00:00Z",
+    lastErrorCode: null,
+    lastErrorMessage: null,
+    errorClassification: null,
+    waitReason: null,
   },
 ];
 
@@ -571,7 +668,13 @@ function App() {
   const [reviewForm, setReviewForm] = useState<ReviewFormState | null>(
     runningInTauri && mockSuggestions[0] ? null : createReviewFormState(mockSuggestions[0]),
   );
-  const [queue, setQueue] = useState<QueueJob[]>(mockQueue);
+  const [taskDrafts, setTaskDrafts] = useState<TaskDraft[]>([createTaskDraft()]);
+  const [tasks, setTasks] = useState<DaemonTask[]>(runningInTauri ? [] : mockTasks);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(runningInTauri ? null : mockTasks[0]?.id ?? null);
+  const [taskDetail, setTaskDetail] = useState<DaemonTaskDetail | null>(null);
+  const [tasksLoading, setTasksLoading] = useState(false);
+  const [daemonOnline, setDaemonOnline] = useState(false);
+  const [pendingTaskActions, setPendingTaskActions] = useState<string[]>([]);
   const [prompt, setPrompt] = useState("");
   const [provider, setProvider] = useState("codex-cli");
   const [composerOpen, setComposerOpen] = useState(false);
@@ -586,6 +689,7 @@ function App() {
   const [logContentLoading, setLogContentLoading] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<LightboxImage | null>(null);
   const logReadRequestRef = useRef<string | null>(null);
+  const completedTaskKeysRef = useRef<Set<string>>(new Set());
 
   const displayedGallery = useMemo(
     () => (runningInTauri ? gallery : applyGalleryQuery(mockGallery, query)),
@@ -624,10 +728,35 @@ function App() {
 
   useEffect(() => {
     if (runningInTauri && library) {
+      completedTaskKeysRef.current = new Set();
       void refreshAlbums();
       void refreshSuggestions();
+      void refreshDaemonHealth();
+      void refreshTasks();
     }
   }, [runningInTauri, library?.rootPath]);
+
+  useEffect(() => {
+    if (!runningInTauri || !library || activeView !== "queue") {
+      return;
+    }
+    void refreshTasks();
+    const timer = window.setInterval(() => {
+      void refreshTasks();
+      if (selectedTaskId) {
+        void loadTaskDetail(selectedTaskId);
+      }
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [runningInTauri, library?.rootPath, activeView, selectedTaskId]);
+
+  useEffect(() => {
+    if (!selectedTaskId) {
+      setTaskDetail(null);
+      return;
+    }
+    void loadTaskDetail(selectedTaskId);
+  }, [selectedTaskId]);
 
   useEffect(() => {
     if (activeView === "settings") {
@@ -825,6 +954,9 @@ function App() {
       setSelectedSuggestionId(cleared.selectedSuggestionId);
     setSelectedSuggestionIds([]);
     setSuggestionHistory([]);
+    setTasks(runningInTauri ? [] : mockTasks);
+    setSelectedTaskId(null);
+    setTaskDetail(null);
     setReviewForm(cleared.reviewForm);
     setSuggestions(runningInTauri ? [] : mockSuggestions);
     setQuery(clearAlbumQuery(query));
@@ -929,84 +1061,240 @@ function App() {
     }
   }
 
+  async function refreshDaemonHealth() {
+    if (!runningInTauri) {
+      setDaemonOnline(true);
+      return;
+    }
+    try {
+      const online = await invokeCommand<boolean>("daemon_health");
+      setDaemonOnline(online);
+    } catch (error) {
+      setDaemonOnline(false);
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
+  async function refreshTasks(): Promise<DaemonTask[]> {
+    if (!library) {
+      setTasks([]);
+      setSelectedTaskId(null);
+      return [];
+    }
+    if (!runningInTauri) {
+      setTasks(mockTasks);
+      return mockTasks;
+    }
+    setTasksLoading(true);
+    try {
+      const nextTasks = await invokeCommand<DaemonTask[]>("list_daemon_tasks", {
+        input: { libraryPath: library.rootPath },
+      });
+      const nextCompletedKeys = nextTasks
+        .filter((task) => task.status === "completed")
+        .map((task) => completedTaskKey(task));
+      const hasNewCompletedTask = nextCompletedKeys.some((key) => !completedTaskKeysRef.current.has(key));
+      completedTaskKeysRef.current = new Set(nextCompletedKeys);
+      setTasks(nextTasks);
+      setSelectedTaskId((current) => {
+        if (current && nextTasks.some((task) => task.id === current)) {
+          return current;
+        }
+        return nextTasks[0]?.id ?? null;
+      });
+      setDaemonOnline(true);
+      setRecoverableError(null);
+      if (hasNewCompletedTask) {
+        void refreshGallery();
+        void refreshSuggestions();
+      }
+      return nextTasks;
+    } catch (error) {
+      setDaemonOnline(false);
+      setRecoverableError(errorMessage(error));
+      return [];
+    } finally {
+      setTasksLoading(false);
+    }
+  }
+
+  async function loadTaskDetail(taskId: string) {
+    if (!runningInTauri) {
+      const task = mockTasks.find((item) => item.id === taskId) ?? null;
+      setTaskDetail(task ? { task, attempts: [], events: [], outputs: [], logTail: "", logTailTruncated: false } : null);
+      return;
+    }
+    try {
+      const detail = await invokeCommand<DaemonTaskDetail>("get_daemon_task_detail", {
+        input: { taskId },
+      });
+      setTaskDetail(detail);
+      setRecoverableError(null);
+    } catch (error) {
+      setTaskDetail(null);
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
+  async function waitForMetadataFieldResult(
+    taskId: string,
+    suggestionId: string,
+    field: ReviewFieldName,
+    baseRevision: string,
+  ) {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const detail = await invokeCommand<DaemonTaskDetail>("get_daemon_task_detail", {
+        input: { taskId },
+      });
+      setTaskDetail(detail);
+      const output = detail.outputs.find(
+        (item) => item.outputType === "metadata_field_result" && item.targetId === suggestionId,
+      );
+      if (output?.payload?.field === field && output.payload.baseRevision === baseRevision) {
+        const value = output.payload.value;
+        if (typeof value === "string") {
+          return value;
+        }
+      }
+      if (isTerminalFailureStatus(detail.task.status)) {
+        throw new Error(detail.task.lastErrorMessage ?? "Metadata field generation failed");
+      }
+      await delay(800);
+    }
+    throw new Error("Metadata field generation timed out");
+  }
+
+  async function waitForMetadataSuggestionResult(taskId: string) {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const detail = await invokeCommand<DaemonTaskDetail>("get_daemon_task_detail", {
+        input: { taskId },
+      });
+      setTaskDetail(detail);
+      const output = detail.outputs.find((item) => item.outputType === "metadata_suggestion");
+      if (output) {
+        return output.targetId;
+      }
+      if (isTerminalFailureStatus(detail.task.status)) {
+        throw new Error(detail.task.lastErrorMessage ?? "Metadata suggestion generation failed");
+      }
+      await delay(800);
+    }
+    throw new Error("Metadata suggestion generation timed out");
+  }
+
   async function startGeneration(inputVersionId: string | null = null) {
     if (!library || prompt.trim().length === 0) {
       setRecoverableError("Open a real library and enter a prompt before generation.");
       return;
     }
-    const optimisticJob: QueueJob = {
-      id: crypto.randomUUID(),
-      provider,
-      prompt,
-      status: "running",
-    };
-    setQueue((current) => [optimisticJob, ...current]);
-    setStatus("Starting generation");
+    await enqueueTaskDrafts([
+      createTaskDraft({
+        provider,
+        prompt,
+        operation: inputVersionId ? "image_to_image" : "text_to_image",
+        inputVersionId,
+      }),
+    ]);
+    setPrompt("");
+    setComposerOpen(false);
+    setActiveView("queue");
+  }
+
+  async function enqueueTaskDrafts(drafts: TaskDraft[] = taskDrafts) {
+    if (!library) {
+      setRecoverableError("Open a real library before enqueueing tasks.");
+      return;
+    }
+    const readyDrafts = drafts.filter((draft) => draft.prompt.trim().length > 0);
+    if (readyDrafts.length === 0) {
+      setRecoverableError("Add at least one task prompt before enqueueing.");
+      return;
+    }
+    setStatus(`Enqueueing ${readyDrafts.length} task${readyDrafts.length === 1 ? "" : "s"}`);
     try {
-      const started = await invokeCommand<GenerationJob>("start_generation", {
+      const created = await invokeCommand<DaemonTask[]>("enqueue_generation_tasks", {
         input: {
           libraryPath: library.rootPath,
-          provider,
-          prompt,
-          negativePrompt: null,
-          inputFile: null,
-          inputVersionId,
-          parametersJson: "{}",
+          tasks: readyDrafts.map((draft) => ({
+            provider: draft.provider,
+            prompt: draft.prompt,
+            negativePrompt: draft.negativePrompt.trim() || null,
+            operation: draft.operation,
+            inputVersionId: draft.inputVersionId,
+            parametersJson: draft.parametersJson,
+            priority: draft.priority,
+            maxAttempts: draft.maxAttempts,
+          })),
         },
       });
-      setQueue((current) =>
-        current.map((item) =>
-          item.id === optimisticJob.id
-            ? {
-                ...item,
-                id: started.id,
-                status: started.status,
-                logPath: started.logPath,
-              }
-            : item,
-        ),
-      );
-      setPrompt("");
-      setComposerOpen(false);
+      setTasks((current) => mergeTasks(created, current));
+      setSelectedTaskId(created[0]?.id ?? selectedTaskId);
+      setTaskDrafts((current) => {
+        const createdIds = new Set(readyDrafts.map((draft) => draft.id));
+        const remaining = current.filter((draft) => !createdIds.has(draft.id));
+        return remaining.length > 0 ? remaining : [createTaskDraft()];
+      });
+      setStatus(`${created.length} task${created.length === 1 ? "" : "s"} enqueued`);
       setRecoverableError(null);
-      void pollGenerationJob(started.id);
+      void refreshTasks();
     } catch (error) {
-      setQueue((current) => updateQueueJobStatus(current, optimisticJob.id, "failed"));
       setRecoverableError(errorMessage(error));
     }
   }
 
-  async function pollGenerationJob(jobId: string) {
+  async function reorderQueuedTask(taskId: string, direction: -1 | 1) {
+    if (!library) {
+      return;
+    }
+    const queued = tasks.filter((task) => task.status === "queued").sort(compareTaskOrder);
+    const nextQueuedIds = moveQueuedTaskOrder(queued, taskId, direction);
+    if (nextQueuedIds.join("\0") === queued.map((task) => task.id).join("\0")) {
+      return;
+    }
+    setTasks((current) => reorderByIds(current, nextQueuedIds));
     try {
-      const job = await invokeCommand<GenerationJob>("get_generation_job", { jobId });
-      setQueue((current) =>
-        current.map((item) =>
-          item.id === job.id
-            ? {
-                ...item,
-                status: job.status,
-                logPath: job.logPath,
-                error: job.error,
-                versions: job.versions,
-              }
-            : item,
-        ),
-      );
-      if (job.status === "completed") {
-        setStatus(`${job.versions.length} version generated`);
-        await refreshGallery();
-        await refreshSuggestions();
-        return;
-      }
-      if (job.status === "failed") {
-        setRecoverableError(job.error ?? "Generation failed");
-        return;
-      }
-      window.setTimeout(() => {
-        void pollGenerationJob(jobId);
-      }, 1200);
+      await invokeCommand<void>("reorder_daemon_tasks", {
+        input: {
+          libraryPath: library.rootPath,
+          taskIds: nextQueuedIds,
+        },
+      });
+      await refreshTasks();
     } catch (error) {
       setRecoverableError(errorMessage(error));
+      await refreshTasks();
+    }
+  }
+
+  async function runTaskAction(command: "cancel_daemon_task" | "retry_daemon_task" | "duplicate_daemon_task", taskId: string) {
+    const actionKey = taskActionKey(command, taskId);
+    if (pendingTaskActions.includes(actionKey)) {
+      return;
+    }
+    setPendingTaskActions((current) => (current.includes(actionKey) ? current : [...current, actionKey]));
+    try {
+      const task = await invokeCommand<DaemonTask>(command, { input: { taskId } });
+      setTasks((current) => mergeTasks([task], current));
+      setSelectedTaskId(task.id);
+      await refreshTasks();
+      await loadTaskDetail(task.id);
+      if (task.status === "completed") {
+        await refreshGallery();
+        await refreshSuggestions();
+      }
+    } catch (error) {
+      const nextTasks = await refreshTasks();
+      if (selectedTaskId) {
+        await loadTaskDetail(selectedTaskId);
+      }
+      const latestTask = nextTasks.find((task) => task.id === taskId);
+      if (command === "retry_daemon_task" && latestTask && !isRetryableTaskStatus(latestTask.status)) {
+        setRecoverableError(null);
+        return;
+      }
+      setRecoverableError(errorMessage(error));
+    } finally {
+      setPendingTaskActions((current) => current.filter((key) => key !== actionKey));
     }
   }
 
@@ -1580,15 +1868,32 @@ function App() {
     }
     try {
       await nextAnimationFrame();
-      const result = await invokeCommand<GeneratedReviewField>("generate_review_field", {
+      const created = await invokeCommand<DaemonTask[]>("enqueue_generation_tasks", {
         input: {
           libraryPath: library.rootPath,
-          assetId: selectedSuggestion.assetId,
-          suggestionId,
-          field,
-          context: reviewFieldContext(reviewForm, selectedSuggestion, asset),
+          tasks: [
+            {
+              taskType: "metadata_field_generation",
+              provider: "codex-cli",
+              prompt: `${field} metadata generation`,
+              operation: "text_to_image",
+              parametersJson: "{}",
+              priority: 0,
+              maxAttempts: 3,
+              input: {
+                suggestionId,
+                assetId: selectedSuggestion.assetId,
+                field,
+                baseRevision: requestId,
+                context: reviewFieldContext(reviewForm, selectedSuggestion, asset),
+              },
+            },
+          ],
         },
       });
+      setTasks((current) => mergeTasks(created, current));
+      setSelectedTaskId(created[0]?.id ?? selectedTaskId);
+      const result = await waitForMetadataFieldResult(created[0].id, suggestionId, field, requestId);
       setReviewForm((current) =>
         current
           ? completeReviewFieldGeneration(
@@ -1596,13 +1901,13 @@ function App() {
               suggestionId,
               field,
               requestId,
-              result.value,
-              result.logPath,
+              result,
+              null,
             )
           : current,
       );
       setRecoverableError(null);
-      void refreshAppLogs();
+      void refreshTasks();
     } catch (error) {
       const message = errorMessage(error);
       setReviewForm((current) =>
@@ -1647,20 +1952,43 @@ function App() {
       return;
     }
     try {
-      const fieldInput = {
-        libraryPath: library.rootPath,
-        assetId: selectedSuggestion.assetId,
-        suggestionId: selectedSuggestion.id,
-        field: "title" as ReviewFieldName,
-        context: reviewFieldContext(reviewForm, selectedSuggestion, gallery.find((item) => item.id === selectedSuggestion.assetId) ?? selectedAsset),
-      };
-      const regenerated = await invokeCommand<Suggestion>("regenerate_suggestion", {
-        input: fieldInput,
+      const created = await invokeCommand<DaemonTask[]>("enqueue_generation_tasks", {
+        input: {
+          libraryPath: library.rootPath,
+          tasks: [
+            {
+              taskType: "metadata_suggestion_generation",
+              provider: "codex-cli",
+              prompt: "metadata suggestion generation",
+              operation: "text_to_image",
+              parametersJson: "{}",
+              priority: 0,
+              maxAttempts: 3,
+              input: {
+                suggestionId: selectedSuggestion.id,
+                assetId: selectedSuggestion.assetId,
+                baseRevision: reviewForm.suggestionId,
+                context: reviewFieldContext(
+                  reviewForm,
+                  selectedSuggestion,
+                  gallery.find((item) => item.id === selectedSuggestion.assetId) ?? selectedAsset,
+                ),
+              },
+            },
+          ],
+        },
       });
-      await refreshSuggestions();
-      await refreshSuggestionHistory(regenerated);
-      setSelectedSuggestionId(regenerated.id);
-      setReviewForm(createReviewFormState(regenerated));
+      setTasks((current) => mergeTasks(created, current));
+      setSelectedTaskId(created[0]?.id ?? selectedTaskId);
+      const regeneratedSuggestionId = await waitForMetadataSuggestionResult(created[0].id);
+      const nextSuggestions = await invokeCommand<Suggestion[]>("list_pending_suggestions", { libraryPath: library.rootPath });
+      setSuggestions(nextSuggestions);
+      const regenerated = nextSuggestions.find((item) => item.id === regeneratedSuggestionId);
+      if (regenerated) {
+        await refreshSuggestionHistory(regenerated);
+        setSelectedSuggestionId(regenerated.id);
+        setReviewForm(createReviewFormState(regenerated));
+      }
       setStatus("Suggestion regenerated");
       setRecoverableError(null);
     } catch (error) {
@@ -1727,7 +2055,7 @@ function App() {
         libraryStatus={libraryStatus}
         activeView={activeView}
         reviewCount={pendingSuggestions.length}
-        queueCount={queue.filter((job) => job.status === "queued" || job.status === "running").length}
+        queueCount={tasks.filter((task) => ["queued", "running", "retry_waiting", "interrupted_retryable"].includes(task.status)).length}
         onViewChange={setActiveView}
         onLibraryChange={switchLibrary}
       />
@@ -1816,6 +2144,7 @@ function App() {
             availableTags={availableTags}
             availableCategories={availableCategories}
             albums={albums}
+            tasks={tasks}
             onRestore={restoreReviewForm}
             onRegenerateField={(field) => void regenerateReviewField(field)}
             onRegenerateSuggestion={() => void regenerateFullSuggestion()}
@@ -1824,9 +2153,34 @@ function App() {
             onBatchAccept={() => void batchAcceptReviewSuggestions()}
             onBatchReject={() => void batchRejectReviewSuggestions()}
             onAddToAlbum={(albumId) => void addReviewSelectionToAlbum(albumId)}
+            onOpenTask={(taskId) => {
+              setSelectedTaskId(taskId);
+              setActiveView("queue");
+            }}
           />
         )}
-        {activeView === "queue" && <GenerationQueue queue={queue} />}
+        {activeView === "queue" && (
+          <div className="workspace-fill">
+            <TaskWorkspace
+              drafts={taskDrafts}
+              tasks={tasks}
+              selectedTaskId={selectedTaskId}
+              detail={taskDetail}
+              loading={tasksLoading}
+              daemonOnline={daemonOnline}
+              pendingTaskActions={pendingTaskActions}
+              onDraftsChange={setTaskDrafts}
+              onAddDraft={() => setTaskDrafts((current) => [...current, createTaskDraft()])}
+              onEnqueue={() => void enqueueTaskDrafts()}
+              onRefresh={() => void refreshTasks()}
+              onSelectTask={setSelectedTaskId}
+              onMoveTask={(taskId, direction) => void reorderQueuedTask(taskId, direction)}
+              onCancel={(taskId) => void runTaskAction("cancel_daemon_task", taskId)}
+              onRetry={(taskId) => void runTaskAction("retry_daemon_task", taskId)}
+              onDuplicate={(taskId) => void runTaskAction("duplicate_daemon_task", taskId)}
+            />
+          </div>
+        )}
         {activeView === "settings" && (
           <SettingsView
             library={library}
@@ -1930,7 +2284,7 @@ function Sidebar({
         />
         <NavButton
           active={activeView === "queue"}
-          label="Generation Queue"
+          label="Tasks Queue"
           count={queueCount}
           onClick={() => onViewChange("queue")}
         />
@@ -2583,6 +2937,7 @@ function ReviewInbox({
   availableTags,
   availableCategories,
   albums,
+  tasks,
   onRestore,
   onRegenerateField,
   onRegenerateSuggestion,
@@ -2591,6 +2946,7 @@ function ReviewInbox({
   onBatchAccept,
   onBatchReject,
   onAddToAlbum,
+  onOpenTask,
 }: {
   suggestions: Suggestion[];
   selectedSuggestion: Suggestion | null;
@@ -2604,6 +2960,7 @@ function ReviewInbox({
   availableTags: string[];
   availableCategories: string[];
   albums: AlbumListItem[];
+  tasks: DaemonTask[];
   onRestore: () => void;
   onRegenerateField: (field: ReviewFieldName) => void;
   onRegenerateSuggestion: () => void;
@@ -2612,6 +2969,7 @@ function ReviewInbox({
   onBatchAccept: () => void;
   onBatchReject: () => void;
   onAddToAlbum: (albumId: string) => void;
+  onOpenTask: (taskId: string) => void;
 }) {
   const [albumToAdd, setAlbumToAdd] = useState("");
   if (suggestions.length === 0) {
@@ -2675,6 +3033,11 @@ function ReviewInbox({
               <span className="review-badge">Review pending</span>
             </div>
             <ConfidenceSummary confidence={selectedSuggestion.confidence} />
+            <ReviewTaskMirror
+              tasks={tasks}
+              suggestionId={selectedSuggestion.id}
+              onOpenTask={onOpenTask}
+            />
             <div className="review-form">
               <label>
                 <span>
@@ -2931,20 +3294,357 @@ function ReviewFieldGenerationStatus({
   return null;
 }
 
-function GenerationQueue({ queue }: { queue: QueueJob[] }) {
+function ReviewTaskMirror({
+  tasks,
+  suggestionId,
+  onOpenTask,
+}: {
+  tasks: DaemonTask[];
+  suggestionId: string;
+  onOpenTask: (taskId: string) => void;
+}) {
+  const related = tasks.filter((task) => {
+    const input = task.input ?? {};
+    return (
+      (task.taskType === "metadata_field_generation" || task.taskType === "metadata_suggestion_generation") &&
+      input.suggestionId === suggestionId
+    );
+  });
+  if (related.length === 0) {
+    return null;
+  }
   return (
-    <section className="list-view">
-      {queue.map((job) => (
-        <article className="list-row" key={job.id}>
-          <div>
-            <h3>{job.provider}</h3>
-            <p>{job.prompt}</p>
-            {job.logPath && <p className="mono-line">{job.logPath}</p>}
-            {job.error && <p className="error-text">{job.error}</p>}
+    <section className="review-task-mirror">
+      {related.slice(0, 3).map((task) => (
+        <button key={task.id} onClick={() => onOpenTask(task.id)}>
+          <span className={`status ${task.status}`}>{statusLabel(task.status)}</span>
+          <span>{task.waitReason ?? task.lastErrorMessage ?? task.taskType}</span>
+        </button>
+      ))}
+    </section>
+  );
+}
+
+function TaskWorkspace({
+  drafts,
+  tasks,
+  selectedTaskId,
+  detail,
+  loading,
+  daemonOnline,
+  pendingTaskActions,
+  onDraftsChange,
+  onAddDraft,
+  onEnqueue,
+  onRefresh,
+  onSelectTask,
+  onMoveTask,
+  onCancel,
+  onRetry,
+  onDuplicate,
+}: {
+  drafts: TaskDraft[];
+  tasks: DaemonTask[];
+  selectedTaskId: string | null;
+  detail: DaemonTaskDetail | null;
+  loading: boolean;
+  daemonOnline: boolean;
+  pendingTaskActions: string[];
+  onDraftsChange: (drafts: TaskDraft[]) => void;
+  onAddDraft: () => void;
+  onEnqueue: () => void;
+  onRefresh: () => void;
+  onSelectTask: (taskId: string) => void;
+  onMoveTask: (taskId: string, direction: -1 | 1) => void;
+  onCancel: (taskId: string) => void;
+  onRetry: (taskId: string) => void;
+  onDuplicate: (taskId: string) => void;
+}) {
+  const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
+  return (
+    <section className="task-workspace">
+      <BatchComposer
+        drafts={drafts}
+        onDraftsChange={onDraftsChange}
+        onAddDraft={onAddDraft}
+        onEnqueue={onEnqueue}
+      />
+      <TasksQueue
+        tasks={tasks}
+        selectedTaskId={selectedTaskId}
+        loading={loading}
+        daemonOnline={daemonOnline}
+        pendingTaskActions={pendingTaskActions}
+        onRefresh={onRefresh}
+        onSelectTask={onSelectTask}
+        onMoveTask={onMoveTask}
+        onCancel={onCancel}
+        onRetry={onRetry}
+        onDuplicate={onDuplicate}
+      />
+      <TaskDetailPanel
+        task={selectedTask}
+        detail={detail}
+        pendingTaskActions={pendingTaskActions}
+        onCancel={onCancel}
+        onRetry={onRetry}
+        onDuplicate={onDuplicate}
+      />
+    </section>
+  );
+}
+
+function BatchComposer({
+  drafts,
+  onDraftsChange,
+  onAddDraft,
+  onEnqueue,
+}: {
+  drafts: TaskDraft[];
+  onDraftsChange: (drafts: TaskDraft[]) => void;
+  onAddDraft: () => void;
+  onEnqueue: () => void;
+}) {
+  const [importJson, setImportJson] = useState("");
+  const [importError, setImportError] = useState<string | null>(null);
+  function updateDraft(id: string, patch: Partial<TaskDraft>) {
+    onDraftsChange(drafts.map((draft) => (draft.id === id ? { ...draft, ...patch } : draft)));
+  }
+  function duplicateDraft(draft: TaskDraft) {
+    onDraftsChange([...drafts, createTaskDraft({ ...draft, id: crypto.randomUUID() })]);
+  }
+  function removeDraft(id: string) {
+    const next = drafts.filter((draft) => draft.id !== id);
+    onDraftsChange(next.length > 0 ? next : [createTaskDraft()]);
+  }
+  function importDrafts() {
+    let imported: TaskDraft[];
+    try {
+      imported = parseTaskDraftImport(importJson).map((draft) => createTaskDraft(draft));
+    } catch (error) {
+      setImportError(errorMessage(error));
+      return;
+    }
+    if (imported.length > 0) {
+      onDraftsChange(imported);
+      setImportJson("");
+      setImportError(null);
+    } else {
+      setImportError("No valid tasks found in JSON.");
+    }
+  }
+  return (
+    <section className="task-panel batch-composer">
+      <div className="panel-header">
+        <div>
+          <h3>Batch Composer</h3>
+          <p>{drafts.length} draft{drafts.length === 1 ? "" : "s"}</p>
+        </div>
+        <button onClick={onAddDraft}>Add task</button>
+      </div>
+      {drafts.map((draft, index) => (
+        <article className="task-draft-card" key={draft.id}>
+          <div className="task-draft-header">
+            <strong>Task {index + 1}</strong>
+            <div className="row-actions">
+              <button onClick={() => duplicateDraft(draft)}>Duplicate</button>
+              <button onClick={() => removeDraft(draft.id)}>Remove</button>
+            </div>
           </div>
-          <span className={`status ${job.status}`}>{job.status}</span>
+          <label>
+            <span>Prompt</span>
+            <textarea value={draft.prompt} onChange={(event) => updateDraft(draft.id, { prompt: event.target.value })} />
+          </label>
+          <div className="task-draft-grid">
+            <label>
+              <span>Provider</span>
+              <select className="select-control" value={draft.provider} onChange={(event) => updateDraft(draft.id, { provider: event.target.value })}>
+                <option value="codex-cli">codex-cli</option>
+                <option value="fake">fake</option>
+              </select>
+            </label>
+            <label>
+              <span>Operation</span>
+              <select className="select-control" value={draft.operation} onChange={(event) => updateDraft(draft.id, { operation: event.target.value as TaskDraft["operation"] })}>
+                <option value="text_to_image">text to image</option>
+                <option value="image_to_image">image to image</option>
+              </select>
+            </label>
+            <label>
+              <span>Priority</span>
+              <input type="number" value={draft.priority} onChange={(event) => updateDraft(draft.id, { priority: Number(event.target.value) })} />
+            </label>
+            <label>
+              <span>Max attempts</span>
+              <input type="number" min={1} max={10} value={draft.maxAttempts} onChange={(event) => updateDraft(draft.id, { maxAttempts: Number(event.target.value) })} />
+            </label>
+          </div>
+          <label>
+            <span>Parameters JSON</span>
+            <textarea value={draft.parametersJson} onChange={(event) => updateDraft(draft.id, { parametersJson: event.target.value })} />
+          </label>
         </article>
       ))}
+      <div className="import-json-box">
+        <textarea value={importJson} onChange={(event) => setImportJson(event.target.value)} placeholder='[{"prompt":"multi-line prompt","provider":"fake"}]' />
+        <button disabled={importJson.trim().length === 0} onClick={importDrafts}>Import JSON</button>
+        {importError && <span className="inline-error">{importError}</span>}
+      </div>
+      <button className="primary-button" disabled={drafts.every((draft) => draft.prompt.trim().length === 0)} onClick={onEnqueue}>
+        Enqueue all
+      </button>
+    </section>
+  );
+}
+
+function TasksQueue({
+  tasks,
+  selectedTaskId,
+  loading,
+  daemonOnline,
+  pendingTaskActions,
+  onRefresh,
+  onSelectTask,
+  onMoveTask,
+  onCancel,
+  onRetry,
+  onDuplicate,
+}: {
+  tasks: DaemonTask[];
+  selectedTaskId: string | null;
+  loading: boolean;
+  daemonOnline: boolean;
+  pendingTaskActions: string[];
+  onRefresh: () => void;
+  onSelectTask: (taskId: string) => void;
+  onMoveTask: (taskId: string, direction: -1 | 1) => void;
+  onCancel: (taskId: string) => void;
+  onRetry: (taskId: string) => void;
+  onDuplicate: (taskId: string) => void;
+}) {
+  const queuedIds = [...tasks].filter((task) => task.status === "queued").sort(compareTaskOrder).map((task) => task.id);
+  const orderedTasks = [...tasks].sort(compareTaskOrder);
+  return (
+    <section className="task-panel tasks-queue-panel">
+      <div className="panel-header">
+        <div>
+          <h3>Tasks Queue</h3>
+          <p>{daemonOnline ? "Daemon connected" : "Daemon offline"}{loading ? " · Refreshing" : ""}</p>
+        </div>
+        <button onClick={onRefresh}>Refresh</button>
+      </div>
+      <div className="task-list">
+        {tasks.length === 0 ? (
+          <div className="empty-state">No tasks yet.</div>
+        ) : (
+          orderedTasks.map((task) => (
+            <article key={task.id} className={task.id === selectedTaskId ? "task-row selected" : "task-row"}>
+              <button className="task-row-main" onClick={() => onSelectTask(task.id)}>
+                <strong>{task.provider ?? task.taskType}</strong>
+                <span>{taskPrompt(task)}</span>
+                <small>{task.waitReason ?? `${task.attemptCount}/${task.maxAttempts} attempts`}</small>
+              </button>
+              <span className={`status ${task.status}`}>{statusLabel(task.status)}</span>
+              <div className="task-row-actions">
+                {task.status === "queued" && (
+                  <>
+                    <button disabled={queuedIds.indexOf(task.id) <= 0} onClick={() => onMoveTask(task.id, -1)}>Up</button>
+                    <button disabled={queuedIds.indexOf(task.id) === queuedIds.length - 1} onClick={() => onMoveTask(task.id, 1)}>Down</button>
+                  </>
+                )}
+                {["queued", "running", "retry_waiting", "cancel_requested"].includes(task.status) && (
+                  <button disabled={pendingTaskActions.includes(taskActionKey("cancel_daemon_task", task.id))} onClick={() => onCancel(task.id)}>Cancel</button>
+                )}
+                {isRetryableTaskStatus(task.status) && (
+                  <button disabled={pendingTaskActions.includes(taskActionKey("retry_daemon_task", task.id))} onClick={() => onRetry(task.id)}>Retry</button>
+                )}
+                <button disabled={pendingTaskActions.includes(taskActionKey("duplicate_daemon_task", task.id))} onClick={() => onDuplicate(task.id)}>Duplicate</button>
+              </div>
+            </article>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function TaskDetailPanel({
+  task,
+  detail,
+  pendingTaskActions,
+  onCancel,
+  onRetry,
+  onDuplicate,
+}: {
+  task: DaemonTask | null;
+  detail: DaemonTaskDetail | null;
+  pendingTaskActions: string[];
+  onCancel: (taskId: string) => void;
+  onRetry: (taskId: string) => void;
+  onDuplicate: (taskId: string) => void;
+}) {
+  if (!task) {
+    return <section className="task-panel task-detail-panel empty-state">Select a task to inspect.</section>;
+  }
+  return (
+    <section className="task-panel task-detail-panel">
+      <div className="panel-header">
+        <div>
+          <h3>Task Detail</h3>
+          <p>{task.id}</p>
+        </div>
+        <span className={`status ${task.status}`}>{statusLabel(task.status)}</span>
+      </div>
+      <div className="row-actions">
+        {["queued", "running", "retry_waiting", "cancel_requested"].includes(task.status) && (
+          <button disabled={pendingTaskActions.includes(taskActionKey("cancel_daemon_task", task.id))} onClick={() => onCancel(task.id)}>Cancel</button>
+        )}
+        {isRetryableTaskStatus(task.status) && (
+          <button disabled={pendingTaskActions.includes(taskActionKey("retry_daemon_task", task.id))} onClick={() => onRetry(task.id)}>Retry</button>
+        )}
+        <button disabled={pendingTaskActions.includes(taskActionKey("duplicate_daemon_task", task.id))} onClick={() => onDuplicate(task.id)}>Duplicate</button>
+      </div>
+      <section className="detail-section">
+        <h4>Input Snapshot</h4>
+        <pre>{JSON.stringify(task.input ?? {}, null, 2)}</pre>
+      </section>
+      {task.lastErrorMessage && (
+        <section className="detail-section">
+          <h4>Error</h4>
+          <p className="error-text">{task.lastErrorCode ?? "TaskFailed"}: {task.lastErrorMessage}</p>
+        </section>
+      )}
+      <section className="detail-section">
+        <h4>Attempts</h4>
+        {(detail?.attempts ?? []).length === 0 ? <p>No attempts yet.</p> : detail?.attempts.map((attempt) => (
+          <div className="detail-row" key={attempt.id}>
+            <strong>#{attempt.attemptNumber} {attempt.status}</strong>
+            <span>{attempt.errorMessage ?? attempt.logPath ?? displayDate(attempt.startedAt)}</span>
+          </div>
+        ))}
+      </section>
+      <section className="detail-section">
+        <h4>Timeline</h4>
+        {(detail?.events ?? []).map((event) => (
+          <div className="detail-row" key={event.id}>
+            <strong>{event.eventType}</strong>
+            <span>{event.message ? `${displayDate(event.createdAt)} · ${event.message}` : displayDate(event.createdAt)}</span>
+          </div>
+        ))}
+      </section>
+      <section className="detail-section">
+        <h4>Outputs</h4>
+        {(detail?.outputs ?? []).length === 0 ? <p>No outputs yet.</p> : detail?.outputs.map((output) => (
+          <div className="detail-row" key={output.id}>
+            <strong>{output.outputType}</strong>
+            <span>{output.targetId}</span>
+          </div>
+        ))}
+      </section>
+      <section className="detail-section">
+        <h4>Log Tail</h4>
+        <pre>{detail?.logTail || "No log content yet."}</pre>
+      </section>
     </section>
   );
 }
@@ -3326,6 +4026,44 @@ function galleryQueryInput(libraryPath: string, query: GalleryQueryState) {
   };
 }
 
+function mergeTasks(nextTasks: DaemonTask[], currentTasks: DaemonTask[]) {
+  const byId = new Map(currentTasks.map((task) => [task.id, task]));
+  for (const task of nextTasks) {
+    byId.set(task.id, task);
+  }
+  return Array.from(byId.values()).sort(compareTaskOrder);
+}
+
+function completedTaskKey(task: DaemonTask) {
+  return `${task.id}:${task.attemptCount}:${task.updatedAt}`;
+}
+
+function taskActionKey(command: "cancel_daemon_task" | "retry_daemon_task" | "duplicate_daemon_task", taskId: string) {
+  return `${command}:${taskId}`;
+}
+
+function isRetryableTaskStatus(status: string) {
+  return status === "failed_retryable" || status === "interrupted_retryable";
+}
+
+function isTerminalFailureStatus(status: string) {
+  return status === "failed_final" || status === "interrupted_final";
+}
+
+function compareTaskOrder(left: DaemonTask, right: DaemonTask) {
+  return left.queuePosition - right.queuePosition || right.updatedAt.localeCompare(left.updatedAt);
+}
+
+function taskPrompt(task: DaemonTask) {
+  const input = task.input ?? {};
+  const value = input.prompt;
+  return typeof value === "string" && value.trim().length > 0 ? value : "No prompt snapshot";
+}
+
+function statusLabel(status: string) {
+  return status.replaceAll("_", " ");
+}
+
 function errorMessage(error: unknown) {
   if (typeof error === "object" && error) {
     const commandError = error as CommandError;
@@ -3357,6 +4095,12 @@ function hasTauriRuntime() {
 function nextAnimationFrame() {
   return new Promise<void>((resolve) => {
     window.requestAnimationFrame(() => resolve());
+  });
+}
+
+function delay(milliseconds: number) {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, milliseconds);
   });
 }
 

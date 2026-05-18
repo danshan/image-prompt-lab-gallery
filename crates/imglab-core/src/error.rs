@@ -25,6 +25,9 @@ pub enum DomainError {
     InvalidAssetReference {
         id: String,
     },
+    InvalidTaskReference {
+        id: String,
+    },
     FileIntegrityMismatch {
         version_id: String,
         message: String,
@@ -69,6 +72,7 @@ impl DomainError {
             Self::CredentialMissing { .. } => "CredentialMissing",
             Self::GenerationFailed { .. } => "GenerationFailed",
             Self::InvalidAssetReference { .. } => "InvalidAssetReference",
+            Self::InvalidTaskReference { .. } => "InvalidTaskReference",
             Self::FileIntegrityMismatch { .. } => "FileIntegrityMismatch",
             Self::ConcurrentWriteConflict { .. } => "ConcurrentWriteConflict",
             Self::InvalidSmartAlbumQuery { .. } => "InvalidSmartAlbumQuery",
@@ -103,6 +107,7 @@ impl Display for DomainError {
                 write!(f, "generation failed for {provider}: {message}")
             }
             Self::InvalidAssetReference { id } => write!(f, "invalid asset reference: {id}"),
+            Self::InvalidTaskReference { id } => write!(f, "invalid task reference: {id}"),
             Self::FileIntegrityMismatch {
                 version_id,
                 message,

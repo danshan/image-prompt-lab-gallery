@@ -18,6 +18,18 @@ pub struct MetadataSuggestionId(pub String);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlbumId(pub String);
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskId(pub String);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskAttemptId(pub String);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskEventId(pub String);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskOutputId(pub String);
+
 #[derive(Debug, Clone)]
 pub struct LibrarySummary {
     pub id: LibraryId,
@@ -197,6 +209,282 @@ pub struct GenerationEventSummary {
     pub prompt: String,
     pub parameters_json: String,
     pub status: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskType {
+    ImageGeneration,
+    MetadataFieldGeneration,
+    MetadataSuggestionGeneration,
+}
+
+impl TaskType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ImageGeneration => "image_generation",
+            Self::MetadataFieldGeneration => "metadata_field_generation",
+            Self::MetadataSuggestionGeneration => "metadata_suggestion_generation",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Option<Self> {
+        match value {
+            "image_generation" => Some(Self::ImageGeneration),
+            "metadata_field_generation" => Some(Self::MetadataFieldGeneration),
+            "metadata_suggestion_generation" => Some(Self::MetadataSuggestionGeneration),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskStatus {
+    Queued,
+    Running,
+    RetryWaiting,
+    FailedRetryable,
+    FailedFinal,
+    CancelRequested,
+    Canceled,
+    Completed,
+    InterruptedRetryable,
+    InterruptedFinal,
+}
+
+impl TaskStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Running => "running",
+            Self::RetryWaiting => "retry_waiting",
+            Self::FailedRetryable => "failed_retryable",
+            Self::FailedFinal => "failed_final",
+            Self::CancelRequested => "cancel_requested",
+            Self::Canceled => "canceled",
+            Self::Completed => "completed",
+            Self::InterruptedRetryable => "interrupted_retryable",
+            Self::InterruptedFinal => "interrupted_final",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Option<Self> {
+        match value {
+            "queued" => Some(Self::Queued),
+            "running" => Some(Self::Running),
+            "retry_waiting" => Some(Self::RetryWaiting),
+            "failed_retryable" => Some(Self::FailedRetryable),
+            "failed_final" => Some(Self::FailedFinal),
+            "cancel_requested" => Some(Self::CancelRequested),
+            "canceled" => Some(Self::Canceled),
+            "completed" => Some(Self::Completed),
+            "interrupted_retryable" => Some(Self::InterruptedRetryable),
+            "interrupted_final" => Some(Self::InterruptedFinal),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskErrorClassification {
+    Transient,
+    RetryableManual,
+    Final,
+    Cancel,
+    Conflict,
+}
+
+impl TaskErrorClassification {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Transient => "transient",
+            Self::RetryableManual => "retryable_manual",
+            Self::Final => "final",
+            Self::Cancel => "cancel",
+            Self::Conflict => "conflict",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Option<Self> {
+        match value {
+            "transient" => Some(Self::Transient),
+            "retryable_manual" => Some(Self::RetryableManual),
+            "final" => Some(Self::Final),
+            "cancel" => Some(Self::Cancel),
+            "conflict" => Some(Self::Conflict),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskOutputType {
+    Asset,
+    AssetVersion,
+    GenerationEvent,
+    MetadataSuggestion,
+    MetadataFieldResult,
+}
+
+impl TaskOutputType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Asset => "asset",
+            Self::AssetVersion => "asset_version",
+            Self::GenerationEvent => "generation_event",
+            Self::MetadataSuggestion => "metadata_suggestion",
+            Self::MetadataFieldResult => "metadata_field_result",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Option<Self> {
+        match value {
+            "asset" => Some(Self::Asset),
+            "asset_version" => Some(Self::AssetVersion),
+            "generation_event" => Some(Self::GenerationEvent),
+            "metadata_suggestion" => Some(Self::MetadataSuggestion),
+            "metadata_field_result" => Some(Self::MetadataFieldResult),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateTaskInput {
+    pub task_type: TaskType,
+    pub provider: Option<String>,
+    pub operation: Option<GenerationOperation>,
+    pub priority: i64,
+    pub concurrency_group: Option<String>,
+    pub max_attempts: u32,
+    pub input_json: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct BatchCreateTasksRequest {
+    pub library_path: PathBuf,
+    pub library_id: LibraryId,
+    pub tasks: Vec<CreateTaskInput>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TaskSummary {
+    pub id: TaskId,
+    pub library_id: LibraryId,
+    pub task_type: TaskType,
+    pub status: TaskStatus,
+    pub queue_position: i64,
+    pub priority: i64,
+    pub provider: Option<String>,
+    pub operation: Option<GenerationOperation>,
+    pub concurrency_group: Option<String>,
+    pub attempt_count: u32,
+    pub max_attempts: u32,
+    pub next_retry_at: Option<String>,
+    pub input_json: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub last_error_code: Option<String>,
+    pub last_error_message: Option<String>,
+    pub error_classification: Option<TaskErrorClassification>,
+    pub wait_reason: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TaskAttempt {
+    pub id: TaskAttemptId,
+    pub task_id: TaskId,
+    pub attempt_number: u32,
+    pub status: String,
+    pub started_at: String,
+    pub completed_at: Option<String>,
+    pub log_path: Option<PathBuf>,
+    pub exit_code: Option<i32>,
+    pub error_code: Option<String>,
+    pub error_message: Option<String>,
+    pub error_classification: Option<TaskErrorClassification>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TaskEvent {
+    pub id: TaskEventId,
+    pub task_id: TaskId,
+    pub event_type: String,
+    pub message: Option<String>,
+    pub payload_json: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskOutput {
+    pub id: TaskOutputId,
+    pub task_id: TaskId,
+    pub output_type: TaskOutputType,
+    pub target_id: String,
+    pub payload_json: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct TaskDetail {
+    pub task: TaskSummary,
+    pub attempts: Vec<TaskAttempt>,
+    pub events: Vec<TaskEvent>,
+    pub outputs: Vec<TaskOutput>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateTaskStatusRequest {
+    pub library_path: PathBuf,
+    pub task_id: TaskId,
+    pub status: TaskStatus,
+    pub next_retry_at: Option<String>,
+    pub last_error_code: Option<String>,
+    pub last_error_message: Option<String>,
+    pub error_classification: Option<TaskErrorClassification>,
+    pub wait_reason: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppendTaskEventRequest {
+    pub library_path: PathBuf,
+    pub task_id: TaskId,
+    pub event_type: String,
+    pub message: Option<String>,
+    pub payload_json: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppendTaskAttemptRequest {
+    pub library_path: PathBuf,
+    pub task_id: TaskId,
+    pub status: String,
+    pub log_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CompleteTaskAttemptRequest {
+    pub library_path: PathBuf,
+    pub attempt_id: TaskAttemptId,
+    pub status: String,
+    pub exit_code: Option<i32>,
+    pub error_code: Option<String>,
+    pub error_message: Option<String>,
+    pub error_classification: Option<TaskErrorClassification>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppendTaskOutputRequest {
+    pub library_path: PathBuf,
+    pub task_id: TaskId,
+    pub output_type: TaskOutputType,
+    pub target_id: String,
+    pub payload_json: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReorderQueuedTasksRequest {
+    pub library_path: PathBuf,
+    pub task_ids: Vec<TaskId>,
 }
 
 #[derive(Debug, Clone)]

@@ -2,6 +2,7 @@
 members = [
     "crates/imglab-core",
     "crates/imglab-cli",
+    "crates/imglab-daemon",
     "crates/imglab-provider-codex",
     "crates/imglab-provider-grok",
     "apps/desktop/src-tauri",

@@ -14,6 +14,16 @@
 
 Codex provider 不指定图片模型, 也不指定输出路径. 它调用本机 `codex exec` 并要求 Codex 使用 `imagegen` skill 完成图片生成.
 
+桌面端 Generate 工作流不会在 Tauri process 内直接运行 Codex CLI. Desktop 会把 generation request 转换为 daemon `image_generation` task, 由 daemon scheduler claim task, 创建 attempt, 执行 provider, 写入 attempt log, 再将 generation event, asset, asset version 和 task output links commit 到 core library. 这样 desktop 关闭或重启后, queued, retry waiting 和 interrupted running tasks 可以通过 daemon recovery 恢复.
+
+当前 scheduler 默认并发策略:
+
+- Global task concurrency: `2`.
+- `codex-cli` provider concurrency: `1`.
+- `fake` provider concurrency: `4`.
+
+`codex-cli = 1` 是有意限制. Codex CLI 依赖本机会话, stdout 日志解析和 imagegen skill 产物发现, 当前阶段不假设它可以稳定并发执行多个生成任务. 其他 provider 可以按 provider slot 独立扩展.
+
 Adapter 执行协议:
 
 ```bash
@@ -42,6 +52,7 @@ Adapter 会:
 - 将 command, prompt, stdout 和 stderr 保存到 generation event raw payload.
 - 通过 core 的 generation request builder 复用 CLI 和 desktop 的 provider 名称归一化, operation 推断和 input image loading.
 - 由 core 写入当前标准 checksum metadata: `SHA-256` algorithm 和 64 位十六进制 digest.
+- 在 daemon execution 中, stdout, stderr 和 task state transition 会附加到 attempt log, 可从 Tasks Queue detail 和 Settings Logs 查看.
 
 失败场景会归一化为 domain error:
 

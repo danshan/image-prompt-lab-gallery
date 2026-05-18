@@ -4,16 +4,17 @@ use imglab_core::{
 };
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone)]
 pub struct CodexCliImageProvider {
     codex_bin: PathBuf,
     work_dir: PathBuf,
     log_path: Option<PathBuf>,
+    cancel_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -29,11 +30,17 @@ impl CodexCliImageProvider {
             codex_bin: codex_bin.into(),
             work_dir: work_dir.into(),
             log_path: None,
+            cancel_path: None,
         }
     }
 
     pub fn with_log_path(mut self, log_path: impl Into<PathBuf>) -> Self {
         self.log_path = Some(log_path.into());
+        self
+    }
+
+    pub fn with_cancel_path(mut self, cancel_path: impl Into<PathBuf>) -> Self {
+        self.cancel_path = Some(cancel_path.into());
         self
     }
 
@@ -106,6 +113,124 @@ impl CodexCliImageProvider {
         })
     }
 
+    pub fn generate_from_text_until_cancelled<F>(
+        &self,
+        parameters: &GenerationParameters,
+        should_cancel: F,
+    ) -> DomainResult<GenerationResult>
+    where
+        F: Fn() -> bool,
+    {
+        self.validate_parameters(parameters)?;
+        let command = self.build_command(parameters)?;
+        let log_path = self.log_path();
+        let mut log_file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&log_path)
+            .map_err(|error| DomainError::Io {
+                path: log_path.display().to_string(),
+                message: error.to_string(),
+            })?;
+        writeln!(
+            log_file,
+            "program: {}\nargs: {}\n",
+            command.program.display(),
+            command.args.join(" ")
+        )
+        .map_err(|error| DomainError::Io {
+            path: log_path.display().to_string(),
+            message: error.to_string(),
+        })?;
+
+        let program = resolve_codex_program(&command.program).ok_or_else(|| {
+            DomainError::GenerationFailed {
+                provider: self.name().to_string(),
+                message: format!(
+                    "codex CLI executable not found. Set CODEX_CLI_BIN to the absolute codex path, or ensure codex is available in PATH. Requested: {}; log: {}",
+                    command.program.display(),
+                    log_path.display()
+                ),
+            }
+        })?;
+        writeln!(log_file, "resolved_program: {}\n", program.display()).map_err(|error| {
+            DomainError::Io {
+                path: log_path.display().to_string(),
+                message: error.to_string(),
+            }
+        })?;
+
+        let mut child = Command::new(&program)
+            .args(&command.args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| DomainError::GenerationFailed {
+                provider: self.name().to_string(),
+                message: format!(
+                    "failed to run codex CLI: {error}; log: {}",
+                    log_path.display()
+                ),
+            })?;
+
+        let stdout_handle = child
+            .stdout
+            .take()
+            .map(|stdout| stream_to_log(stdout, log_path.clone(), "[stdout] ".to_string()));
+        let stderr_handle = child
+            .stderr
+            .take()
+            .map(|stderr| stream_to_log(stderr, log_path.clone(), "[stderr] ".to_string()));
+        let status = loop {
+            if should_cancel() {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = join_stream(stdout_handle, &log_path, self.name());
+                let _ = join_stream(stderr_handle, &log_path, self.name());
+                return Err(DomainError::GenerationFailed {
+                    provider: self.name().to_string(),
+                    message: format!("codex CLI canceled by user; log: {}", log_path.display()),
+                });
+            }
+            match child
+                .try_wait()
+                .map_err(|error| DomainError::GenerationFailed {
+                    provider: self.name().to_string(),
+                    message: format!(
+                        "failed to poll codex CLI: {error}; log: {}",
+                        log_path.display()
+                    ),
+                })? {
+                Some(status) => break status,
+                None => thread::sleep(Duration::from_millis(100)),
+            }
+        };
+        let stdout = join_stream(stdout_handle, &log_path, self.name())?;
+        let stderr = join_stream(stderr_handle, &log_path, self.name())?;
+        let combined_output = format!("{stdout}\n{stderr}");
+
+        if !status.success() {
+            return Err(DomainError::GenerationFailed {
+                provider: self.name().to_string(),
+                message: format!(
+                    "codex CLI exited with {status}; log: {}; output: {combined_output}",
+                    log_path.display()
+                ),
+            });
+        }
+
+        let raw_request_json = serde_json::json!({
+            "program": program,
+            "args": command.args,
+            "prompt": command.prompt,
+            "log_path": log_path
+        })
+        .to_string();
+        self.parse_output(&combined_output, raw_request_json, combined_output.clone())
+    }
+
     fn log_path(&self) -> PathBuf {
         if let Some(path) = &self.log_path {
             return path.clone();
@@ -144,82 +269,10 @@ impl ImageProvider for CodexCliImageProvider {
         &self,
         parameters: &GenerationParameters,
     ) -> DomainResult<GenerationResult> {
-        self.validate_parameters(parameters)?;
-        let command = self.build_command(parameters)?;
-        let log_path = self.log_path();
-        let mut log_file = OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .open(&log_path)
-            .map_err(|error| DomainError::Io {
-                path: log_path.display().to_string(),
-                message: error.to_string(),
-            })?;
-        writeln!(
-            log_file,
-            "program: {}\nargs: {}\n",
-            command.program.display(),
-            command.args.join(" ")
-        )
-        .map_err(|error| DomainError::Io {
-            path: log_path.display().to_string(),
-            message: error.to_string(),
-        })?;
-
-        let mut child = Command::new(&command.program)
-            .args(&command.args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|error| DomainError::GenerationFailed {
-                provider: self.name().to_string(),
-                message: format!(
-                    "failed to run codex CLI: {error}; log: {}",
-                    log_path.display()
-                ),
-            })?;
-
-        let stdout_handle = child
-            .stdout
-            .take()
-            .map(|stdout| stream_to_log(stdout, log_path.clone(), "[stdout] ".to_string()));
-        let stderr_handle = child
-            .stderr
-            .take()
-            .map(|stderr| stream_to_log(stderr, log_path.clone(), "[stderr] ".to_string()));
-        let status = child
-            .wait()
-            .map_err(|error| DomainError::GenerationFailed {
-                provider: self.name().to_string(),
-                message: format!(
-                    "failed to wait for codex CLI: {error}; log: {}",
-                    log_path.display()
-                ),
-            })?;
-        let stdout = join_stream(stdout_handle, &log_path, self.name())?;
-        let stderr = join_stream(stderr_handle, &log_path, self.name())?;
-        let combined_output = format!("{stdout}\n{stderr}");
-
-        if !status.success() {
-            return Err(DomainError::GenerationFailed {
-                provider: self.name().to_string(),
-                message: format!(
-                    "codex CLI exited with {status}; log: {}; output: {combined_output}",
-                    log_path.display()
-                ),
-            });
-        }
-
-        let raw_request_json = serde_json::json!({
-            "program": command.program,
-            "args": command.args,
-            "prompt": command.prompt,
-            "log_path": log_path
+        let cancel_path = self.cancel_path.clone();
+        self.generate_from_text_until_cancelled(parameters, move || {
+            cancel_path.as_ref().is_some_and(|path| path.exists())
         })
-        .to_string();
-        self.parse_output(&combined_output, raw_request_json, combined_output.clone())
     }
 
     fn generate_from_image(
@@ -278,6 +331,62 @@ fn join_stream(
         ),
     })?;
     Ok(String::from_utf8_lossy(&bytes).to_string())
+}
+
+fn resolve_codex_program(requested: &Path) -> Option<PathBuf> {
+    if let Some(configured) = std::env::var_os("CODEX_CLI_BIN").map(PathBuf::from) {
+        if configured.is_file() {
+            return Some(configured);
+        }
+    }
+    if has_path_component(requested) {
+        return requested.is_file().then(|| requested.to_path_buf());
+    }
+    search_executable(requested.to_str().unwrap_or("codex"))
+}
+
+fn has_path_component(path: &Path) -> bool {
+    path.is_absolute()
+        || path
+            .components()
+            .any(|component| matches!(component, Component::ParentDir | Component::CurDir))
+        || path.parent().is_some_and(|parent| parent != Path::new(""))
+}
+
+fn search_executable(binary_name: &str) -> Option<PathBuf> {
+    executable_search_dirs()
+        .into_iter()
+        .map(|directory| directory.join(binary_name))
+        .find(|candidate| candidate.is_file())
+}
+
+fn executable_search_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(path) = std::env::var_os("PATH") {
+        dirs.extend(std::env::split_paths(&path));
+    }
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        dirs.push(home.join(".asdf/shims"));
+        dirs.push(home.join(".cargo/bin"));
+        dirs.push(home.join(".local/bin"));
+    }
+    dirs.extend([
+        PathBuf::from("/opt/homebrew/bin"),
+        PathBuf::from("/usr/local/bin"),
+        PathBuf::from("/usr/bin"),
+        PathBuf::from("/bin"),
+    ]);
+    dedupe_paths(dirs)
+}
+
+fn dedupe_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut unique = Vec::new();
+    for path in paths {
+        if !unique.iter().any(|item| item == &path) {
+            unique.push(path);
+        }
+    }
+    unique
 }
 
 fn codex_prompt(parameters: &GenerationParameters) -> String {
@@ -395,6 +504,14 @@ mod tests {
         assert!(!command.args.contains(&"--model".to_string()));
         assert!(!command.args.contains(&"--output-last-message".to_string()));
         assert!(command.prompt.contains("Use the imagegen skill"));
+    }
+
+    #[test]
+    fn resolves_codex_from_configured_or_common_paths() {
+        let resolved = resolve_codex_program(Path::new("codex"));
+        if let Some(path) = resolved {
+            assert!(path.ends_with("codex"));
+        }
     }
 
     #[test]

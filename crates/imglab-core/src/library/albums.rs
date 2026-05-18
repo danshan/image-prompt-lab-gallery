@@ -111,7 +111,10 @@ impl AlbumService for LocalLibraryService {
         let connection = Self::open_library_database(&library.root_path)?;
         let transaction = connection.unchecked_transaction().map_err(database_error)?;
         transaction
-            .execute("DELETE FROM album_items WHERE album_id = ?1", params![album_id.0])
+            .execute(
+                "DELETE FROM album_items WHERE album_id = ?1",
+                params![album_id.0],
+            )
             .map_err(database_error)?;
         let updated = transaction
             .execute("DELETE FROM albums WHERE id = ?1", params![album_id.0])
@@ -268,9 +271,11 @@ fn create_album(
     let album_id = AlbumId(Uuid::new_v4().to_string());
     let now = timestamp_string();
     let sort_order: i64 = connection
-        .query_row("SELECT COALESCE(MAX(sort_order), 0) + 1 FROM albums", [], |row| {
-            row.get(0)
-        })
+        .query_row(
+            "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM albums",
+            [],
+            |row| row.get(0),
+        )
         .map_err(database_error)?;
     let kind_str = match kind {
         AlbumKind::Manual => "manual",
@@ -359,12 +364,11 @@ pub(super) fn parse_smart_query(query_json: &str) -> DomainResult<SmartAlbumQuer
 fn optional_string(value: Option<&Value>, field: &str) -> DomainResult<Option<String>> {
     value
         .map(|value| {
-            value
-                .as_str()
-                .map(ToString::to_string)
-                .ok_or_else(|| DomainError::InvalidSmartAlbumQuery {
+            value.as_str().map(ToString::to_string).ok_or_else(|| {
+                DomainError::InvalidSmartAlbumQuery {
                     message: format!("{field} must be a string"),
-                })
+                }
+            })
         })
         .transpose()
 }
@@ -381,11 +385,11 @@ fn optional_string_array(value: Option<&Value>, field: &str) -> DomainResult<Vec
     array
         .iter()
         .map(|item| {
-            item.as_str()
-                .map(ToString::to_string)
-                .ok_or_else(|| DomainError::InvalidSmartAlbumQuery {
+            item.as_str().map(ToString::to_string).ok_or_else(|| {
+                DomainError::InvalidSmartAlbumQuery {
                     message: format!("{field} values must be strings"),
-                })
+                }
+            })
         })
         .collect()
 }

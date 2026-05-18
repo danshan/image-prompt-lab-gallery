@@ -33,15 +33,34 @@ pub struct AppLogContentView {
 }
 
 pub fn list_app_logs() -> Result<Vec<AppLogView>, CommandError> {
-    list_app_logs_in_dir(&std::env::temp_dir())
+    let mut logs = Vec::new();
+    for directory in app_log_roots() {
+        if directory.exists() {
+            logs.extend(list_app_logs_in_dir(&directory)?);
+        }
+    }
+    logs.sort_by(|left, right| right.modified_at.cmp(&left.modified_at));
+    Ok(logs)
 }
 
 pub fn read_app_log(path: &Path) -> Result<AppLogContentView, CommandError> {
-    let temp_dir = std::env::temp_dir();
-    if !is_allowed_app_log_path(&temp_dir, path) {
+    if !app_log_roots()
+        .into_iter()
+        .any(|root| is_allowed_app_log_path(&root, path))
+    {
         return Err(invalid_log_path(path));
     }
     read_app_log_content(path)
+}
+
+fn app_log_roots() -> Vec<PathBuf> {
+    let mut roots = vec![std::env::temp_dir()];
+    let daemon_runtime_dir = std::env::var_os("IMGLAB_DAEMON_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("imglab-desktop-daemon"));
+    roots.push(daemon_runtime_dir.join("logs"));
+    roots.push(std::env::temp_dir().join("imglab-daemon-logs"));
+    roots
 }
 
 fn list_app_logs_in_dir(directory: &Path) -> Result<Vec<AppLogView>, CommandError> {
@@ -157,6 +176,9 @@ fn is_allowed_app_log_path(temp_dir: &Path, path: &Path) -> bool {
 
 fn classify_app_log(path: &Path) -> Option<&'static str> {
     let filename = path.file_name()?.to_str()?;
+    if filename.starts_with("imglab-task-") && filename.ends_with(".log") {
+        return Some("task-attempt");
+    }
     if filename.starts_with("imglab-codex-cli-") && filename.ends_with(".log") {
         return Some("codex-image-generation");
     }
@@ -203,14 +225,21 @@ fn invalid_log_path(path: &Path) -> CommandError {
 mod tests {
     use super::*;
     use std::fs;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    static TEST_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
 
     fn unique_dir() -> PathBuf {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("time")
             .as_nanos();
-        std::env::temp_dir().join(format!("imglab-log-tests-{nanos}"))
+        let counter = TEST_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!(
+            "imglab-log-tests-{}-{counter}-{nanos}",
+            std::process::id()
+        ))
     }
 
     #[test]
@@ -222,6 +251,10 @@ mod tests {
         assert_eq!(
             classify_app_log(Path::new("/tmp/imglab-codex-metadata-123.log")),
             Some("codex-metadata-generation")
+        );
+        assert_eq!(
+            classify_app_log(Path::new("/tmp/imglab-task-task-1-attempt-1.log")),
+            Some("task-attempt")
         );
         assert_eq!(classify_app_log(Path::new("/tmp/other.log")), None);
     }
@@ -256,6 +289,20 @@ mod tests {
             &temp_dir,
             &temp_dir.join("other.log")
         ));
+    }
+
+    #[test]
+    fn accepts_task_logs_under_allowed_daemon_log_root_only() {
+        let dir = unique_dir();
+        fs::create_dir_all(&dir).expect("dir");
+        let log = dir.join("imglab-task-abc-attempt-1.log");
+        fs::write(&log, "task log").expect("log");
+        let nested = dir.join("nested").join("imglab-task-def-attempt-1.log");
+        fs::create_dir_all(nested.parent().expect("nested parent")).expect("nested dir");
+        fs::write(&nested, "nested log").expect("nested log");
+
+        assert!(is_allowed_app_log_path(&dir, &log));
+        assert!(!is_allowed_app_log_path(&dir, &nested));
     }
 
     #[test]
