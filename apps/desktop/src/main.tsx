@@ -59,6 +59,8 @@ declare global {
 }
 
 type View = "gallery" | "albums" | "review" | "queue" | "settings";
+type TaskPanel = "compose" | "queue" | "detail";
+type IconName = "chevronDown" | "close" | "database" | "grid" | "list" | "menu" | "panelRight" | "plus" | "search";
 
 const GALLERY_REFRESH_DEBOUNCE_MS = 250;
 const METADATA_POLL_INTERVAL_MS = 800;
@@ -709,6 +711,9 @@ function App() {
   const [selectedLogContent, setSelectedLogContent] = useState<AppLogContent | null>(null);
   const [logContentLoading, setLogContentLoading] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<LightboxImage | null>(null);
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [activeTaskPanel, setActiveTaskPanel] = useState<TaskPanel>("queue");
   const logReadRequestRef = useRef<string | null>(null);
   const completedTaskKeysRef = useRef<Set<string>>(new Set());
   const metadataPollTimeoutsRef = useRef<Set<number>>(new Set());
@@ -729,6 +734,18 @@ function App() {
     () => pendingSuggestions.find((suggestion) => suggestion.id === selectedSuggestionId) ?? pendingSuggestions[0] ?? null,
     [pendingSuggestions, selectedSuggestionId],
   );
+  const changeView = (view: View) => {
+    setActiveView(view);
+    setSidebarExpanded(false);
+  };
+  const selectGalleryAsset = (assetId: string) => {
+    setSelectedAssetId(assetId);
+    setInspectorOpen(true);
+  };
+  const selectTask = (taskId: string) => {
+    setSelectedTaskId(taskId);
+    setActiveTaskPanel("detail");
+  };
   const availableTags = useMemo(
     () => Array.from(new Set((runningInTauri ? gallery : mockGallery).flatMap((asset) => asset.tags))).sort(),
     [runningInTauri, gallery],
@@ -2292,7 +2309,7 @@ function App() {
   const detail = detailState.detail;
 
   return (
-    <main className="workbench">
+    <main className={`workbench${sidebarExpanded ? " sidebar-expanded" : ""}${inspectorOpen ? " inspector-expanded" : ""}`}>
       <Sidebar
         library={library}
         libraries={libraries}
@@ -2300,7 +2317,9 @@ function App() {
         activeView={activeView}
         reviewCount={pendingSuggestions.length}
         queueCount={queueCount}
-        onViewChange={setActiveView}
+        expanded={sidebarExpanded}
+        onExpandedChange={setSidebarExpanded}
+        onViewChange={changeView}
         onLibraryChange={switchLibrary}
       />
 
@@ -2339,7 +2358,7 @@ function App() {
             selectedAssetIds={selectedGalleryAssetIds}
             query={query}
             availableTags={availableTags}
-            onSelect={setSelectedAssetId}
+            onSelect={selectGalleryAsset}
             onToggleAssetSelection={(assetId) => setSelectedGalleryAssetIds((current) => toggleSelection(current, assetId))}
             onQueryChange={setQuery}
             onRequestReview={(asset) => void requestAssetReview(asset)}
@@ -2371,7 +2390,7 @@ function App() {
             onReorderAssets={(assetIds) => void reorderSelectedAlbumAssets(assetIds)}
             selectedGalleryAssetCount={selectedGalleryAssetIds.length}
             onBatchAddSelected={(albumId) => void addSelectedGalleryAssetsToAlbum(albumId)}
-            onSelectAsset={setSelectedAssetId}
+            onSelectAsset={selectGalleryAsset}
           />
         )}
         {activeView === "review" && (
@@ -2398,8 +2417,8 @@ function App() {
             onBatchReject={() => void batchRejectReviewSuggestions()}
             onAddToAlbum={(albumId) => void addReviewSelectionToAlbum(albumId)}
             onOpenTask={(taskId) => {
-              setSelectedTaskId(taskId);
-              setActiveView("queue");
+              selectTask(taskId);
+              changeView("queue");
             }}
           />
         )}
@@ -2413,11 +2432,13 @@ function App() {
               loading={tasksLoading}
               daemonOnline={daemonOnline}
               pendingTaskActions={pendingTaskActions}
+              activePanel={activeTaskPanel}
+              onActivePanelChange={setActiveTaskPanel}
               onDraftsChange={setTaskDrafts}
               onAddDraft={() => setTaskDrafts((current) => [...current, createTaskDraft()])}
               onEnqueue={() => void enqueueTaskDrafts()}
               onRefresh={() => void refreshTasks()}
-              onSelectTask={setSelectedTaskId}
+              onSelectTask={selectTask}
               onMoveTask={(taskId, direction) => void reorderQueuedTask(taskId, direction)}
               onCancel={(taskId) => void runTaskAction("cancel_daemon_task", taskId)}
               onRetry={(taskId) => void runTaskAction("retry_daemon_task", taskId)}
@@ -2456,27 +2477,34 @@ function App() {
         )}
       </section>
 
-      <Inspector
-        asset={selectedAsset}
-        detailState={detailState}
-        onUpdateRating={updateRating}
-        onUpdateTitle={(title) => void updateTitle(title)}
-        onAddTag={(tag) => void addTagToSelectedAsset(tag)}
-        albums={albums}
-        onAddToAlbum={(albumId) => void addSelectedAssetToAlbum(albumId)}
-        onPreviewImage={(asset) => {
-          if (asset.imagePath) {
-            setLightboxImage({
-              path: asset.imagePath,
-              label: asset.title ?? "Generated image",
-            });
-          }
-        }}
-        onGenerateVariation={() => {
-          const versionId = detail?.lineage[0]?.version.id ?? detail?.versions[0]?.id ?? selectedAsset?.currentVersionId ?? null;
-          void startGeneration(versionId);
-        }}
-      />
+      <div className="inspector-shell">
+        <button className="inspector-toggle" onClick={() => setInspectorOpen(!inspectorOpen)}>
+          <Icon name="panelRight" />
+          <span>{inspectorOpen ? "Close detail" : "Open detail"}</span>
+        </button>
+        <Inspector
+          asset={selectedAsset}
+          detailState={detailState}
+          onClose={() => setInspectorOpen(false)}
+          onUpdateRating={updateRating}
+          onUpdateTitle={(title) => void updateTitle(title)}
+          onAddTag={(tag) => void addTagToSelectedAsset(tag)}
+          albums={albums}
+          onAddToAlbum={(albumId) => void addSelectedAssetToAlbum(albumId)}
+          onPreviewImage={(asset) => {
+            if (asset.imagePath) {
+              setLightboxImage({
+                path: asset.imagePath,
+                label: asset.title ?? "Generated image",
+              });
+            }
+          }}
+          onGenerateVariation={() => {
+            const versionId = detail?.lineage[0]?.version.id ?? detail?.versions[0]?.id ?? selectedAsset?.currentVersionId ?? null;
+            void startGeneration(versionId);
+          }}
+        />
+      </div>
       {lightboxImage && <ImageLightbox image={lightboxImage} onClose={() => setLightboxImage(null)} />}
     </main>
   );
@@ -2489,6 +2517,8 @@ function Sidebar({
   activeView,
   reviewCount,
   queueCount,
+  expanded,
+  onExpandedChange,
   onViewChange,
   onLibraryChange,
 }: {
@@ -2498,13 +2528,21 @@ function Sidebar({
   activeView: View;
   reviewCount: number;
   queueCount: number;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
   onViewChange: (view: View) => void;
   onLibraryChange: (libraryId: string) => void;
 }) {
   return (
     <aside className="sidebar">
+      <button className="sidebar-toggle" onClick={() => onExpandedChange(!expanded)}>
+        <Icon name="menu" />
+        <span>{expanded ? "Collapse" : "Menu"}</span>
+      </button>
       <label className="library-card library-selector-card">
-        <span className="database-icon">DB</span>
+        <span className="database-icon" aria-hidden="true">
+          <Icon name="database" />
+        </span>
         <span>
           <strong>{library?.name ?? "No library"}</strong>
           <small>Library</small>
@@ -2525,7 +2563,9 @@ function Sidebar({
             ))
           )}
         </select>
-        <span className="library-chevron" aria-hidden="true" />
+        <span className="library-chevron" aria-hidden="true">
+          <Icon name="chevronDown" />
+        </span>
       </label>
       <nav className="nav">
         <NavButton active={activeView === "gallery"} label="Gallery" onClick={() => onViewChange("gallery")} />
@@ -2577,9 +2617,15 @@ function NavButton({
   count?: number;
   onClick: () => void;
 }) {
+  const shortLabel = label
+    .split(" ")
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2);
   return (
-    <button className={active ? "nav-button active" : "nav-button"} onClick={onClick}>
-      <span>{label}</span>
+    <button className={active ? "nav-button active" : "nav-button"} title={label} onClick={onClick}>
+      <span className="nav-short">{shortLabel}</span>
+      <span className="nav-label">{label}</span>
       {typeof count === "number" && count > 0 && <strong>{count}</strong>}
     </button>
   );
@@ -2602,63 +2648,82 @@ function WorkspaceToolbar({
   onComposerOpenChange: (open: boolean) => void;
   onQueryChange: (query: GalleryQueryState) => void;
 }) {
+  const viewLabels: Record<View, { title: string; eyebrow: string }> = {
+    gallery: { title: "Gallery", eyebrow: "Image assets" },
+    albums: { title: "Albums", eyebrow: "Curation sets" },
+    review: { title: "Review Inbox", eyebrow: "Metadata suggestions" },
+    queue: { title: "Tasks Queue", eyebrow: "Generation operations" },
+    settings: { title: "Settings", eyebrow: "Library administration" },
+  };
+  const label = viewLabels[activeView];
+  const showGalleryControls = activeView === "gallery";
+
   return (
     <header className="workspace-toolbar">
-      <div className="search-row">
-        <label className="search-box">
-          <span>Search</span>
-          <input
-            value={query.text}
-            onChange={(event) => onQueryChange(updateGalleryQuery(query, { text: event.target.value }))}
-            placeholder="Search prompts, titles, tags, albums..."
-          />
-        </label>
+      <div className="workspace-title-row">
+        <div className="workspace-title">
+          <span>{label.eyebrow}</span>
+          <h1>{label.title}</h1>
+        </div>
+        <span className="toolbar-status">{status}</span>
         <button className="primary-button" onClick={() => onComposerOpenChange(!composerOpen)}>
-          Generate
-        </button>
-        <button className="icon-button" aria-label="Grid view">
-          #
-        </button>
-        <button className="icon-button" aria-label="List view">
-          =
+          <Icon name="plus" />
+          <span>Generate</span>
         </button>
       </div>
-      <div className="filter-row">
-        <SegmentedButton
-          label="Provider"
-          active={query.providers.length > 0}
-          onClick={() => onQueryChange(toggleGalleryProvider(query, "fake"))}
-        />
-        <select
-          className="select-control"
-          value={query.minRating ?? ""}
-          onChange={(event) =>
-            onQueryChange(
-              updateGalleryQuery(query, {
-                minRating: event.target.value ? Number(event.target.value) : null,
-              }),
-            )
-          }
-        >
-          <option value="">Rating</option>
-          <option value="5">5 stars</option>
-          <option value="4">4+ stars</option>
-          <option value="3">3+ stars</option>
-        </select>
-        <select
-          className="select-control"
-          value={query.reviewStatus}
-          onChange={(event) =>
-            onQueryChange(updateGalleryQuery(query, { reviewStatus: event.target.value as ReviewStatusFilter }))
-          }
-        >
-          <option value="any">Review</option>
-          <option value="pending">Review Pending</option>
-        </select>
-        <button onClick={() => onQueryChange(resetGalleryQuery())}>Clear All</button>
-        <span className="toolbar-status">{status}</span>
-        {activeView === "gallery" && (
-          <>
+
+      {showGalleryControls && (
+        <>
+          <div className="search-row">
+            <label className="search-box">
+              <Icon name="search" />
+              <span>Search</span>
+              <input
+                value={query.text}
+                onChange={(event) => onQueryChange(updateGalleryQuery(query, { text: event.target.value }))}
+                placeholder="Search prompts, titles, tags, albums..."
+              />
+            </label>
+            <button className="icon-button" aria-label="Grid view">
+              <Icon name="grid" />
+            </button>
+            <button className="icon-button" aria-label="List view">
+              <Icon name="list" />
+            </button>
+          </div>
+          <div className="filter-row">
+            <SegmentedButton
+              label="Provider"
+              active={query.providers.length > 0}
+              onClick={() => onQueryChange(toggleGalleryProvider(query, "fake"))}
+            />
+            <select
+              className="select-control"
+              value={query.minRating ?? ""}
+              onChange={(event) =>
+                onQueryChange(
+                  updateGalleryQuery(query, {
+                    minRating: event.target.value ? Number(event.target.value) : null,
+                  }),
+                )
+              }
+            >
+              <option value="">Rating</option>
+              <option value="5">5 stars</option>
+              <option value="4">4+ stars</option>
+              <option value="3">3+ stars</option>
+            </select>
+            <select
+              className="select-control"
+              value={query.reviewStatus}
+              onChange={(event) =>
+                onQueryChange(updateGalleryQuery(query, { reviewStatus: event.target.value as ReviewStatusFilter }))
+              }
+            >
+              <option value="any">Review</option>
+              <option value="pending">Review Pending</option>
+            </select>
+            <button onClick={() => onQueryChange(resetGalleryQuery())}>Clear All</button>
             <select
               className="select-control sort-select"
               value={query.sort}
@@ -2671,9 +2736,9 @@ function WorkspaceToolbar({
               <option value="providerAsc">Sort: Provider</option>
             </select>
             <strong>{itemCount} items</strong>
-          </>
-        )}
-      </div>
+          </div>
+        </>
+      )}
     </header>
   );
 }
@@ -2691,6 +2756,73 @@ function SegmentedButton({
     <button className={active ? "chip-button active" : "chip-button"} onClick={onClick}>
       {label}
     </button>
+  );
+}
+
+function Icon({ name }: { name: IconName }) {
+  const paths: Record<IconName, React.ReactNode> = {
+    chevronDown: <path d="m6 9 6 6 6-6" />,
+    close: (
+      <>
+        <path d="M18 6 6 18" />
+        <path d="m6 6 12 12" />
+      </>
+    ),
+    database: (
+      <>
+        <ellipse cx="12" cy="5" rx="7" ry="3" />
+        <path d="M5 5v6c0 1.7 3.1 3 7 3s7-1.3 7-3V5" />
+        <path d="M5 11v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" />
+      </>
+    ),
+    grid: (
+      <>
+        <rect x="4" y="4" width="6" height="6" rx="1" />
+        <rect x="14" y="4" width="6" height="6" rx="1" />
+        <rect x="4" y="14" width="6" height="6" rx="1" />
+        <rect x="14" y="14" width="6" height="6" rx="1" />
+      </>
+    ),
+    list: (
+      <>
+        <path d="M8 6h12" />
+        <path d="M8 12h12" />
+        <path d="M8 18h12" />
+        <path d="M4 6h.01" />
+        <path d="M4 12h.01" />
+        <path d="M4 18h.01" />
+      </>
+    ),
+    menu: (
+      <>
+        <path d="M4 7h16" />
+        <path d="M4 12h16" />
+        <path d="M4 17h16" />
+      </>
+    ),
+    panelRight: (
+      <>
+        <rect x="4" y="5" width="16" height="14" rx="2" />
+        <path d="M14 5v14" />
+      </>
+    ),
+    plus: (
+      <>
+        <path d="M12 5v14" />
+        <path d="M5 12h14" />
+      </>
+    ),
+    search: (
+      <>
+        <circle cx="11" cy="11" r="7" />
+        <path d="m16 16 4 4" />
+      </>
+    ),
+  };
+  return (
+    <svg className="button-icon" aria-hidden="true" viewBox="0 0 24 24">
+      {paths[name]}
+    </svg>
   );
 }
 
@@ -2766,31 +2898,37 @@ function GalleryView({
           >
             <button className="asset-card-main" onClick={() => onSelect(asset.id)}>
               <Thumbnail asset={asset} index={index} />
-              <span className="asset-title">{asset.title ?? "Untitled"}</span>
+              <span className="asset-title-row">
+                <span className="asset-title">{asset.title ?? "Untitled"}</span>
+                <span>{asset.versionLabel ?? "v1"}</span>
+              </span>
             </button>
-            <span className="provider-pill">{asset.provider ?? "Unknown provider"}</span>
-            <StarRatingDisplay rating={asset.rating} />
-            {asset.reviewPendingCount > 0 && <span className="review-badge">Review pending</span>}
+            <span className="asset-card-meta">
+              <span className="provider-pill">{asset.provider ?? "Unknown provider"}</span>
+              <StarRatingDisplay rating={asset.rating} />
+            </span>
             <span className="card-tags">
               {asset.tags.slice(0, 3).map((tag) => (
                 <span key={tag}>{tag}</span>
               ))}
             </span>
-            <span className="version-line">
-              <span>{asset.versionLabel ?? "v1"}</span>
+            <span className="asset-card-footer">
+              {asset.reviewPendingCount > 0 ? <span className="review-badge">Review pending</span> : <span />}
               <span>{asset.versionCount} version{asset.versionCount === 1 ? "" : "s"}</span>
             </span>
-            <button className="card-review-button" onClick={() => onRequestReview(asset)}>
-              Review
-            </button>
-            <label className="checkbox-row card-select-row">
-              <input
-                type="checkbox"
-                checked={selectedAssetIds.includes(asset.id)}
-                onChange={() => onToggleAssetSelection(asset.id)}
-              />
-              <span>Select</span>
-            </label>
+            <span className="asset-card-actions">
+              <button className="card-review-button" onClick={() => onRequestReview(asset)}>
+                Review
+              </button>
+              <label className="checkbox-row card-select-row">
+                <input
+                  type="checkbox"
+                  checked={selectedAssetIds.includes(asset.id)}
+                  onChange={() => onToggleAssetSelection(asset.id)}
+                />
+                <span>Select</span>
+              </label>
+            </span>
           </article>
         ))}
       </section>
@@ -2834,7 +2972,7 @@ function ImageLightbox({ image, onClose }: { image: LightboxImage; onClose: () =
   return (
     <div className="image-lightbox" role="dialog" aria-modal="true" aria-label={image.label} onClick={closeFromBackdrop}>
       <button className="image-lightbox-close" aria-label="Close image preview" onClick={onClose}>
-        X
+        <Icon name="close" />
       </button>
       <div className="image-lightbox-frame">
         <img alt={image.label} src={convertImagePath(image.path)} onClick={(event) => event.stopPropagation()} />
@@ -2940,7 +3078,7 @@ function AlbumsView({
             placeholder="Search albums"
           />
           <button className="icon-button" aria-label="Create album" onClick={() => onCreateOpenChange(!createOpen)}>
-            +
+            <Icon name="plus" />
           </button>
           {createOpen && (
             <div className="album-create-popover">
@@ -3594,6 +3732,8 @@ function TaskWorkspace({
   loading,
   daemonOnline,
   pendingTaskActions,
+  activePanel,
+  onActivePanelChange,
   onDraftsChange,
   onAddDraft,
   onEnqueue,
@@ -3611,6 +3751,8 @@ function TaskWorkspace({
   loading: boolean;
   daemonOnline: boolean;
   pendingTaskActions: string[];
+  activePanel: TaskPanel;
+  onActivePanelChange: (panel: TaskPanel) => void;
   onDraftsChange: (drafts: TaskDraft[]) => void;
   onAddDraft: () => void;
   onEnqueue: () => void;
@@ -3623,34 +3765,51 @@ function TaskWorkspace({
 }) {
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
   return (
-    <section className="task-workspace">
-      <BatchComposer
-        drafts={drafts}
-        onDraftsChange={onDraftsChange}
-        onAddDraft={onAddDraft}
-        onEnqueue={onEnqueue}
-      />
-      <TasksQueue
-        tasks={tasks}
-        selectedTaskId={selectedTaskId}
-        loading={loading}
-        daemonOnline={daemonOnline}
-        pendingTaskActions={pendingTaskActions}
-        onRefresh={onRefresh}
-        onSelectTask={onSelectTask}
-        onMoveTask={onMoveTask}
-        onCancel={onCancel}
-        onRetry={onRetry}
-        onDuplicate={onDuplicate}
-      />
-      <TaskDetailPanel
-        task={selectedTask}
-        detail={detail}
-        pendingTaskActions={pendingTaskActions}
-        onCancel={onCancel}
-        onRetry={onRetry}
-        onDuplicate={onDuplicate}
-      />
+    <section className={`task-workspace active-${activePanel}`}>
+      <div className="task-panel-tabs" role="tablist" aria-label="Queue panels">
+        <button className={activePanel === "compose" ? "active" : ""} onClick={() => onActivePanelChange("compose")}>
+          Compose
+        </button>
+        <button className={activePanel === "queue" ? "active" : ""} onClick={() => onActivePanelChange("queue")}>
+          Queue
+        </button>
+        <button className={activePanel === "detail" ? "active" : ""} onClick={() => onActivePanelChange("detail")}>
+          Detail
+        </button>
+      </div>
+      <div className={activePanel === "compose" ? "task-panel-slot task-panel-compose active" : "task-panel-slot task-panel-compose"}>
+        <BatchComposer
+          drafts={drafts}
+          onDraftsChange={onDraftsChange}
+          onAddDraft={onAddDraft}
+          onEnqueue={onEnqueue}
+        />
+      </div>
+      <div className={activePanel === "queue" ? "task-panel-slot task-panel-queue active" : "task-panel-slot task-panel-queue"}>
+        <TasksQueue
+          tasks={tasks}
+          selectedTaskId={selectedTaskId}
+          loading={loading}
+          daemonOnline={daemonOnline}
+          pendingTaskActions={pendingTaskActions}
+          onRefresh={onRefresh}
+          onSelectTask={onSelectTask}
+          onMoveTask={onMoveTask}
+          onCancel={onCancel}
+          onRetry={onRetry}
+          onDuplicate={onDuplicate}
+        />
+      </div>
+      <div className={activePanel === "detail" ? "task-panel-slot task-panel-detail active" : "task-panel-slot task-panel-detail"}>
+        <TaskDetailPanel
+          task={selectedTask}
+          detail={detail}
+          pendingTaskActions={pendingTaskActions}
+          onCancel={onCancel}
+          onRetry={onRetry}
+          onDuplicate={onDuplicate}
+        />
+      </div>
     </section>
   );
 }
@@ -4292,6 +4451,7 @@ function SettingsLogsView({
 function Inspector({
   asset,
   detailState,
+  onClose,
   onUpdateRating,
   onUpdateTitle,
   onAddTag,
@@ -4302,6 +4462,7 @@ function Inspector({
 }: {
   asset: GalleryAsset | null;
   detailState: DetailLoadState<AssetDetail>;
+  onClose: () => void;
   onUpdateRating: (rating: number) => void;
   onUpdateTitle: (title: string) => void;
   onAddTag: (tag: string) => void;
@@ -4342,6 +4503,7 @@ function Inspector({
   if (!asset) {
     return (
       <aside className="inspector">
+        <button className="inspector-close" onClick={onClose}>Close</button>
         <h2>Inspector</h2>
         <div className="empty-state compact">No asset selected.</div>
       </aside>
@@ -4350,6 +4512,7 @@ function Inspector({
   if (detailState.loading) {
     return (
       <aside className="inspector">
+        <button className="inspector-close" onClick={onClose}>Close</button>
         <h2>Inspector</h2>
         <div className="empty-state compact">Loading asset detail...</div>
       </aside>
@@ -4358,6 +4521,7 @@ function Inspector({
   if (detailState.error || !detail) {
     return (
       <aside className="inspector">
+        <button className="inspector-close" onClick={onClose}>Close</button>
         <h2>Inspector</h2>
         <div className="empty-state compact">{detailState.error ?? "Detail unavailable."}</div>
       </aside>
@@ -4365,6 +4529,7 @@ function Inspector({
   }
   return (
     <aside className="inspector">
+      <button className="inspector-close" onClick={onClose}>Close</button>
       <section className="inspector-hero">
         {asset.imagePath ? (
           <button className="inspector-thumbnail-button" aria-label="Open full image preview" onClick={() => onPreviewImage(asset)}>
@@ -4445,6 +4610,7 @@ function Inspector({
           )}
           <button
             className="mini-button"
+            aria-label={tagEditorOpen ? "Add tag" : "Open tag editor"}
             disabled={tagEditorOpen && tagInput.trim().length === 0}
             onClick={() => {
               if (tagEditorOpen) {
@@ -4454,7 +4620,7 @@ function Inspector({
               }
             }}
           >
-            +
+            <Icon name="plus" />
           </button>
         </div>
       </InspectorSection>
