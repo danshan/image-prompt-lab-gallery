@@ -229,6 +229,17 @@ CLI may continue accepting UUIDs for stable machine input. Human-readable output
 
 ## Migration
 
+This change requires a library schema upgrade because historical libraries do not have `asset_versions.version_number`.
+
+Compatibility rules:
+
+- Libraries with the previous supported schema version should open through the normal migration path.
+- Migration must backfill `version_number` before any read model assumes the column is present.
+- Libraries with a schema version newer than the running app must still be rejected with `SchemaMismatch`.
+- Migration must not rewrite asset IDs, asset version IDs, file paths, checksums, parent version links, generation event IDs, or task output links.
+- Migration must preserve existing `version_label` values.
+- If migration fails, the app should report a recoverable database migration error and must not report the library as successfully opened.
+
 Schema migration should:
 
 1. Add nullable `version_number` if needed.
@@ -237,7 +248,18 @@ Schema migration should:
 4. Add a unique index on `(asset_id, version_number)`.
 5. Increment the library schema version.
 
-Historical `version_label` values should be preserved.
+Backfill behavior:
+
+- For each `asset_id`, assign `1..N` by `created_at ASC, id ASC`.
+- Preserve existing parent-child links even if their numeric order is not a perfect lineage topological order.
+- The deterministic ordering is the compatibility contract for historical libraries that lack explicit version numbers.
+- If duplicate or malformed historical rows prevent creating the unique index, migration should fail loudly rather than guessing or rewriting history.
+
+Read compatibility:
+
+- After migration, all current read models should use `version_number` for user-visible version display.
+- The app does not need to support a no-migration compatibility mode for active writes.
+- Backups and exports created before this schema version remain importable through the same migration path after restore.
 
 ## Testing
 
