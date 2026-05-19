@@ -3,8 +3,8 @@ use crate::{
     AppendTaskAttemptRequest, AppendTaskEventRequest, AppendTaskOutputRequest,
     BatchCreateTasksRequest, CompleteTaskAttemptRequest, DomainError, DomainResult,
     ReorderQueuedTasksRequest, TaskAttempt, TaskAttemptId, TaskDetail, TaskErrorClassification,
-    TaskEvent, TaskEventId, TaskId, TaskOutput, TaskOutputId, TaskOutputType, TaskService,
-    TaskStatus, TaskSummary, TaskType, UpdateTaskStatusRequest,
+    TaskEvent, TaskEventId, TaskId, TaskOutput, TaskOutputId, TaskOutputLinkView, TaskOutputType,
+    TaskService, TaskStatus, TaskSummary, TaskType, UpdateTaskStatusRequest,
 };
 use rusqlite::{params, Connection};
 use std::path::{Path, PathBuf};
@@ -88,11 +88,16 @@ impl TaskService for LocalLibraryService {
 
     fn get_task_detail(&self, library_path: &Path, task_id: &TaskId) -> DomainResult<TaskDetail> {
         let connection = Self::open_library_database(library_path)?;
+        let outputs = load_task_outputs(&connection, task_id)?;
+        let output_links = task_output_links(&outputs);
         Ok(TaskDetail {
             task: load_task_summary(&connection, task_id)?,
             attempts: load_task_attempts(&connection, task_id)?,
             events: load_task_events(&connection, task_id)?,
-            outputs: load_task_outputs(&connection, task_id)?,
+            related_assets: related_assets_from_output_links(&output_links),
+            related_reviews: related_reviews_from_output_links(&output_links),
+            output_links,
+            outputs,
         })
     }
 
@@ -670,6 +675,65 @@ fn task_output_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TaskOutput>
         payload_json: row.get(4)?,
         created_at: row.get(5)?,
     })
+}
+
+fn task_output_links(outputs: &[TaskOutput]) -> Vec<TaskOutputLinkView> {
+    outputs
+        .iter()
+        .map(|output| TaskOutputLinkView {
+            output_id: output.id.clone(),
+            output_type: output.output_type,
+            target_id: output.target_id.clone(),
+            asset_id: match output.output_type {
+                TaskOutputType::Asset => Some(crate::AssetId(output.target_id.clone())),
+                _ => None,
+            },
+            version_id: match output.output_type {
+                TaskOutputType::AssetVersion => {
+                    Some(crate::AssetVersionId(output.target_id.clone()))
+                }
+                _ => None,
+            },
+            generation_event_id: match output.output_type {
+                TaskOutputType::GenerationEvent => {
+                    Some(crate::GenerationEventId(output.target_id.clone()))
+                }
+                _ => None,
+            },
+            suggestion_id: match output.output_type {
+                TaskOutputType::MetadataSuggestion | TaskOutputType::MetadataFieldResult => {
+                    Some(crate::MetadataSuggestionId(output.target_id.clone()))
+                }
+                _ => None,
+            },
+        })
+        .collect()
+}
+
+fn related_assets_from_output_links(output_links: &[TaskOutputLinkView]) -> Vec<crate::AssetId> {
+    let mut assets = Vec::new();
+    for link in output_links {
+        if let Some(asset_id) = &link.asset_id {
+            if !assets.contains(asset_id) {
+                assets.push(asset_id.clone());
+            }
+        }
+    }
+    assets
+}
+
+fn related_reviews_from_output_links(
+    output_links: &[TaskOutputLinkView],
+) -> Vec<crate::MetadataSuggestionId> {
+    let mut suggestions = Vec::new();
+    for link in output_links {
+        if let Some(suggestion_id) = &link.suggestion_id {
+            if !suggestions.contains(suggestion_id) {
+                suggestions.push(suggestion_id.clone());
+            }
+        }
+    }
+    suggestions
 }
 
 fn optional_error_classification(

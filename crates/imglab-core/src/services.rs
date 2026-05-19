@@ -20,6 +20,11 @@ pub trait LibraryService {
     fn repair_library(&self, request: RepairLibraryRequest) -> DomainResult<RepairSummary>;
     fn check_integrity(&self, root_path: &std::path::Path) -> DomainResult<Vec<IntegrityIssue>>;
     fn library_status(&self, root_path: &std::path::Path) -> DomainResult<LibraryStatusView>;
+    fn studio_overview(&self, root_path: &std::path::Path) -> DomainResult<StudioOverviewView>;
+    fn diagnostics_overview(
+        &self,
+        root_path: &std::path::Path,
+    ) -> DomainResult<DiagnosticsOverviewView>;
 }
 
 pub trait AssetService {
@@ -76,6 +81,11 @@ pub trait MetadataReviewService {
         library_path: &std::path::Path,
         asset_id: &AssetId,
     ) -> DomainResult<Vec<MetadataSuggestion>>;
+    fn get_review_draft_detail(
+        &self,
+        library_path: &std::path::Path,
+        suggestion_id: &MetadataSuggestionId,
+    ) -> DomainResult<ReviewDraftDetailView>;
     fn normalize_confidence(&self, confidence_json: &str) -> ConfidenceScoreView;
 }
 
@@ -114,6 +124,12 @@ pub trait GalleryReadService {
         asset_id: &AssetId,
         current_version_id: Option<&AssetVersionId>,
     ) -> DomainResult<AssetDetailView>;
+    fn get_asset_inspector_detail(
+        &self,
+        library_path: &std::path::Path,
+        asset_id: &AssetId,
+        current_version_id: Option<&AssetVersionId>,
+    ) -> DomainResult<AssetInspectorDetailView>;
 }
 
 pub trait TaskService {

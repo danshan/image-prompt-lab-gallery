@@ -27,6 +27,8 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
+#[cfg(target_os = "macos")]
+use tauri::Manager;
 
 #[derive(Clone, Default)]
 struct DesktopState {
@@ -78,6 +80,56 @@ struct LibraryBackupView {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct StudioOverviewView {
+    library: LibraryView,
+    status: LibraryStatusView,
+    registered_library_count: u32,
+    missing_library_count: u32,
+    review_pending_count: u32,
+    task_summary: StudioTaskSummaryView,
+    provider_health: Vec<ProviderHealthSummaryView>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StudioTaskSummaryView {
+    active_count: u32,
+    queued_count: u32,
+    running_count: u32,
+    retry_waiting_count: u32,
+    failed_count: u32,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProviderHealthSummaryView {
+    provider: String,
+    display_name: String,
+    availability: String,
+    credential_state: String,
+    supported_operations: Vec<String>,
+    recoverable_error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiagnosticsOverviewView {
+    provider_health: Vec<ProviderHealthSummaryView>,
+    daemon_status: DaemonStatusView,
+    library_status: LibraryStatusView,
+    library_count: u32,
+    missing_library_count: u32,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DaemonStatusView {
+    state: String,
+    recoverable_error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct RepairIssueView {
     version_id: String,
     path: PathBuf,
@@ -125,8 +177,21 @@ struct GalleryAssetView {
     height: Option<u32>,
     version_label: Option<String>,
     version_count: u32,
+    task_origin: Option<TaskOriginView>,
+    albums: Vec<AlbumView>,
+    album_context: Option<AlbumView>,
     created_at: String,
     updated_at: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TaskOriginView {
+    task_id: String,
+    task_type: String,
+    status: String,
+    provider: Option<String>,
+    operation: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -222,6 +287,38 @@ struct AssetDetailView {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct AssetInspectorDetailView {
+    asset: AssetDetailView,
+    canonical_metadata: CanonicalMetadataView,
+    pending_suggestions: Vec<PendingSuggestionSummaryView>,
+    generated_task_origin: Option<TaskOriginView>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CanonicalMetadataView {
+    title: Option<String>,
+    description: Option<String>,
+    schema_prompt: Option<String>,
+    category: Option<String>,
+    rating: Option<u8>,
+    tags: Vec<String>,
+    status: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PendingSuggestionSummaryView {
+    id: String,
+    asset_id: String,
+    title: Option<String>,
+    category: Option<String>,
+    tag_count: u32,
+    created_at: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct SuggestionView {
     id: String,
     asset_id: String,
@@ -246,6 +343,48 @@ struct ConfidenceScoreView {
     schema_prompt: Option<u8>,
     tags: Option<u8>,
     category: Option<u8>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReviewDraftDetailView {
+    suggestion: SuggestionView,
+    draft_seed: ReviewDraftSeedView,
+    confidence: ConfidenceScoreView,
+    history: Vec<SuggestionView>,
+    generated_field_results: Vec<GeneratedReviewFieldResultView>,
+    related_tasks: Vec<RelatedTaskSummaryView>,
+    asset: AssetDetailView,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReviewDraftSeedView {
+    title: Option<String>,
+    description: Option<String>,
+    schema_prompt: Option<String>,
+    tags: Vec<String>,
+    category: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GeneratedReviewFieldResultView {
+    task_id: String,
+    field: String,
+    value: String,
+    base_revision: Option<String>,
+    created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RelatedTaskSummaryView {
+    id: String,
+    task_type: String,
+    status: String,
+    provider: Option<String>,
+    operation: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -632,6 +771,24 @@ fn library_status(root_path: PathBuf) -> Result<LibraryStatusView, CommandError>
 }
 
 #[tauri::command]
+fn studio_overview(root_path: PathBuf) -> Result<StudioOverviewView, CommandError> {
+    let root_path = normalize_library_root_path(root_path)?;
+    service()
+        .studio_overview(&root_path)
+        .map(studio_overview_view)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+fn diagnostics_overview(root_path: PathBuf) -> Result<DiagnosticsOverviewView, CommandError> {
+    let root_path = normalize_library_root_path(root_path)?;
+    service()
+        .diagnostics_overview(&root_path)
+        .map(diagnostics_overview_view)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
 fn repair_library(input: RepairLibraryInput) -> Result<RepairSummaryView, CommandError> {
     service()
         .repair_library(RepairLibraryRequest {
@@ -783,6 +940,24 @@ fn get_asset_detail(input: AssetDetailInput) -> Result<AssetDetailView, CommandE
             current_version_id.as_ref(),
         )
         .map(asset_detail_view)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+fn get_asset_inspector_detail(
+    input: AssetDetailInput,
+) -> Result<AssetInspectorDetailView, CommandError> {
+    let current_version_id = input
+        .current_version_id
+        .as_ref()
+        .map(|id| imglab_core::AssetVersionId(id.clone()));
+    service()
+        .get_asset_inspector_detail(
+            &input.library_path,
+            &AssetId(input.asset_id),
+            current_version_id.as_ref(),
+        )
+        .map(asset_inspector_detail_view)
         .map_err(Into::into)
 }
 
@@ -1097,6 +1272,17 @@ fn list_pending_suggestions(library_path: PathBuf) -> Result<Vec<SuggestionView>
     service
         .list_pending(&library_path, &library.id)
         .map(|suggestions| suggestions.into_iter().map(suggestion_view).collect())
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+fn get_review_draft_detail(
+    library_path: PathBuf,
+    suggestion_id: String,
+) -> Result<ReviewDraftDetailView, CommandError> {
+    service()
+        .get_review_draft_detail(&library_path, &MetadataSuggestionId(suggestion_id))
+        .map(review_draft_detail_view)
         .map_err(Into::into)
 }
 
@@ -1494,9 +1680,42 @@ fn gallery_asset_view(
         height: summary.height,
         version_label: summary.version_label,
         version_count: summary.version_count,
+        task_origin: summary.task_origin.map(task_origin_view),
+        albums: summary
+            .albums
+            .into_iter()
+            .map(album_membership_view)
+            .collect(),
+        album_context: summary.album_context.map(album_membership_view),
         created_at: summary.created_at,
         updated_at: summary.updated_at,
     }
+}
+
+fn task_origin_view(origin: imglab_core::TaskOriginView) -> TaskOriginView {
+    TaskOriginView {
+        task_id: origin.task_id.0,
+        task_type: task_type_value(origin.task_type),
+        status: task_status_value(origin.status),
+        provider: origin.provider,
+        operation: origin.operation.map(operation_value),
+    }
+}
+
+fn task_type_value(task_type: imglab_core::TaskType) -> String {
+    task_type.as_str().to_string()
+}
+
+fn task_status_value(status: imglab_core::TaskStatus) -> String {
+    status.as_str().to_string()
+}
+
+fn operation_value(operation: GenerationOperation) -> String {
+    match operation {
+        GenerationOperation::TextToImage => "text_to_image",
+        GenerationOperation::ImageToImage => "image_to_image",
+    }
+    .to_string()
 }
 
 fn version_view(summary: imglab_core::VersionSummary) -> VersionView {
@@ -1519,14 +1738,80 @@ fn generation_event_view(summary: imglab_core::GenerationEventSummary) -> Genera
         output_version_id: summary.output_version_id.map(|id| id.0),
         provider: summary.provider,
         provider_model: summary.provider_model,
-        operation_type: match summary.operation_type {
-            GenerationOperation::TextToImage => "text_to_image",
-            GenerationOperation::ImageToImage => "image_to_image",
-        }
-        .to_string(),
+        operation_type: operation_value(summary.operation_type),
         prompt: summary.prompt,
         parameters_json: summary.parameters_json,
         status: summary.status,
+    }
+}
+
+fn studio_overview_view(summary: imglab_core::StudioOverviewView) -> StudioOverviewView {
+    StudioOverviewView {
+        library: library_view(summary.library),
+        status: library_status_view(summary.status),
+        registered_library_count: summary.registered_library_count,
+        missing_library_count: summary.missing_library_count,
+        review_pending_count: summary.review_pending_count,
+        task_summary: StudioTaskSummaryView {
+            active_count: summary.task_summary.active_count,
+            queued_count: summary.task_summary.queued_count,
+            running_count: summary.task_summary.running_count,
+            retry_waiting_count: summary.task_summary.retry_waiting_count,
+            failed_count: summary.task_summary.failed_count,
+        },
+        provider_health: summary
+            .provider_health
+            .into_iter()
+            .map(provider_health_summary_view)
+            .collect(),
+    }
+}
+
+fn provider_health_summary_view(
+    summary: imglab_core::ProviderHealthSummaryView,
+) -> ProviderHealthSummaryView {
+    ProviderHealthSummaryView {
+        provider: summary.provider,
+        display_name: summary.display_name,
+        availability: summary.availability,
+        credential_state: summary.credential_state,
+        supported_operations: summary
+            .supported_operations
+            .into_iter()
+            .map(operation_value)
+            .collect(),
+        recoverable_error: summary.recoverable_error,
+    }
+}
+
+fn diagnostics_overview_view(
+    summary: imglab_core::DiagnosticsOverviewView,
+) -> DiagnosticsOverviewView {
+    DiagnosticsOverviewView {
+        provider_health: summary
+            .provider_health
+            .into_iter()
+            .map(provider_health_summary_view)
+            .collect(),
+        daemon_status: DaemonStatusView {
+            state: summary.daemon_status.state,
+            recoverable_error: summary.daemon_status.recoverable_error,
+        },
+        library_status: library_status_view(summary.library_status),
+        library_count: summary.library_count,
+        missing_library_count: summary.missing_library_count,
+    }
+}
+
+fn album_membership_view(album: imglab_core::AlbumMembershipView) -> AlbumView {
+    AlbumView {
+        id: album.id.0,
+        name: album.name,
+        kind: match album.kind {
+            imglab_core::AlbumKind::Manual => "manual",
+            imglab_core::AlbumKind::Smart => "smart",
+        }
+        .to_string(),
     }
 }
 
@@ -1581,6 +1866,36 @@ fn asset_detail_view(summary: imglab_core::AssetDetailView) -> AssetDetailView {
             checksum: file.checksum,
             integrity_status: file.integrity_status,
         }),
+    }
+}
+
+fn asset_inspector_detail_view(
+    summary: imglab_core::AssetInspectorDetailView,
+) -> AssetInspectorDetailView {
+    AssetInspectorDetailView {
+        asset: asset_detail_view(summary.asset),
+        canonical_metadata: CanonicalMetadataView {
+            title: summary.canonical_metadata.title,
+            description: summary.canonical_metadata.description,
+            schema_prompt: summary.canonical_metadata.schema_prompt,
+            category: summary.canonical_metadata.category,
+            rating: summary.canonical_metadata.rating,
+            tags: summary.canonical_metadata.tags,
+            status: summary.canonical_metadata.status,
+        },
+        pending_suggestions: summary
+            .pending_suggestions
+            .into_iter()
+            .map(|suggestion| PendingSuggestionSummaryView {
+                id: suggestion.id.0,
+                asset_id: suggestion.asset_id.0,
+                title: suggestion.title,
+                category: suggestion.category,
+                tag_count: suggestion.tag_count,
+                created_at: suggestion.created_at,
+            })
+            .collect(),
+        generated_task_origin: summary.generated_task_origin.map(task_origin_view),
     }
 }
 
@@ -1672,6 +1987,44 @@ fn suggestion_view(summary: imglab_core::MetadataSuggestion) -> SuggestionView {
         created_at: summary.created_at,
         reviewed_at: summary.reviewed_at,
         confidence: confidence_score_view(confidence),
+    }
+}
+
+fn review_draft_detail_view(summary: imglab_core::ReviewDraftDetailView) -> ReviewDraftDetailView {
+    ReviewDraftDetailView {
+        suggestion: suggestion_view(summary.suggestion),
+        draft_seed: ReviewDraftSeedView {
+            title: summary.draft_seed.title,
+            description: summary.draft_seed.description,
+            schema_prompt: summary.draft_seed.schema_prompt,
+            tags: summary.draft_seed.tags,
+            category: summary.draft_seed.category,
+        },
+        confidence: confidence_score_view(summary.confidence),
+        history: summary.history.into_iter().map(suggestion_view).collect(),
+        generated_field_results: summary
+            .generated_field_results
+            .into_iter()
+            .map(|result| GeneratedReviewFieldResultView {
+                task_id: result.task_id.0,
+                field: result.field,
+                value: result.value,
+                base_revision: result.base_revision,
+                created_at: result.created_at,
+            })
+            .collect(),
+        related_tasks: summary
+            .related_tasks
+            .into_iter()
+            .map(|task| RelatedTaskSummaryView {
+                id: task.id.0,
+                task_type: task_type_value(task.task_type),
+                status: task_status_value(task.status),
+                provider: task.provider,
+                operation: task.operation.map(operation_value),
+            })
+            .collect(),
+        asset: asset_detail_view(summary.asset),
     }
 }
 
@@ -1779,12 +2132,23 @@ pub fn run() {
     tauri::Builder::default()
         .manage(DesktopState::default())
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            #[cfg(target_os = "macos")]
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    window.set_background_color(Some(tauri::window::Color(32, 37, 39, 255)))?;
+                }
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             health,
             create_library,
             list_libraries,
             open_library,
             library_status,
+            studio_overview,
+            diagnostics_overview,
             repair_library,
             hide_library,
             rename_library_alias,
@@ -1797,6 +2161,7 @@ pub fn run() {
             search_assets,
             query_gallery,
             get_asset_detail,
+            get_asset_inspector_detail,
             generate_image,
             daemon_health,
             enqueue_generation_tasks,
@@ -1820,6 +2185,7 @@ pub fn run() {
             reorder_album_items,
             create_suggestion,
             list_pending_suggestions,
+            get_review_draft_detail,
             accept_suggestion,
             batch_accept_suggestions,
             reject_suggestion,

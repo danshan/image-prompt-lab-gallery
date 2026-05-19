@@ -6,10 +6,11 @@ use super::{
     LocalLibraryService,
 };
 use crate::{
-    AlbumId, AlbumKind, AssetId, AssetService, AssetSummary, AssetVersionId, DomainError,
-    DomainResult, FileContextView, GalleryAssetView, GalleryQuery, GalleryReadService, GallerySort,
-    GenerationEventId, LibraryService, ReviewStatusFilter, SearchQuery, SearchService,
-    VersionSummary,
+    AlbumId, AlbumKind, AlbumMembershipView, AssetId, AssetInspectorDetailView, AssetService,
+    AssetSummary, AssetVersionId, CanonicalMetadataView, DomainError, DomainResult,
+    FileContextView, GalleryAssetView, GalleryQuery, GalleryReadService, GallerySort,
+    GenerationEventId, LibraryService, PendingSuggestionSummaryView, ReviewStatusFilter,
+    SearchQuery, SearchService, TaskId, TaskOriginView, TaskStatus, TaskType, VersionSummary,
 };
 use rusqlite::{params, Connection};
 use std::collections::{HashMap, HashSet};
@@ -46,6 +47,11 @@ impl GalleryReadService for LocalLibraryService {
             .album_id
             .as_ref()
             .map(|album_id| load_album_filter_context(&connection, album_id))
+            .transpose()?;
+        let album_context_view = query
+            .album_id
+            .as_ref()
+            .map(|album_id| load_album_membership_context(&connection, album_id))
             .transpose()?;
 
         if let Some(text) = query
@@ -170,6 +176,12 @@ impl GalleryReadService for LocalLibraryService {
             }
         }
 
+        if let Some(album) = album_context_view {
+            for item in &mut items {
+                item.album_context = Some(album.clone());
+            }
+        }
+
         Ok(items)
     }
 
@@ -230,6 +242,39 @@ impl GalleryReadService for LocalLibraryService {
             versions,
             lineage,
             file,
+        })
+    }
+
+    fn get_asset_inspector_detail(
+        &self,
+        library_path: &Path,
+        asset_id: &AssetId,
+        current_version_id: Option<&AssetVersionId>,
+    ) -> DomainResult<AssetInspectorDetailView> {
+        let detail = self.get_asset_detail(library_path, asset_id, current_version_id)?;
+        let connection = Self::open_library_database(library_path)?;
+        let pending_suggestions = load_pending_suggestion_summaries(&connection, asset_id)?;
+        let task_origin = detail
+            .versions
+            .first()
+            .and_then(|version| {
+                load_task_origin_for_version_or_asset(&connection, &version.id, asset_id).ok()
+            })
+            .flatten();
+
+        Ok(AssetInspectorDetailView {
+            canonical_metadata: CanonicalMetadataView {
+                title: detail.title.clone(),
+                description: detail.description.clone(),
+                schema_prompt: detail.schema_prompt.clone(),
+                category: detail.category.clone(),
+                rating: detail.rating,
+                tags: detail.tags.clone(),
+                status: detail.status.clone(),
+            },
+            asset: detail,
+            pending_suggestions,
+            generated_task_origin: task_origin,
         })
     }
 }
@@ -308,6 +353,8 @@ fn load_gallery_asset_views(connection: &Connection) -> DomainResult<Vec<Gallery
     let version_counts = load_asset_version_counts(connection)?;
     let tags = load_all_asset_tags(connection)?;
     let review_counts = load_pending_review_counts(connection)?;
+    let task_origins = load_task_origins(connection)?;
+    let albums = load_all_asset_album_memberships(connection)?;
     let mut statement = connection
         .prepare(
             "
@@ -340,6 +387,10 @@ fn load_gallery_asset_views(connection: &Connection) -> DomainResult<Vec<Gallery
             .and_then(|version| version.generation_event_id.as_ref())
             .and_then(|event_id| events.by_id.get(&event_id.0))
             .or_else(|| events.latest_by_asset.get(&id.0));
+        let task_origin = current_version
+            .and_then(|version| task_origins.by_version.get(&version.id.0))
+            .or_else(|| task_origins.by_asset.get(&id.0))
+            .cloned();
 
         items.push(GalleryAssetView {
             id: id.clone(),
@@ -360,12 +411,108 @@ fn load_gallery_asset_views(connection: &Connection) -> DomainResult<Vec<Gallery
             height: current_version.and_then(|version| version.height),
             version_label: current_version.and_then(|version| version.version_label.clone()),
             version_count: version_counts.get(&id.0).copied().unwrap_or_default(),
+            task_origin,
+            albums: albums.get(&id.0).cloned().unwrap_or_default(),
+            album_context: None,
             created_at,
             updated_at,
         });
     }
 
     Ok(items)
+}
+
+#[derive(Debug, Default)]
+struct TaskOrigins {
+    by_asset: HashMap<String, TaskOriginView>,
+    by_version: HashMap<String, TaskOriginView>,
+}
+
+fn load_task_origins(connection: &Connection) -> DomainResult<TaskOrigins> {
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT task_outputs.output_type, task_outputs.target_id, tasks.id,
+                   tasks.task_type, tasks.status, tasks.provider, tasks.operation_type
+            FROM task_outputs
+            INNER JOIN tasks ON tasks.id = task_outputs.task_id
+            WHERE task_outputs.output_type IN ('asset', 'asset_version')
+            ORDER BY tasks.updated_at DESC, tasks.id DESC
+            ",
+        )
+        .map_err(database_error)?;
+    let rows = statement
+        .query_map([], |row| {
+            let output_type: String = row.get(0)?;
+            let task_type_value: String = row.get(3)?;
+            let status_value: String = row.get(4)?;
+            let operation_value: Option<String> = row.get(6)?;
+            let task_type = TaskType::from_str(&task_type_value).ok_or_else(|| {
+                rusqlite::Error::InvalidColumnType(
+                    3,
+                    "task_type".to_string(),
+                    rusqlite::types::Type::Text,
+                )
+            })?;
+            let status = TaskStatus::from_str(&status_value).ok_or_else(|| {
+                rusqlite::Error::InvalidColumnType(
+                    4,
+                    "status".to_string(),
+                    rusqlite::types::Type::Text,
+                )
+            })?;
+            let operation = operation_value
+                .as_deref()
+                .map(super::operation_from_str)
+                .transpose()
+                .map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        6,
+                        rusqlite::types::Type::Text,
+                        Box::new(error),
+                    )
+                })?;
+            Ok((
+                output_type,
+                row.get::<_, String>(1)?,
+                TaskOriginView {
+                    task_id: TaskId(row.get(2)?),
+                    task_type,
+                    status,
+                    provider: row.get(5)?,
+                    operation,
+                },
+            ))
+        })
+        .map_err(database_error)?;
+
+    let mut origins = TaskOrigins::default();
+    for row in rows {
+        let (output_type, target_id, origin) = row.map_err(database_error)?;
+        match output_type.as_str() {
+            "asset" => {
+                origins.by_asset.entry(target_id).or_insert(origin);
+            }
+            "asset_version" => {
+                origins.by_version.entry(target_id).or_insert(origin);
+            }
+            _ => {}
+        }
+    }
+    Ok(origins)
+}
+
+fn load_task_origin_for_version_or_asset(
+    connection: &Connection,
+    version_id: &AssetVersionId,
+    asset_id: &AssetId,
+) -> DomainResult<Option<TaskOriginView>> {
+    let origins = load_task_origins(connection)?;
+    Ok(origins
+        .by_version
+        .get(&version_id.0)
+        .or_else(|| origins.by_asset.get(&asset_id.0))
+        .cloned())
 }
 
 #[derive(Debug, Clone)]
@@ -731,6 +878,69 @@ fn load_asset_albums(
     rows.collect::<Result<Vec<_>, _>>().map_err(database_error)
 }
 
+fn load_all_asset_album_memberships(
+    connection: &Connection,
+) -> DomainResult<HashMap<String, Vec<AlbumMembershipView>>> {
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT ai.asset_id, a.id, a.name, a.kind
+            FROM album_items ai
+            INNER JOIN albums a ON a.id = ai.album_id
+            ORDER BY ai.asset_id, a.name
+            ",
+        )
+        .map_err(database_error)?;
+    let rows = statement
+        .query_map([], |row| {
+            let kind: String = row.get(3)?;
+            Ok((
+                row.get::<_, String>(0)?,
+                AlbumMembershipView {
+                    id: AlbumId(row.get(1)?),
+                    name: row.get(2)?,
+                    kind: if kind == "smart" {
+                        AlbumKind::Smart
+                    } else {
+                        AlbumKind::Manual
+                    },
+                },
+            ))
+        })
+        .map_err(database_error)?;
+
+    let mut albums: HashMap<String, Vec<AlbumMembershipView>> = HashMap::new();
+    for row in rows {
+        let (asset_id, album) = row.map_err(database_error)?;
+        albums.entry(asset_id).or_default().push(album);
+    }
+    Ok(albums)
+}
+
+fn load_album_membership_context(
+    connection: &Connection,
+    album_id: &AlbumId,
+) -> DomainResult<AlbumMembershipView> {
+    connection
+        .query_row(
+            "SELECT id, name, kind FROM albums WHERE id = ?1",
+            params![album_id.0],
+            |row| {
+                let kind: String = row.get(2)?;
+                Ok(AlbumMembershipView {
+                    id: AlbumId(row.get(0)?),
+                    name: row.get(1)?,
+                    kind: if kind == "smart" {
+                        AlbumKind::Smart
+                    } else {
+                        AlbumKind::Manual
+                    },
+                })
+            },
+        )
+        .map_err(database_error)
+}
+
 fn pending_review_count(connection: &Connection, asset_id: &AssetId) -> DomainResult<u32> {
     let count: i64 = connection
         .query_row(
@@ -744,6 +954,43 @@ fn pending_review_count(connection: &Connection, asset_id: &AssetId) -> DomainRe
         )
         .map_err(database_error)?;
     Ok(count.max(0) as u32)
+}
+
+fn load_pending_suggestion_summaries(
+    connection: &Connection,
+    asset_id: &AssetId,
+) -> DomainResult<Vec<PendingSuggestionSummaryView>> {
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT id, asset_id, suggested_title, suggested_tags_json, suggested_category, created_at
+            FROM metadata_suggestions
+            WHERE asset_id = ?1 AND status = 'pending_review'
+            ORDER BY created_at DESC, id
+            ",
+        )
+        .map_err(database_error)?;
+    let rows = statement
+        .query_map(params![asset_id.0], |row| {
+            let tags_json: String = row.get(3)?;
+            let tags: Vec<String> = serde_json::from_str(&tags_json).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    3,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })?;
+            Ok(PendingSuggestionSummaryView {
+                id: crate::MetadataSuggestionId(row.get(0)?),
+                asset_id: AssetId(row.get(1)?),
+                title: row.get(2)?,
+                tag_count: tags.len() as u32,
+                category: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })
+        .map_err(database_error)?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(database_error)
 }
 
 fn load_album_asset_ids(

@@ -1,0 +1,1129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Image Prompt Lab Redesign Pages Demo</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --app: #ece7dd;
+        --surface: #fffdf7;
+        --raised: #f8f4ec;
+        --ink: #171411;
+        --muted: #665f55;
+        --subtle: #918779;
+        --line: #ddd2c1;
+        --line-strong: #c7b69d;
+        --chrome: #171411;
+        --chrome-2: #2a2520;
+        --blue: #284fd6;
+        --blue-soft: #e4eaff;
+        --teal: #087e8b;
+        --teal-soft: #dff6f8;
+        --amber: #b45f06;
+        --amber-soft: #fff0cf;
+        --red: #c23b22;
+        --red-soft: #ffe2db;
+        --green: #4b8f29;
+        --green-soft: #e7f7d8;
+        --lime: #d8f75f;
+        --shadow: 0 18px 40px rgba(40, 31, 21, 0.12);
+        --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        background: var(--app);
+        color: var(--ink);
+        margin: 0;
+        overflow: hidden;
+      }
+
+      button,
+      input,
+      select,
+      textarea {
+        color: inherit;
+        font: inherit;
+      }
+
+      button,
+      .button {
+        align-items: center;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        cursor: pointer;
+        display: inline-flex;
+        gap: 7px;
+        justify-content: center;
+        min-height: 34px;
+        padding: 7px 11px;
+        text-decoration: none;
+      }
+
+      input,
+      select,
+      textarea {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        min-height: 34px;
+        padding: 7px 10px;
+      }
+
+      textarea {
+        resize: vertical;
+      }
+
+      button:hover,
+      .button:hover {
+        border-color: var(--line-strong);
+      }
+
+      .primary {
+        background: var(--red);
+        border-color: var(--red);
+        color: #ffffff;
+        font-weight: 750;
+      }
+
+      .secondary {
+        background: var(--blue);
+        border-color: var(--blue);
+        color: #ffffff;
+        font-weight: 750;
+      }
+
+      .ghost {
+        background: transparent;
+      }
+
+      .icon {
+        fill: none;
+        height: 16px;
+        stroke: currentColor;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-width: 1.9;
+        width: 16px;
+      }
+
+      .shell {
+        display: grid;
+        grid-template-columns: 72px minmax(260px, 292px) minmax(0, 1fr) minmax(340px, 392px);
+        height: 100vh;
+        min-width: 0;
+      }
+
+      .rail {
+        align-items: center;
+        background: var(--chrome);
+        color: #f1eadf;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 14px 10px;
+      }
+
+      .mark {
+        align-items: center;
+        background: #ffffff;
+        border-radius: 8px;
+        color: var(--chrome);
+        display: flex;
+        font-weight: 850;
+        height: 38px;
+        justify-content: center;
+        margin-bottom: 10px;
+        width: 38px;
+      }
+
+      .rail button {
+        background: transparent;
+        border-color: transparent;
+        color: inherit;
+        height: 42px;
+        padding: 0;
+        width: 42px;
+      }
+
+      .rail button.active {
+        background: #ffffff;
+        color: var(--chrome);
+      }
+
+      .rail-spacer {
+        flex: 1;
+      }
+
+      .library,
+      .inspector {
+        background: var(--surface);
+        min-width: 0;
+      }
+
+      .library {
+        border-right: 1px solid var(--line);
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr) auto;
+        padding: 16px;
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-width: 0;
+        overflow: hidden;
+        padding: 18px 20px 16px;
+      }
+
+      .inspector {
+        border-left: 1px solid var(--line);
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr);
+        overflow: hidden;
+        padding: 16px;
+      }
+
+      h1,
+      h2,
+      h3,
+      h4,
+      p {
+        margin: 0;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .tiny {
+        color: var(--subtle);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      .topbar,
+      .panel-title,
+      .row,
+      .inspector-top {
+        align-items: center;
+        display: flex;
+        gap: 10px;
+        justify-content: space-between;
+        min-width: 0;
+      }
+
+      .topbar {
+        margin-bottom: 14px;
+      }
+
+      .title-block h2 {
+        font-size: 24px;
+        line-height: 1.15;
+      }
+
+      .search {
+        align-items: center;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        display: grid;
+        gap: 8px;
+        grid-template-columns: auto minmax(0, 1fr);
+        min-width: min(420px, 40vw);
+        padding: 0 10px;
+      }
+
+      .search input {
+        background: transparent;
+        border: 0;
+        height: 36px;
+        outline: none;
+      }
+
+      .library-switcher,
+      .panel,
+      .metric,
+      .filterbar,
+      .asset,
+      .collection,
+      .queue-strip,
+      .review-card,
+      .task-card,
+      .log-card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      .library-switcher {
+        display: grid;
+        gap: 4px;
+        margin-top: 14px;
+        padding: 10px;
+      }
+
+      .metric-grid {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        margin: 16px 0;
+      }
+
+      .metric {
+        background: var(--raised);
+        padding: 10px;
+      }
+
+      .metric strong {
+        display: block;
+        font-size: 18px;
+        line-height: 1.1;
+      }
+
+      .section-label {
+        color: var(--subtle);
+        font-size: 11px;
+        font-weight: 850;
+        letter-spacing: 0.08em;
+        margin: 16px 0 8px;
+        text-transform: uppercase;
+      }
+
+      .collection-list,
+      .job-list,
+      .page-stack,
+      .lineage,
+      .review-list,
+      .task-list,
+      .settings-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .collection {
+        align-items: center;
+        border-color: transparent;
+        display: grid;
+        gap: 8px;
+        grid-template-columns: 28px minmax(0, 1fr) auto;
+        padding: 8px;
+        text-align: left;
+        width: 100%;
+      }
+
+      .collection.active {
+        background: var(--teal-soft);
+        border-color: #9ecdd2;
+      }
+
+      .collection span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .dot {
+        border-radius: 999px;
+        height: 9px;
+        width: 9px;
+      }
+
+      .dot.blue {
+        background: var(--blue);
+      }
+
+      .dot.teal {
+        background: var(--teal);
+      }
+
+      .dot.amber {
+        background: var(--amber);
+      }
+
+      .dot.red {
+        background: var(--red);
+      }
+
+      .library-footer {
+        border-top: 1px solid var(--line);
+        display: grid;
+        gap: 8px;
+        padding-top: 12px;
+      }
+
+      .page {
+        display: none;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .page.active {
+        display: grid;
+      }
+
+      .page.gallery {
+        grid-template-rows: auto minmax(0, 1fr) auto;
+      }
+
+      .page.albums,
+      .page.review,
+      .page.queue,
+      .page.settings {
+        grid-template-columns: minmax(250px, 0.38fr) minmax(0, 1fr);
+        gap: 14px;
+      }
+
+      .filterbar {
+        align-items: center;
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 14px;
+        padding: 8px;
+      }
+
+      .filters,
+      .tag-row,
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .chip {
+        background: var(--raised);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        color: var(--muted);
+        font-size: 12px;
+        padding: 5px 8px;
+      }
+
+      .chip.active {
+        background: var(--blue-soft);
+        border-color: #aab9f4;
+        color: #1d3fae;
+        font-weight: 750;
+      }
+
+      .board {
+        display: grid;
+        gap: 14px;
+        grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+        min-height: 0;
+        overflow: auto;
+        padding: 1px 2px 40px;
+      }
+
+      .asset {
+        display: grid;
+        gap: 8px;
+        min-width: 0;
+        padding: 8px;
+      }
+
+      .asset.selected {
+        border-color: var(--red);
+        box-shadow: 0 0 0 1px var(--red), var(--shadow);
+      }
+
+      .preview,
+      .album-cover,
+      .lineage-thumb {
+        background: var(--art);
+        overflow: hidden;
+        position: relative;
+      }
+
+      .preview {
+        aspect-ratio: 1 / 1;
+        border-radius: 6px;
+      }
+
+      .preview.wide {
+        aspect-ratio: 4 / 3;
+      }
+
+      .preview::after,
+      .album-cover::after {
+        background:
+          linear-gradient(180deg, transparent 48%, rgba(10, 14, 18, 0.54)),
+          radial-gradient(circle at 22% 20%, rgba(255, 255, 255, 0.5), transparent 16%);
+        content: "";
+        inset: 0;
+        position: absolute;
+      }
+
+      .asset-meta {
+        align-items: start;
+        display: grid;
+        gap: 6px;
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
+
+      .asset-title {
+        font-size: 14px;
+        font-weight: 750;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .pill {
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 750;
+        padding: 3px 8px;
+      }
+
+      .pill.review,
+      .pill.waiting {
+        background: var(--amber-soft);
+        color: var(--amber);
+      }
+
+      .pill.ready,
+      .pill.done {
+        background: var(--green-soft);
+        color: var(--green);
+      }
+
+      .pill.running {
+        background: var(--teal-soft);
+        color: var(--teal);
+      }
+
+      .pill.failed {
+        background: var(--red-soft);
+        color: var(--red);
+      }
+
+      .queue-strip {
+        align-items: center;
+        background: var(--chrome);
+        color: #f1eadf;
+        display: grid;
+        gap: 10px;
+        grid-template-columns: auto minmax(0, 1fr) auto auto;
+        min-height: 58px;
+        padding: 10px 12px;
+      }
+
+      .progress {
+        background: rgba(255, 255, 255, 0.13);
+        border-radius: 999px;
+        height: 6px;
+        overflow: hidden;
+      }
+
+      .progress span {
+        background: var(--lime);
+        display: block;
+        height: 100%;
+      }
+
+      .panel,
+      .review-card,
+      .task-card,
+      .log-card {
+        padding: 12px;
+      }
+
+      .panel.dark {
+        background: var(--chrome);
+        color: #f1eadf;
+      }
+
+      .scroll {
+        min-height: 0;
+        overflow: auto;
+        padding-bottom: 28px;
+      }
+
+      .album-card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        display: grid;
+        gap: 10px;
+        grid-template-columns: 92px minmax(0, 1fr) auto;
+        padding: 8px;
+      }
+
+      .album-card.selected {
+        border-color: var(--blue);
+        box-shadow: 0 0 0 1px var(--blue);
+      }
+
+      .album-cover {
+        aspect-ratio: 1 / 1;
+        border-radius: 6px;
+      }
+
+      .rule-grid,
+      .settings-grid,
+      .compose-grid,
+      .kv {
+        display: grid;
+        gap: 10px;
+      }
+
+      .rule-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .compose-grid {
+        grid-template-columns: 1.2fr 0.8fr;
+      }
+
+      .review-list .review-card {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: auto minmax(0, 1fr);
+      }
+
+      .review-card.selected {
+        border-color: var(--red);
+        box-shadow: 0 0 0 1px var(--red);
+      }
+
+      .confidence {
+        background: conic-gradient(var(--green) 0 82%, var(--line) 82% 100%);
+        border-radius: 999px;
+        height: 42px;
+        position: relative;
+        width: 42px;
+      }
+
+      .confidence::after {
+        align-items: center;
+        background: var(--surface);
+        border-radius: 999px;
+        content: "82";
+        display: flex;
+        font-size: 12px;
+        font-weight: 850;
+        inset: 5px;
+        justify-content: center;
+        position: absolute;
+      }
+
+      .field-review {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: 92px minmax(0, 1fr) auto;
+      }
+
+      .code,
+      pre {
+        background: var(--chrome);
+        border-radius: 8px;
+        color: #f1eadf;
+        font-family: var(--mono);
+        font-size: 11px;
+        line-height: 1.5;
+        margin: 0;
+        overflow: auto;
+        padding: 10px;
+        white-space: pre-wrap;
+      }
+
+      .task-card {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
+
+      .task-card.selected {
+        border-color: var(--teal);
+        box-shadow: 0 0 0 1px var(--teal);
+      }
+
+      .task-detail-grid {
+        display: grid;
+        gap: 14px;
+        grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+      }
+
+      .kv div {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: 110px minmax(0, 1fr);
+      }
+
+      .kv span:first-child {
+        color: var(--subtle);
+        font-size: 12px;
+      }
+
+      .kv span:last-child {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .settings-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .log-card {
+        display: grid;
+        gap: 4px;
+      }
+
+      .hero-preview {
+        background:
+          linear-gradient(180deg, transparent 40%, rgba(8, 12, 15, 0.62)),
+          radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.55), transparent 16%),
+          linear-gradient(135deg, #211915, #087e8b 46%, #f05a28);
+        border-radius: 8px;
+        height: 246px;
+        margin: 14px 0;
+        position: relative;
+      }
+
+      .hero-preview span {
+        bottom: 14px;
+        color: #ffffff;
+        font-weight: 850;
+        left: 14px;
+        position: absolute;
+      }
+
+      .inspector-scroll {
+        display: grid;
+        gap: 10px;
+        min-height: 0;
+        overflow: auto;
+        padding-bottom: 20px;
+      }
+
+      .lineage-thumb {
+        border-radius: 6px;
+        height: 36px;
+        width: 36px;
+      }
+
+      .lineage-item {
+        align-items: center;
+        display: grid;
+        gap: 8px;
+        grid-template-columns: 36px minmax(0, 1fr) auto;
+      }
+
+      @media (max-width: 1180px) {
+        .shell {
+          grid-template-columns: 64px minmax(0, 1fr) 46px;
+        }
+
+        .library {
+          display: none;
+        }
+
+        .page.albums,
+        .page.review,
+        .page.queue,
+        .page.settings,
+        .task-detail-grid,
+        .compose-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .inspector {
+          padding: 10px 6px;
+        }
+
+        .inspector > *:not(.inspector-top) {
+          display: none;
+        }
+
+        .inspector-top {
+          justify-content: center;
+          writing-mode: vertical-rl;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <aside class="rail" aria-label="Primary navigation">
+        <div class="mark">IP</div>
+        <button class="active" data-view="gallery" title="Gallery" aria-label="Gallery">
+          <svg class="icon" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1" /><rect x="13" y="4" width="7" height="7" rx="1" /><rect x="4" y="13" width="7" height="7" rx="1" /><rect x="13" y="13" width="7" height="7" rx="1" /></svg>
+        </button>
+        <button data-view="albums" title="Albums" aria-label="Albums">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M4 6h6l2 2h8v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" /></svg>
+        </button>
+        <button data-view="review" title="Review" aria-label="Review">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></svg>
+        </button>
+        <button data-view="queue" title="Queue" aria-label="Queue">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M6 8h12" /><path d="M6 12h12" /><path d="M6 16h8" /></svg>
+        </button>
+        <div class="rail-spacer"></div>
+        <button data-view="settings" title="Settings" aria-label="Settings">
+          <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a8 8 0 0 0 .1-2l2-1.5-2-3.4-2.4 1a8 8 0 0 0-1.7-1L15 5.5h-4l-.4 2.6a8 8 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.5a8 8 0 0 0 .1 2l-2 1.5 2 3.4 2.4-1a8 8 0 0 0 1.7 1l.4 2.6h4l.4-2.6a8 8 0 0 0 1.7-1l2.4 1 2-3.4z" /></svg>
+        </button>
+      </aside>
+
+      <aside class="library">
+        <div>
+          <h1>Image Prompt Lab</h1>
+          <div class="tiny">Local-first asset library</div>
+          <div class="library-switcher">
+            <strong>MyImageLab.library</strong>
+            <span class="tiny">/Users/demo/ImagePromptLab</span>
+          </div>
+        </div>
+
+        <div class="metric-grid">
+          <div class="metric"><strong>1,248</strong><span class="tiny">Assets</span></div>
+          <div class="metric"><strong>92</strong><span class="tiny">Pending</span></div>
+          <div class="metric"><strong>18</strong><span class="tiny">Albums</span></div>
+          <div class="metric"><strong>146 GB</strong><span class="tiny">Storage</span></div>
+        </div>
+
+        <div>
+          <div class="section-label">Collections</div>
+          <div class="collection-list">
+            <button class="collection active"><span class="dot teal"></span><span>All generated assets</span><strong>1,248</strong></button>
+            <button class="collection"><span class="dot blue"></span><span>Prompt experiments</span><strong>316</strong></button>
+            <button class="collection"><span class="dot amber"></span><span>Needs metadata review</span><strong>92</strong></button>
+            <button class="collection"><span class="dot red"></span><span>Failed generations</span><strong>7</strong></button>
+          </div>
+
+          <div class="section-label">Active jobs</div>
+          <div class="job-list">
+            <div class="panel">
+              <div class="panel-title"><h3>Botanical variations</h3><span class="tiny">Running</span></div>
+              <div class="progress"><span style="width: 62%"></span></div>
+            </div>
+            <div class="panel">
+              <div class="panel-title"><h3>Metadata suggestions</h3><span class="tiny">Queued</span></div>
+              <div class="progress"><span style="width: 28%"></span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="library-footer">
+          <button class="ghost">Run integrity check</button>
+          <span class="tiny">Healthy, 0 integrity issues</span>
+        </div>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div class="title-block">
+            <div class="tiny" id="page-eyebrow">Gallery / Current Library</div>
+            <h2 id="page-title">Generated Image Assets</h2>
+          </div>
+          <label class="search">
+            <svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m16 16 4 4" /></svg>
+            <input id="page-search" value="botanical neon" aria-label="Search" />
+          </label>
+          <button class="primary">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
+            Generate
+          </button>
+        </header>
+
+        <div class="page-stack">
+          <section class="page gallery active" data-page="gallery">
+            <div class="filterbar">
+              <div class="filters">
+                <span class="chip active">Provider: Codex CLI</span>
+                <span class="chip">Rating: 4+</span>
+                <span class="chip active">Review pending</span>
+                <span class="chip">Square</span>
+                <span class="chip">Has lineage</span>
+              </div>
+              <strong class="tiny">64 matches</strong>
+            </div>
+            <section class="board" aria-label="Asset board">
+              <article class="asset selected">
+                <div class="preview" style="--art: linear-gradient(135deg, #211915, #087e8b 46%, #f05a28)"></div>
+                <div class="asset-meta"><span class="asset-title">Neon Botanical Study</span><span class="pill review">Review</span></div>
+                <div class="tag-row"><span class="chip active">botanical</span><span class="chip">v3</span><span class="chip">Codex</span></div>
+              </article>
+              <article class="asset">
+                <div class="preview wide" style="--art: linear-gradient(135deg, #475569, #f97316)"></div>
+                <div class="asset-meta"><span class="asset-title">Alpine Reflections</span><span class="pill review">Review</span></div>
+                <div class="tag-row"><span class="chip">landscape</span><span class="chip">v2</span><span class="chip">DALL-E</span></div>
+              </article>
+              <article class="asset">
+                <div class="preview" style="--art: linear-gradient(135deg, #f8fafc, #47685e)"></div>
+                <div class="asset-meta"><span class="asset-title">Solarpunk Atrium</span><span class="pill ready">Ready</span></div>
+                <div class="tag-row"><span class="chip">interior</span><span class="chip">v4</span><span class="chip">SDXL</span></div>
+              </article>
+              <article class="asset">
+                <div class="preview" style="--art: linear-gradient(135deg, #ca522c, #40163a)"></div>
+                <div class="asset-meta"><span class="asset-title">Canyon Flow</span><span class="pill ready">Ready</span></div>
+                <div class="tag-row"><span class="chip">abstract</span><span class="chip">v1</span><span class="chip">Codex</span></div>
+              </article>
+              <article class="asset">
+                <div class="preview" style="--art: linear-gradient(135deg, #111827, #c3a978)"></div>
+                <div class="asset-meta"><span class="asset-title">Orbital Outpost</span><span class="pill review">Review</span></div>
+                <div class="tag-row"><span class="chip">sci-fi</span><span class="chip">v2</span><span class="chip">SDXL</span></div>
+              </article>
+              <article class="asset">
+                <div class="preview" style="--art: linear-gradient(135deg, #04283f, #d98646)"></div>
+                <div class="asset-meta"><span class="asset-title">Rainy Tokyo Night</span><span class="pill ready">Ready</span></div>
+                <div class="tag-row"><span class="chip">city</span><span class="chip">v3</span><span class="chip">DALL-E</span></div>
+              </article>
+            </section>
+            <footer class="queue-strip">
+              <strong>Generation queue</strong>
+              <div class="progress"><span style="width: 62%"></span></div>
+              <span class="tiny">2 running, 5 queued</span>
+              <button>Open queue</button>
+            </footer>
+          </section>
+
+          <section class="page albums" data-page="albums">
+            <aside class="scroll">
+              <div class="panel-title"><h3>Albums</h3><button class="secondary">New album</button></div>
+              <div class="section-label">Manual</div>
+              <div class="collection-list">
+                <button class="collection active"><span class="dot teal"></span><span>Nature Studies</span><strong>18</strong></button>
+                <button class="collection"><span class="dot blue"></span><span>Product Shots</span><strong>6</strong></button>
+                <button class="collection"><span class="dot amber"></span><span>Neon and Glow</span><strong>11</strong></button>
+              </div>
+              <div class="section-label">Smart Rules</div>
+              <div class="collection-list">
+                <button class="collection"><span class="dot red"></span><span>Review pending, 4+ rating</span><strong>42</strong></button>
+                <button class="collection"><span class="dot blue"></span><span>Provider: Codex CLI</span><strong>316</strong></button>
+              </div>
+            </aside>
+            <section class="scroll">
+              <div class="panel dark">
+                <div class="panel-title"><h3>Nature Studies</h3><span class="pill running">Manual album</span></div>
+                <p class="muted">Curated botanical and landscape references for prompt iteration.</p>
+              </div>
+              <div class="rule-grid" style="margin: 14px 0">
+                <div class="metric"><strong>18</strong><span class="tiny">Assets</span></div>
+                <div class="metric"><strong>4.7</strong><span class="tiny">Average rating</span></div>
+                <div class="metric"><strong>3</strong><span class="tiny">Pending review</span></div>
+              </div>
+              <div class="board">
+                <article class="album-card selected">
+                  <div class="album-cover" style="--art: linear-gradient(135deg, #211915, #087e8b 46%, #f05a28)"></div>
+                  <div><strong>Neon Botanical Study</strong><p class="tiny">v3, Codex CLI, review pending</p><div class="tag-row"><span class="chip active">botanical</span><span class="chip">manual order 1</span></div></div>
+                  <button class="ghost">Remove</button>
+                </article>
+                <article class="album-card">
+                  <div class="album-cover" style="--art: linear-gradient(135deg, #f8fafc, #47685e)"></div>
+                  <div><strong>Solarpunk Atrium</strong><p class="tiny">v4, SDXL, ready</p><div class="tag-row"><span class="chip">interior</span><span class="chip">manual order 2</span></div></div>
+                  <button class="ghost">Remove</button>
+                </article>
+                <article class="album-card">
+                  <div class="album-cover" style="--art: linear-gradient(135deg, #475569, #f97316)"></div>
+                  <div><strong>Alpine Reflections</strong><p class="tiny">v2, DALL-E, review pending</p><div class="tag-row"><span class="chip">landscape</span><span class="chip">manual order 3</span></div></div>
+                  <button class="ghost">Remove</button>
+                </article>
+              </div>
+            </section>
+          </section>
+
+          <section class="page review" data-page="review">
+            <aside class="scroll review-list">
+              <div class="panel-title"><h3>Pending review</h3><span class="pill review">92</span></div>
+              <article class="review-card selected">
+                <input type="checkbox" checked aria-label="Select suggestion" />
+                <div><strong>Neon Botanical Study</strong><p class="tiny">Title, tags, schema prompt ready</p><div class="tag-row"><span class="chip active">82 confidence</span><span class="chip">botanical</span></div></div>
+              </article>
+              <article class="review-card">
+                <input type="checkbox" aria-label="Select suggestion" />
+                <div><strong>Alpine Reflections</strong><p class="tiny">Category conflict: landscape vs reference</p><div class="tag-row"><span class="chip">74 confidence</span><span class="chip">landscape</span></div></div>
+              </article>
+              <article class="review-card">
+                <input type="checkbox" aria-label="Select suggestion" />
+                <div><strong>Orbital Outpost</strong><p class="tiny">Needs description regeneration</p><div class="tag-row"><span class="chip">61 confidence</span><span class="chip">sci-fi</span></div></div>
+              </article>
+              <div class="actions"><button>Reject selected</button><button class="secondary">Accept selected</button></div>
+            </aside>
+            <section class="scroll">
+              <div class="panel dark">
+                <div class="panel-title"><h3>Review metadata</h3><div class="confidence"></div></div>
+                <p class="muted">Suggested fields are staged. Canonical metadata changes only after explicit acceptance.</p>
+              </div>
+              <div class="page-stack" style="margin-top: 14px">
+                <div class="panel field-review"><span class="tiny">Title</span><strong>Neon Botanical Study</strong><button>Regenerate</button></div>
+                <div class="panel field-review"><span class="tiny">Category</span><strong>study</strong><button>Apply</button></div>
+                <div class="panel">
+                  <div class="panel-title"><h3>Description</h3><button>Regenerate</button></div>
+                  <p class="muted">Elegant high-contrast botanical illustration with luminous line work and controlled negative space.</p>
+                </div>
+                <div class="panel">
+                  <div class="panel-title"><h3>Tags</h3><button>Add tag</button></div>
+                  <div class="tag-row"><span class="chip active">botanical</span><span class="chip active">neon</span><span class="chip">study</span><span class="chip">digital art</span></div>
+                </div>
+                <div class="panel">
+                  <div class="panel-title"><h3>Schema prompt</h3><button>Diff</button></div>
+                  <pre>{
+  "style": "high-contrast digital illustration",
+  "lighting": "neon rim light",
+  "render_flags": ["sharp_foreground", "micro_texture"]
+}</pre>
+                </div>
+                <div class="actions"><button>Restore original</button><button>Regenerate suggestion</button><button class="primary">Accept changes</button></div>
+              </div>
+            </section>
+          </section>
+
+          <section class="page queue" data-page="queue">
+            <aside class="scroll">
+              <div class="panel-title"><h3>Compose batch</h3><button class="secondary">Add task</button></div>
+              <div class="page-stack">
+                <div class="panel">
+                  <div class="panel-title"><h3>Task 1</h3><span class="pill running">image-to-image</span></div>
+                  <textarea rows="5">botanical study of exotic plants and flowers, neon line art glow, dark background</textarea>
+                  <div class="compose-grid" style="margin-top: 10px">
+                    <select><option>codex-cli</option><option>fake</option></select>
+                    <input value='{"aspect_ratio":"1:1"}' />
+                  </div>
+                </div>
+                <div class="panel">
+                  <div class="panel-title"><h3>Import JSON</h3><button>Validate</button></div>
+                  <pre>[{"prompt":"multi-line prompt","provider":"fake"}]</pre>
+                </div>
+                <button class="primary">Enqueue all</button>
+              </div>
+            </aside>
+            <section class="scroll">
+              <div class="task-detail-grid">
+                <div>
+                  <div class="panel-title"><h3>Tasks Queue</h3><button>Refresh</button></div>
+                  <div class="task-list">
+                    <article class="task-card selected"><div><strong>Codex CLI generation</strong><p class="tiny">botanical study, attempt 1/3</p></div><span class="pill running">Running</span></article>
+                    <article class="task-card"><div><strong>Metadata suggestion</strong><p class="tiny">asset-botanical, waiting for worker</p></div><span class="pill waiting">Queued</span></article>
+                    <article class="task-card"><div><strong>DALL-E import variation</strong><p class="tiny">retryable network failure</p></div><span class="pill failed">Failed</span></article>
+                    <article class="task-card"><div><strong>Fake provider smoke test</strong><p class="tiny">completed, output version created</p></div><span class="pill done">Done</span></article>
+                  </div>
+                </div>
+                <div class="page-stack">
+                  <div class="panel dark"><div class="panel-title"><h3>Task detail</h3><span class="pill running">Running</span></div><p class="muted">task_01HZ9F, codex-cli, concurrency group imagegen</p></div>
+                  <div class="panel"><div class="panel-title"><h3>Input snapshot</h3></div><pre>{
+  "provider": "codex-cli",
+  "operation": "image_to_image",
+  "priority": 10
+}</pre></div>
+                  <div class="panel"><div class="panel-title"><h3>Timeline</h3></div><div class="kv"><div><span>13:18:40</span><span>Task started</span></div><div><span>13:18:42</span><span>Adapter spawned codex exec</span></div><div><span>13:19:10</span><span>Waiting for image output</span></div></div></div>
+                  <div class="actions"><button>Cancel</button><button>Duplicate</button><button class="secondary">Retry</button></div>
+                </div>
+              </div>
+            </section>
+          </section>
+
+          <section class="page settings" data-page="settings">
+            <aside class="scroll">
+              <div class="collection-list">
+                <button class="collection active"><span class="dot blue"></span><span>Libraries</span><strong>2</strong></button>
+                <button class="collection"><span class="dot amber"></span><span>Logs</span><strong>18</strong></button>
+                <button class="collection"><span class="dot teal"></span><span>Providers</span><strong>2</strong></button>
+              </div>
+            </aside>
+            <section class="scroll">
+              <div class="settings-grid">
+                <div class="panel dark">
+                  <div class="panel-title"><h3>Current library</h3><span class="pill ready">Healthy</span></div>
+                  <div class="kv"><div><span>Name</span><span>MyImageLab.library</span></div><div><span>Path</span><span>/Users/demo/ImagePromptLab</span></div><div><span>Schema</span><span>1</span></div></div>
+                </div>
+                <div class="panel">
+                  <div class="panel-title"><h3>Create library</h3><button class="secondary">Create...</button></div>
+                  <div class="settings-list"><input value="New Image Lab" /><input value="NewImageLab.library" /></div>
+                </div>
+                <div class="panel">
+                  <div class="panel-title"><h3>Registered libraries</h3><button>Open existing</button></div>
+                  <div class="settings-list">
+                    <div class="log-card"><strong>MyImageLab.library</strong><span class="tiny">Current, export ready</span></div>
+                    <div class="log-card"><strong>Reference Sets</strong><span class="tiny">Mounted, 184 assets</span></div>
+                  </div>
+                </div>
+                <div class="panel">
+                  <div class="panel-title"><h3>Diagnostics</h3><button>Refresh logs</button></div>
+                  <div class="settings-list">
+                    <div class="log-card"><strong>daemon.log</strong><span class="tiny">14 KB, modified 13:20</span></div>
+                    <div class="log-card"><strong>codex-provider.log</strong><span class="tiny">42 KB, truncated preview</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="panel" style="margin-top: 14px">
+                <div class="panel-title"><h3>Log preview</h3><span class="pill waiting">Truncated</span></div>
+                <pre>13:18:42 adapter spawned codex exec
+13:19:10 waiting for image output
+13:19:28 imported generated image version</pre>
+              </div>
+            </section>
+          </section>
+        </div>
+      </section>
+
+      <aside class="inspector">
+        <header class="inspector-top">
+          <h2>Inspector</h2>
+          <button aria-label="Close inspector">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+          </button>
+        </header>
+        <div class="hero-preview"><span>Neon Botanical Study</span></div>
+        <div class="inspector-scroll">
+          <section class="panel">
+            <div class="panel-title"><h3>Review suggestion</h3><span class="pill review">Pending</span></div>
+            <p class="muted">Suggested title, category, tags, and schema prompt are staged for manual acceptance.</p>
+          </section>
+          <section class="panel">
+            <div class="panel-title"><h3>Prompt</h3><button class="ghost">Copy</button></div>
+            <p class="muted">Botanical study of exotic plants and flowers, neon line art glow, dark background, ultra detailed.</p>
+          </section>
+          <section class="panel">
+            <div class="panel-title"><h3>Provider and file</h3></div>
+            <div class="kv"><div><span>Provider</span><span>Codex CLI imagegen adapter</span></div><div><span>Model</span><span>default</span></div><div><span>Dimensions</span><span>1024 x 1024</span></div><div><span>Checksum</span><span>4f72bd81d8c5f1a7...</span></div></div>
+          </section>
+          <section class="panel">
+            <div class="panel-title"><h3>Version lineage</h3><button class="primary">Variation</button></div>
+            <div class="lineage">
+              <div class="lineage-item"><span class="lineage-thumb" style="--art: linear-gradient(135deg, #211915, #087e8b 46%, #f05a28)"></span><span>v3, current image-to-image</span><span class="tiny">now</span></div>
+              <div class="lineage-item"><span class="lineage-thumb" style="--art: linear-gradient(135deg, #33261c, #284fd6 56%, #f0c94a)"></span><span>v2, refined composition</span><span class="tiny">09:10</span></div>
+              <div class="lineage-item"><span class="lineage-thumb" style="--art: linear-gradient(135deg, #171411, #918779)"></span><span>v1, initial draft</span><span class="tiny">09:02</span></div>
+            </div>
+          </section>
+        </div>
+      </aside>
+    </main>
+
+    <script>
+      const labels = {
+        gallery: ["Gallery / Current Library", "Generated Image Assets", "botanical neon"],
+        albums: ["Albums / Curation", "Album Management", "nature studies"],
+        review: ["Review Inbox / Metadata", "Human Review Workbench", "pending botanical"],
+        queue: ["Tasks Queue / Generation", "Generation Operations", "codex-cli running"],
+        settings: ["Settings / Administration", "Library and Diagnostics", "daemon.log"],
+      };
+
+      document.querySelectorAll("[data-view]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const view = button.dataset.view;
+          document.querySelectorAll("[data-view]").forEach((item) => item.classList.toggle("active", item === button));
+          document.querySelectorAll("[data-page]").forEach((page) => page.classList.toggle("active", page.dataset.page === view));
+          document.getElementById("page-eyebrow").textContent = labels[view][0];
+          document.getElementById("page-title").textContent = labels[view][1];
+          document.getElementById("page-search").value = labels[view][2];
+        });
+      });
+    </script>
+  </body>
+</html>

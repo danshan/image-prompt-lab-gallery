@@ -6,7 +6,6 @@ import {
   acceptSuggestionState,
   addReviewFormTag,
   applySuggestionFieldToReviewForm,
-  applyGalleryQuery,
   beginDetailLoad,
   beginReviewFieldGeneration,
   buildBatchReviewPayloads,
@@ -16,7 +15,6 @@ import {
   clearSelectionForLibrarySwitch,
   completeDetailLoad,
   completeReviewFieldGeneration,
-  countActiveTasks,
   createReviewFormState,
   defaultSettingsSection,
   defaultGalleryQuery,
@@ -30,14 +28,12 @@ import {
   moveQueuedTaskOrder,
   openAlbumQuery,
   parseTaskDraftImport,
-  pendingReviewItems,
   removeSuggestionState,
   removeReviewFormTag,
   reorderByIds,
   resetGalleryQuery,
   reviewFormTags,
   selectedOrCurrentIds,
-  sortedNonEmptyProviders,
   toggleGalleryProvider,
   toggleGalleryTag,
   toggleSelection,
@@ -50,6 +46,28 @@ import {
   type ReviewStatusFilter,
   type SettingsSection,
 } from "./workbench-state";
+import { ActivityStrip, AppShell } from "./studio-shell";
+import { Icon } from "./studio-icons";
+import { Sidebar } from "./studio-navigation";
+import {
+  useGalleryDerivedState,
+  useReviewDerivedState,
+  useTaskActivitySummary,
+} from "./studio-data-hooks";
+import {
+  compareTaskOrder,
+  completedTaskKey,
+  formatOperation,
+  formatVersionName,
+  galleryQueryInput,
+  isRetryableTaskStatus,
+  isTerminalFailureStatus,
+  mergeTasks,
+  shortIdentifier,
+  statusLabel,
+  taskActionKey,
+  taskPrompt,
+} from "./studio-orchestration";
 import "./styles.css";
 
 declare global {
@@ -60,7 +78,6 @@ declare global {
 
 type View = "gallery" | "albums" | "review" | "queue" | "settings";
 type TaskPanel = "compose" | "queue" | "detail";
-type IconName = "chevronDown" | "close" | "database" | "grid" | "list" | "menu" | "panelRight" | "plus" | "search";
 
 const GALLERY_REFRESH_DEBOUNCE_MS = 250;
 const METADATA_POLL_INTERVAL_MS = 800;
@@ -84,6 +101,15 @@ type LibraryStatus = {
 type LibraryBackup = {
   library: Library;
   cloned: boolean;
+};
+
+type ProviderHealth = {
+  provider: string;
+  displayName: string;
+  availability: string;
+  credentialState: string;
+  supportedOperations: string[];
+  recoverableError: string | null;
 };
 
 type GalleryAsset = {
@@ -359,6 +385,33 @@ const mockLibraryStatus: LibraryStatus = {
   integrityStatus: "healthy",
   integrityIssueCount: 0,
 };
+
+const mockProviderHealth: ProviderHealth[] = [
+  {
+    provider: "codex-cli",
+    displayName: "Codex CLI",
+    availability: "not_checked",
+    credentialState: "external",
+    supportedOperations: ["text_to_image", "image_to_image"],
+    recoverableError: null,
+  },
+  {
+    provider: "fake",
+    displayName: "Fake",
+    availability: "available",
+    credentialState: "not_required",
+    supportedOperations: ["text_to_image"],
+    recoverableError: null,
+  },
+  {
+    provider: "grok",
+    displayName: "Grok",
+    availability: "not_configured",
+    credentialState: "missing",
+    supportedOperations: ["text_to_image"],
+    recoverableError: "native provider client is deferred",
+  },
+];
 
 const mockSchemaPrompt = `// VERSION: 0.1
 // AESTHETIC: botanical neon study
@@ -662,6 +715,7 @@ function App() {
   const [libraryStatus, setLibraryStatus] = useState<LibraryStatus | null>(
     runningInTauri ? null : mockLibraryStatus,
   );
+  const [providerHealth, setProviderHealth] = useState<ProviderHealth[]>(mockProviderHealth);
   const [gallery, setGallery] = useState<GalleryAsset[]>(runningInTauri ? [] : mockGallery);
   const [selectedGalleryAssetIds, setSelectedGalleryAssetIds] = useState<string[]>([]);
   const [query, setQuery] = useState<GalleryQueryState>(defaultGalleryQuery);
@@ -718,22 +772,21 @@ function App() {
   const completedTaskKeysRef = useRef<Set<string>>(new Set());
   const metadataPollTimeoutsRef = useRef<Set<number>>(new Set());
 
-  const displayedGallery = useMemo(
-    () => (runningInTauri ? gallery : applyGalleryQuery(mockGallery, query)),
-    [runningInTauri, gallery, query],
-  );
-  const selectedAsset = useMemo(
-    () => displayedGallery.find((asset) => asset.id === selectedAssetId) ?? displayedGallery[0] ?? null,
-    [displayedGallery, selectedAssetId],
-  );
-  const pendingSuggestions = useMemo(
-    () => pendingReviewItems(suggestions),
-    [suggestions],
-  );
-  const selectedSuggestion = useMemo(
-    () => pendingSuggestions.find((suggestion) => suggestion.id === selectedSuggestionId) ?? pendingSuggestions[0] ?? null,
-    [pendingSuggestions, selectedSuggestionId],
-  );
+  const {
+    displayedGallery,
+    selectedAsset,
+    availableTags,
+    availableCategories,
+    availableProviders,
+  } = useGalleryDerivedState({
+    runningInTauri,
+    gallery,
+    previewGallery: mockGallery,
+    query,
+    selectedAssetId,
+  });
+  const { pendingSuggestions, selectedSuggestion } = useReviewDerivedState(suggestions, selectedSuggestionId);
+  const { queueCount, runningTaskCount, failedTaskCount } = useTaskActivitySummary(tasks);
   const changeView = (view: View) => {
     setActiveView(view);
     setSidebarExpanded(false);
@@ -746,25 +799,6 @@ function App() {
     setSelectedTaskId(taskId);
     setActiveTaskPanel("detail");
   };
-  const availableTags = useMemo(
-    () => Array.from(new Set((runningInTauri ? gallery : mockGallery).flatMap((asset) => asset.tags))).sort(),
-    [runningInTauri, gallery],
-  );
-  const availableCategories = useMemo(
-    () =>
-      Array.from(
-        new Set((runningInTauri ? gallery : mockGallery).map((asset) => asset.category).filter((category): category is string => Boolean(category))),
-      ).sort(),
-    [runningInTauri, gallery],
-  );
-  const availableProviders = useMemo(
-    () => sortedNonEmptyProviders(runningInTauri ? gallery : mockGallery),
-    [runningInTauri, gallery],
-  );
-  const queueCount = useMemo(
-    () => countActiveTasks(tasks),
-    [tasks],
-  );
 
   useEffect(() => {
     if (runningInTauri) {
@@ -926,6 +960,10 @@ function App() {
     try {
       const nextStatus = await invokeCommand<LibraryStatus>("library_status", { rootPath });
       setLibraryStatus(nextStatus);
+      if (runningInTauri) {
+        const overview = await invokeCommand<{ providerHealth: ProviderHealth[] }>("diagnostics_overview", { rootPath });
+        setProviderHealth(overview.providerHealth);
+      }
     } catch (error) {
       setLibraryStatus(null);
       setRecoverableError(errorMessage(error));
@@ -2308,22 +2346,22 @@ function App() {
 
   const detail = detailState.detail;
 
-  return (
-    <main className={`workbench${sidebarExpanded ? " sidebar-expanded" : ""}${inspectorOpen ? " inspector-expanded" : ""}`}>
-      <Sidebar
-        library={library}
-        libraries={libraries}
-        libraryStatus={libraryStatus}
-        activeView={activeView}
-        reviewCount={pendingSuggestions.length}
-        queueCount={queueCount}
-        expanded={sidebarExpanded}
-        onExpandedChange={setSidebarExpanded}
-        onViewChange={changeView}
-        onLibraryChange={switchLibrary}
-      />
-
-      <section className="workspace">
+  const sidebarSlot = (
+    <Sidebar
+      library={library}
+      libraries={libraries}
+      libraryStatus={libraryStatus}
+      activeView={activeView}
+      reviewCount={pendingSuggestions.length}
+      queueCount={queueCount}
+      expanded={sidebarExpanded}
+      onExpandedChange={setSidebarExpanded}
+      onViewChange={changeView}
+      onLibraryChange={switchLibrary}
+    />
+  );
+  const workspaceSlot = (
+    <>
         <WorkspaceToolbar
           activeView={activeView}
           query={query}
@@ -2332,6 +2370,14 @@ function App() {
           composerOpen={composerOpen}
           onComposerOpenChange={setComposerOpen}
           onQueryChange={setQuery}
+        />
+
+        <StudioOverviewBand
+          assetCount={displayedGallery.length}
+          reviewCount={pendingSuggestions.length}
+          queueCount={queueCount}
+          integrityIssueCount={libraryStatus?.integrityIssueCount ?? 0}
+          activeView={activeView}
         />
 
         {composerOpen && (
@@ -2352,7 +2398,7 @@ function App() {
         )}
 
         {activeView === "gallery" && (
-          <GalleryView
+          <GalleryWorkspace
             assets={displayedGallery}
             selectedAssetId={selectedAsset?.id ?? ""}
             selectedAssetIds={selectedGalleryAssetIds}
@@ -2365,7 +2411,7 @@ function App() {
           />
         )}
         {activeView === "albums" && (
-          <AlbumsView
+          <AlbumsWorkspace
             albums={albums}
             availableTags={availableTags}
             availableCategories={availableCategories}
@@ -2394,7 +2440,7 @@ function App() {
           />
         )}
         {activeView === "review" && (
-          <ReviewInbox
+          <ReviewWorkspace
             suggestions={pendingSuggestions}
             selectedSuggestion={selectedSuggestion}
             selectedSuggestionIds={selectedSuggestionIds}
@@ -2451,6 +2497,9 @@ function App() {
             library={library}
             libraries={libraries}
             activeSection={settingsSection}
+            providerHealth={providerHealth}
+            daemonOnline={daemonOnline}
+            libraryStatus={libraryStatus}
             onSectionChange={setSettingsSection}
             libraryFolderName={libraryFolderNameInput}
             libraryName={libraryNameInput}
@@ -2475,9 +2524,10 @@ function App() {
             onSelectLog={(path) => void readAppLog(path)}
           />
         )}
-      </section>
-
-      <div className="inspector-shell">
+      </>
+  );
+  const inspectorSlot = (
+      <>
         <button className="inspector-toggle" onClick={() => setInspectorOpen(!inspectorOpen)}>
           <Icon name="panelRight" />
           <span>{inspectorOpen ? "Close detail" : "Open detail"}</span>
@@ -2504,130 +2554,76 @@ function App() {
             void startGeneration(versionId);
           }}
         />
-      </div>
+      </>
+  );
+  const activityStripSlot = (
+    <ActivityStrip>
+      <button className="activity-item" onClick={() => changeView("queue")}>
+        <Icon name="plus" />
+        <span>
+          <strong>{runningTaskCount}</strong>
+          <small>Running</small>
+        </span>
+      </button>
+      <button className="activity-item" onClick={() => changeView("review")}>
+        <Icon name="panelRight" />
+        <span>
+          <strong>{pendingSuggestions.length}</strong>
+          <small>Review</small>
+        </span>
+      </button>
+      <button className={failedTaskCount > 0 ? "activity-item danger" : "activity-item"} onClick={() => changeView("queue")}>
+        <Icon name="list" />
+        <span>
+          <strong>{failedTaskCount}</strong>
+          <small>Failed</small>
+        </span>
+      </button>
+    </ActivityStrip>
+  );
+
+  return (
+    <AppShell
+      sidebar={sidebarSlot}
+      workspace={workspaceSlot}
+      inspector={inspectorSlot}
+      sidebarExpanded={sidebarExpanded}
+      inspectorExpanded={inspectorOpen}
+      activityStrip={activityStripSlot}
+    >
       {lightboxImage && <ImageLightbox image={lightboxImage} onClose={() => setLightboxImage(null)} />}
-    </main>
+    </AppShell>
   );
 }
 
-function Sidebar({
-  library,
-  libraries,
-  libraryStatus,
-  activeView,
+function StudioOverviewBand({
+  assetCount,
   reviewCount,
   queueCount,
-  expanded,
-  onExpandedChange,
-  onViewChange,
-  onLibraryChange,
+  integrityIssueCount,
+  activeView,
 }: {
-  library: Library | null;
-  libraries: Library[];
-  libraryStatus: LibraryStatus | null;
-  activeView: View;
+  assetCount: number;
   reviewCount: number;
   queueCount: number;
-  expanded: boolean;
-  onExpandedChange: (expanded: boolean) => void;
-  onViewChange: (view: View) => void;
-  onLibraryChange: (libraryId: string) => void;
+  integrityIssueCount: number;
+  activeView: View;
 }) {
+  const cards = [
+    { label: "Assets", value: assetCount, tone: activeView === "gallery" ? "active" : "" },
+    { label: "Pending Review", value: reviewCount, tone: reviewCount > 0 ? "warning" : "" },
+    { label: "Active Tasks", value: queueCount, tone: queueCount > 0 ? "active" : "" },
+    { label: "Integrity Issues", value: integrityIssueCount, tone: integrityIssueCount > 0 ? "danger" : "healthy" },
+  ];
   return (
-    <aside className="sidebar">
-      <button className="sidebar-toggle" onClick={() => onExpandedChange(!expanded)}>
-        <Icon name="menu" />
-        <span>{expanded ? "Collapse" : "Menu"}</span>
-      </button>
-      <label className="library-card library-selector-card">
-        <span className="database-icon" aria-hidden="true">
-          <Icon name="database" />
-        </span>
-        <span>
-          <strong>{library?.name ?? "No library"}</strong>
-          <small>Library</small>
-        </span>
-        <select
-          className="library-picker"
-          aria-label="Switch library"
-          value={library?.id ?? ""}
-          onChange={(event) => onLibraryChange(event.target.value)}
-        >
-          {libraries.length === 0 ? (
-            <option value="">No library registered</option>
-          ) : (
-            libraries.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))
-          )}
-        </select>
-        <span className="library-chevron" aria-hidden="true">
-          <Icon name="chevronDown" />
-        </span>
-      </label>
-      <nav className="nav">
-        <NavButton active={activeView === "gallery"} label="Gallery" onClick={() => onViewChange("gallery")} />
-        <NavButton active={activeView === "albums"} label="Albums" onClick={() => onViewChange("albums")} />
-        <NavButton
-          active={activeView === "review"}
-          label="Review Inbox"
-          count={reviewCount}
-          onClick={() => onViewChange("review")}
-        />
-        <NavButton
-          active={activeView === "queue"}
-          label="Tasks Queue"
-          count={queueCount}
-          onClick={() => onViewChange("queue")}
-        />
-        <NavButton active={activeView === "settings"} label="Settings" onClick={() => onViewChange("settings")} />
-      </nav>
-      <section className="library-status">
-        <div>
-          <span>Library Status</span>
-          <strong className="healthy">Healthy</strong>
+    <section className="studio-overview-band" aria-label="Studio overview">
+      {cards.map((card) => (
+        <div className={`overview-metric ${card.tone}`} key={card.label}>
+          <span>{card.label}</span>
+          <strong>{card.value}</strong>
         </div>
-        <div>
-          <span>Storage</span>
-          <span>{formatBytes(libraryStatus?.storageSizeBytes ?? null)}</span>
-        </div>
-        <div>
-          <span>Integrity Check</span>
-          <strong className={libraryStatus?.integrityIssueCount ? "warning" : "healthy"}>
-            {libraryStatus?.integrityIssueCount ? `${libraryStatus.integrityIssueCount} issue(s)` : "All good"}
-          </strong>
-        </div>
-        <button>Run Integrity Check</button>
-      </section>
-      <small className="app-version">Image Prompt Lab 1.2.0</small>
-    </aside>
-  );
-}
-
-function NavButton({
-  active,
-  label,
-  count,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  count?: number;
-  onClick: () => void;
-}) {
-  const shortLabel = label
-    .split(" ")
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2);
-  return (
-    <button className={active ? "nav-button active" : "nav-button"} title={label} onClick={onClick}>
-      <span className="nav-short">{shortLabel}</span>
-      <span className="nav-label">{label}</span>
-      {typeof count === "number" && count > 0 && <strong>{count}</strong>}
-    </button>
+      ))}
+    </section>
   );
 }
 
@@ -2759,73 +2755,6 @@ function SegmentedButton({
   );
 }
 
-function Icon({ name }: { name: IconName }) {
-  const paths: Record<IconName, React.ReactNode> = {
-    chevronDown: <path d="m6 9 6 6 6-6" />,
-    close: (
-      <>
-        <path d="M18 6 6 18" />
-        <path d="m6 6 12 12" />
-      </>
-    ),
-    database: (
-      <>
-        <ellipse cx="12" cy="5" rx="7" ry="3" />
-        <path d="M5 5v6c0 1.7 3.1 3 7 3s7-1.3 7-3V5" />
-        <path d="M5 11v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" />
-      </>
-    ),
-    grid: (
-      <>
-        <rect x="4" y="4" width="6" height="6" rx="1" />
-        <rect x="14" y="4" width="6" height="6" rx="1" />
-        <rect x="4" y="14" width="6" height="6" rx="1" />
-        <rect x="14" y="14" width="6" height="6" rx="1" />
-      </>
-    ),
-    list: (
-      <>
-        <path d="M8 6h12" />
-        <path d="M8 12h12" />
-        <path d="M8 18h12" />
-        <path d="M4 6h.01" />
-        <path d="M4 12h.01" />
-        <path d="M4 18h.01" />
-      </>
-    ),
-    menu: (
-      <>
-        <path d="M4 7h16" />
-        <path d="M4 12h16" />
-        <path d="M4 17h16" />
-      </>
-    ),
-    panelRight: (
-      <>
-        <rect x="4" y="5" width="16" height="14" rx="2" />
-        <path d="M14 5v14" />
-      </>
-    ),
-    plus: (
-      <>
-        <path d="M12 5v14" />
-        <path d="M5 12h14" />
-      </>
-    ),
-    search: (
-      <>
-        <circle cx="11" cy="11" r="7" />
-        <path d="m16 16 4 4" />
-      </>
-    ),
-  };
-  return (
-    <svg className="button-icon" aria-hidden="true" viewBox="0 0 24 24">
-      {paths[name]}
-    </svg>
-  );
-}
-
 function GenerationComposer({
   prompt,
   provider,
@@ -2853,7 +2782,7 @@ function GenerationComposer({
   );
 }
 
-function GalleryView({
+function GalleryWorkspace({
   assets,
   selectedAssetId,
   selectedAssetIds,
@@ -2981,7 +2910,7 @@ function ImageLightbox({ image, onClose }: { image: LightboxImage; onClose: () =
   );
 }
 
-function AlbumsView({
+function AlbumsWorkspace({
   albums,
   availableTags,
   availableCategories,
@@ -3323,7 +3252,7 @@ function AlbumsView({
   );
 }
 
-function ReviewInbox({
+function ReviewWorkspace({
   suggestions,
   selectedSuggestion,
   selectedSuggestionIds,
@@ -4073,6 +4002,9 @@ function SettingsWorkspace({
   library,
   libraries,
   activeSection,
+  providerHealth,
+  daemonOnline,
+  libraryStatus,
   onSectionChange,
   libraryFolderName,
   libraryName,
@@ -4099,6 +4031,9 @@ function SettingsWorkspace({
   library: Library | null;
   libraries: Library[];
   activeSection: SettingsSection;
+  providerHealth: ProviderHealth[];
+  daemonOnline: boolean;
+  libraryStatus: LibraryStatus | null;
   onSectionChange: (section: SettingsSection) => void;
   libraryFolderName: string;
   libraryName: string;
@@ -4128,6 +4063,9 @@ function SettingsWorkspace({
         <button className={activeSection === "libraries" ? "active" : ""} onClick={() => onSectionChange("libraries")}>
           Libraries
         </button>
+        <button className={activeSection === "providers" ? "active" : ""} onClick={() => onSectionChange("providers")}>
+          Providers
+        </button>
         <button className={activeSection === "logs" ? "active" : ""} onClick={() => onSectionChange("logs")}>
           Logs
         </button>
@@ -4150,6 +4088,12 @@ function SettingsWorkspace({
           onReveal={onReveal}
           pendingLibraryActions={pendingLibraryActions}
           missingLibraryPaths={missingLibraryPaths}
+        />
+      ) : activeSection === "providers" ? (
+        <SettingsProvidersView
+          providerHealth={providerHealth}
+          daemonOnline={daemonOnline}
+          libraryStatus={libraryStatus}
         />
       ) : (
         <SettingsLogsView
@@ -4375,6 +4319,55 @@ function LibraryActionIcon({ kind }: { kind: "rename" | "export" | "reveal" | "c
         </>
       )}
     </svg>
+  );
+}
+
+function SettingsProvidersView({
+  providerHealth,
+  daemonOnline,
+  libraryStatus,
+}: {
+  providerHealth: ProviderHealth[];
+  daemonOnline: boolean;
+  libraryStatus: LibraryStatus | null;
+}) {
+  return (
+    <div className="settings-section">
+      <div className="panel-header">
+        <div>
+          <h3>Providers & Diagnostics</h3>
+          <p>
+            Daemon {daemonOnline ? "online" : "offline"} · Integrity{" "}
+            {libraryStatus?.integrityStatus ?? "unknown"}
+          </p>
+        </div>
+        <span className={daemonOnline ? "status completed" : "status failed"}>
+          {daemonOnline ? "online" : "offline"}
+        </span>
+      </div>
+      <div className="provider-diagnostics-grid">
+        {providerHealth.map((provider) => (
+          <div className="provider-diagnostic-card" key={provider.provider}>
+            <div className="panel-header">
+              <div>
+                <h4>{provider.displayName}</h4>
+                <p>{provider.provider}</p>
+              </div>
+              <span className={`status ${provider.availability === "available" ? "completed" : "queued"}`}>
+                {provider.availability}
+              </span>
+            </div>
+            <div className="meta-grid">
+              <span>Credentials</span>
+              <strong>{provider.credentialState}</strong>
+              <span>Capabilities</span>
+              <strong>{provider.supportedOperations.join(", ") || "none"}</strong>
+            </div>
+            {provider.recoverableError && <p className="error-text">{provider.recoverableError}</p>}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -4654,19 +4647,7 @@ function Inspector({
         </div>
       </InspectorSection>
       <InspectorSection title="Versions & Lineage">
-        <div className="lineage-list">
-          {detail.lineage.length === 0 ? (
-            <p>No lineage available.</p>
-          ) : (
-            detail.lineage.map((entry, index) => (
-              <div key={entry.version.id}>
-                <strong>{index === 0 ? "Current" : "Parent"}</strong>
-                <span>{entry.version.id}</span>
-              </div>
-            ))
-          )}
-        </div>
-        <button onClick={onGenerateVariation}>Generate variation</button>
+        <VersionLineagePanel detail={detail} onGenerateVariation={onGenerateVariation} />
       </InspectorSection>
       <InspectorSection title="File">
         {detail.file ? (
@@ -4687,6 +4668,55 @@ function Inspector({
   );
 }
 
+function VersionLineagePanel({
+  detail,
+  onGenerateVariation,
+}: {
+  detail: AssetDetail;
+  onGenerateVariation: () => void;
+}) {
+  const current = detail.lineage[0]?.version ?? detail.versions[0] ?? null;
+  const lineage = detail.lineage.length > 0 ? detail.lineage : detail.versions.map((version) => ({ version, generationEvent: null }));
+  return (
+    <div className="version-lineage-panel">
+      <div className="version-current-card">
+        <span className="version-current-kicker">Current version</span>
+        <strong>{formatVersionName(current?.id ?? detail.id)}</strong>
+        <div className="version-current-meta">
+          <span>{detail.versions.length} version{detail.versions.length === 1 ? "" : "s"}</span>
+          <span>{lineage[0]?.generationEvent?.operationType ? formatOperation(lineage[0].generationEvent.operationType) : "Asset lineage"}</span>
+        </div>
+      </div>
+
+      <div className="lineage-timeline" aria-label="Version lineage">
+        {lineage.length === 0 ? (
+          <p>No lineage available.</p>
+        ) : (
+          lineage.map((entry, index) => {
+            const isCurrent = index === 0;
+            return (
+              <div className={isCurrent ? "lineage-node current" : "lineage-node"} key={entry.version.id}>
+                <span className="lineage-marker" aria-hidden="true" />
+                <div className="lineage-node-main">
+                  <strong>{isCurrent ? "Current" : "Parent"}</strong>
+                  <span>{formatVersionName(entry.version.id)}</span>
+                  <small>{entry.generationEvent ? `${entry.generationEvent.provider} · ${entry.generationEvent.providerModel}` : "Imported version"}</small>
+                </div>
+                <code title={entry.version.id}>{shortIdentifier(entry.version.id)}</code>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      <button className="variation-button" onClick={onGenerateVariation}>
+        <Icon name="plus" />
+        <span>Generate variation</span>
+      </button>
+    </div>
+  );
+}
+
 function InspectorSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="inspector-section">
@@ -4703,57 +4733,6 @@ function MetaRow({ label, value }: { label: string; value: string }) {
       <strong>{value}</strong>
     </div>
   );
-}
-
-function galleryQueryInput(libraryPath: string, query: GalleryQueryState) {
-  return {
-    libraryPath,
-    text: query.text.trim() || null,
-    providers: query.providers,
-    minRating: query.minRating,
-    reviewStatus: query.reviewStatus,
-    tags: query.tags,
-    sort: query.sort,
-    albumId: query.albumId,
-  };
-}
-
-function mergeTasks(nextTasks: DaemonTask[], currentTasks: DaemonTask[]) {
-  const byId = new Map(currentTasks.map((task) => [task.id, task]));
-  for (const task of nextTasks) {
-    byId.set(task.id, task);
-  }
-  return Array.from(byId.values()).sort(compareTaskOrder);
-}
-
-function completedTaskKey(task: DaemonTask) {
-  return `${task.id}:${task.attemptCount}:${task.updatedAt}`;
-}
-
-function taskActionKey(command: "cancel_daemon_task" | "retry_daemon_task" | "duplicate_daemon_task", taskId: string) {
-  return `${command}:${taskId}`;
-}
-
-function isRetryableTaskStatus(status: string) {
-  return status === "failed_retryable" || status === "interrupted_retryable";
-}
-
-function isTerminalFailureStatus(status: string) {
-  return status === "failed_final" || status === "interrupted_final";
-}
-
-function compareTaskOrder(left: DaemonTask, right: DaemonTask) {
-  return left.queuePosition - right.queuePosition || right.updatedAt.localeCompare(left.updatedAt);
-}
-
-function taskPrompt(task: DaemonTask) {
-  const input = task.input ?? {};
-  const value = input.prompt;
-  return typeof value === "string" && value.trim().length > 0 ? value : "No prompt snapshot";
-}
-
-function statusLabel(status: string) {
-  return status.replaceAll("_", " ");
 }
 
 function errorMessage(error: unknown) {

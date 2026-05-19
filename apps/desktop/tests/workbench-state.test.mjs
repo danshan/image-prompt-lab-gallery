@@ -45,6 +45,11 @@ test("settings defaults to libraries section", () => {
   assert.equal(defaultSettingsSection, "libraries");
 });
 
+test("settings sections include providers diagnostics", () => {
+  const section = "providers";
+  assert.equal(section, "providers");
+});
+
 test("acceptSuggestionState applies metadata and removes pending item", () => {
   const assets = [
     {

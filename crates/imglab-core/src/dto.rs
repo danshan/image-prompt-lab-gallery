@@ -454,6 +454,20 @@ pub struct TaskDetail {
     pub attempts: Vec<TaskAttempt>,
     pub events: Vec<TaskEvent>,
     pub outputs: Vec<TaskOutput>,
+    pub output_links: Vec<TaskOutputLinkView>,
+    pub related_assets: Vec<AssetId>,
+    pub related_reviews: Vec<MetadataSuggestionId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskOutputLinkView {
+    pub output_id: TaskOutputId,
+    pub output_type: TaskOutputType,
+    pub target_id: String,
+    pub asset_id: Option<AssetId>,
+    pub version_id: Option<AssetVersionId>,
+    pub generation_event_id: Option<GenerationEventId>,
+    pub suggestion_id: Option<MetadataSuggestionId>,
 }
 
 #[derive(Debug, Clone)]
@@ -593,8 +607,20 @@ pub struct GalleryAssetView {
     pub height: Option<u32>,
     pub version_label: Option<String>,
     pub version_count: u32,
+    pub task_origin: Option<TaskOriginView>,
+    pub albums: Vec<AlbumMembershipView>,
+    pub album_context: Option<AlbumMembershipView>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskOriginView {
+    pub task_id: TaskId,
+    pub task_type: TaskType,
+    pub status: TaskStatus,
+    pub provider: Option<String>,
+    pub operation: Option<GenerationOperation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -624,6 +650,36 @@ pub struct LibraryStatusView {
     pub integrity_issue_count: u32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StudioOverviewView {
+    pub library: LibrarySummary,
+    pub status: LibraryStatusView,
+    pub registered_library_count: u32,
+    pub missing_library_count: u32,
+    pub review_pending_count: u32,
+    pub task_summary: StudioTaskSummaryView,
+    pub provider_health: Vec<ProviderHealthSummaryView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StudioTaskSummaryView {
+    pub active_count: u32,
+    pub queued_count: u32,
+    pub running_count: u32,
+    pub retry_waiting_count: u32,
+    pub failed_count: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderHealthSummaryView {
+    pub provider: String,
+    pub display_name: String,
+    pub availability: String,
+    pub credential_state: String,
+    pub supported_operations: Vec<GenerationOperation>,
+    pub recoverable_error: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct AssetDetailView {
     pub id: AssetId,
@@ -646,6 +702,88 @@ pub struct AssetDetailView {
     pub versions: Vec<VersionSummary>,
     pub lineage: Vec<LineageEntry>,
     pub file: Option<FileContextView>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AssetInspectorDetailView {
+    pub asset: AssetDetailView,
+    pub canonical_metadata: CanonicalMetadataView,
+    pub pending_suggestions: Vec<PendingSuggestionSummaryView>,
+    pub generated_task_origin: Option<TaskOriginView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalMetadataView {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub schema_prompt: Option<String>,
+    pub category: Option<String>,
+    pub rating: Option<u8>,
+    pub tags: Vec<String>,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingSuggestionSummaryView {
+    pub id: MetadataSuggestionId,
+    pub asset_id: AssetId,
+    pub title: Option<String>,
+    pub category: Option<String>,
+    pub tag_count: u32,
+    pub created_at: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReviewDraftDetailView {
+    pub suggestion: MetadataSuggestion,
+    pub draft_seed: ReviewDraftSeedView,
+    pub confidence: ConfidenceScoreView,
+    pub history: Vec<MetadataSuggestion>,
+    pub generated_field_results: Vec<GeneratedReviewFieldResultView>,
+    pub related_tasks: Vec<RelatedTaskSummaryView>,
+    pub asset: AssetDetailView,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReviewDraftSeedView {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub schema_prompt: Option<String>,
+    pub tags: Vec<String>,
+    pub category: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GeneratedReviewFieldResultView {
+    pub task_id: TaskId,
+    pub field: String,
+    pub value: String,
+    pub base_revision: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RelatedTaskSummaryView {
+    pub id: TaskId,
+    pub task_type: TaskType,
+    pub status: TaskStatus,
+    pub provider: Option<String>,
+    pub operation: Option<GenerationOperation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiagnosticsOverviewView {
+    pub provider_health: Vec<ProviderHealthSummaryView>,
+    pub daemon_status: DaemonStatusView,
+    pub library_status: LibraryStatusView,
+    pub library_count: u32,
+    pub missing_library_count: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DaemonStatusView {
+    pub state: String,
+    pub recoverable_error: Option<String>,
 }
 
 #[derive(Debug, Clone)]

@@ -1,0 +1,793 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Image Prompt Lab Workbench Redesign Demo</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --app: #ece7dd;
+        --surface: #fffdf7;
+        --surface-raised: #f8f4ec;
+        --surface-tint: #e7eefb;
+        --ink: #171411;
+        --muted: #665f55;
+        --subtle: #918779;
+        --line: #ddd2c1;
+        --line-strong: #c7b69d;
+        --chrome: #171411;
+        --chrome-soft: #2a2520;
+        --blue: #284fd6;
+        --blue-soft: #e4eaff;
+        --teal: #087e8b;
+        --teal-soft: #dff6f8;
+        --amber: #b45f06;
+        --amber-soft: #fff0cf;
+        --red: #c23b22;
+        --red-soft: #ffe2db;
+        --green: #4b8f29;
+        --green-soft: #e7f7d8;
+        --shadow: 0 18px 40px rgba(40, 31, 21, 0.12);
+        --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        background: var(--app);
+        color: var(--ink);
+        margin: 0;
+        overflow: hidden;
+      }
+
+      button,
+      input,
+      select,
+      textarea {
+        color: inherit;
+        font: inherit;
+      }
+
+      button {
+        align-items: center;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        cursor: pointer;
+        display: inline-flex;
+        gap: 7px;
+        justify-content: center;
+        min-height: 34px;
+        padding: 7px 11px;
+      }
+
+      button:hover {
+        border-color: var(--line-strong);
+        box-shadow: 0 1px 0 rgba(24, 33, 38, 0.04);
+      }
+
+      .primary {
+        background: var(--red);
+        border-color: var(--red);
+        color: #ffffff;
+        font-weight: 700;
+      }
+
+      .ghost {
+        background: transparent;
+      }
+
+      .icon-only {
+        height: 34px;
+        padding: 0;
+        width: 34px;
+      }
+
+      .icon {
+        fill: none;
+        height: 16px;
+        stroke: currentColor;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-width: 1.9;
+        width: 16px;
+      }
+
+      .shell {
+        display: grid;
+        grid-template-columns: 72px minmax(260px, 292px) minmax(0, 1fr) minmax(340px, 392px);
+        height: 100vh;
+        min-width: 0;
+      }
+
+      .rail {
+        align-items: center;
+        background: var(--chrome);
+        color: #f1eadf;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 14px 10px;
+      }
+
+      .mark {
+        align-items: center;
+        background: #ffffff;
+        border-radius: 8px;
+        color: var(--chrome);
+        display: flex;
+        font-weight: 800;
+        height: 38px;
+        justify-content: center;
+        margin-bottom: 10px;
+        width: 38px;
+      }
+
+      .rail button {
+        background: transparent;
+        border-color: transparent;
+        color: inherit;
+        height: 42px;
+        padding: 0;
+        width: 42px;
+      }
+
+      .rail button.active {
+        background: #ffffff;
+        color: var(--chrome);
+      }
+
+      .rail-spacer {
+        flex: 1;
+      }
+
+      .library {
+        background: var(--surface);
+        border-right: 1px solid var(--line);
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr) auto;
+        min-width: 0;
+        padding: 16px;
+      }
+
+      .library h1,
+      .library h2,
+      .workspace h2,
+      .inspector h2,
+      .panel-title h3 {
+        margin: 0;
+      }
+
+      .library h1 {
+        font-size: 18px;
+        line-height: 1.2;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .tiny {
+        color: var(--subtle);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      .library-switcher {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        display: grid;
+        gap: 4px;
+        margin-top: 14px;
+        padding: 10px;
+      }
+
+      .metric-grid {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        margin: 16px 0;
+      }
+
+      .metric {
+        background: var(--surface-raised);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px;
+      }
+
+      .metric strong {
+        display: block;
+        font-size: 18px;
+        line-height: 1.1;
+      }
+
+      .section-label {
+        color: var(--subtle);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        margin: 16px 0 8px;
+        text-transform: uppercase;
+      }
+
+      .collection-list,
+      .job-list,
+      .lineage {
+        display: grid;
+        gap: 8px;
+      }
+
+      .collection {
+        align-items: center;
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        display: grid;
+        gap: 8px;
+        grid-template-columns: 28px minmax(0, 1fr) auto;
+        padding: 8px;
+        text-align: left;
+      }
+
+      .collection.active {
+        background: var(--teal-soft);
+        border-color: #9ecdd2;
+      }
+
+      .collection span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .dot {
+        border-radius: 999px;
+        height: 9px;
+        width: 9px;
+      }
+
+      .dot.blue {
+        background: var(--blue);
+      }
+
+      .dot.teal {
+        background: var(--teal);
+      }
+
+      .dot.amber {
+        background: var(--amber);
+      }
+
+      .library-footer {
+        border-top: 1px solid var(--line);
+        display: grid;
+        gap: 8px;
+        padding-top: 12px;
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr) auto;
+        min-width: 0;
+        overflow: hidden;
+        padding: 18px 20px 16px;
+      }
+
+      .topbar,
+      .filterbar,
+      .inspector-top {
+        align-items: center;
+        display: flex;
+        gap: 10px;
+        justify-content: space-between;
+        min-width: 0;
+      }
+
+      .title-block {
+        min-width: 0;
+      }
+
+      .title-block h2 {
+        font-size: 24px;
+        line-height: 1.15;
+      }
+
+      .search {
+        align-items: center;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        display: grid;
+        gap: 8px;
+        grid-template-columns: auto minmax(0, 1fr);
+        min-width: min(420px, 40vw);
+        padding: 0 10px;
+      }
+
+      .search input {
+        background: transparent;
+        border: 0;
+        height: 36px;
+        outline: none;
+      }
+
+      .filterbar {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        margin: 14px 0;
+        padding: 8px;
+      }
+
+      .filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .chip {
+        background: var(--surface-raised);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        color: var(--muted);
+        font-size: 12px;
+        padding: 5px 8px;
+      }
+
+      .chip.active {
+        background: var(--blue-soft);
+        border-color: #aac1ff;
+        color: #164dbb;
+        font-weight: 700;
+      }
+
+      .board {
+        display: grid;
+        gap: 14px;
+        grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+        min-height: 0;
+        overflow: auto;
+        padding: 1px 2px 40px;
+      }
+
+      .asset {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        display: grid;
+        gap: 8px;
+        min-width: 0;
+        padding: 8px;
+      }
+
+      .asset.selected {
+        border-color: var(--red);
+        box-shadow: 0 0 0 1px var(--red), var(--shadow);
+      }
+
+      .preview {
+        aspect-ratio: 1 / 1;
+        border-radius: 6px;
+        overflow: hidden;
+        position: relative;
+      }
+
+      .preview::after {
+        background:
+          linear-gradient(180deg, transparent 48%, rgba(10, 14, 18, 0.54)),
+          radial-gradient(circle at 22% 20%, rgba(255, 255, 255, 0.5), transparent 16%),
+          var(--art);
+        content: "";
+        inset: 0;
+        position: absolute;
+      }
+
+      .preview.wide {
+        aspect-ratio: 4 / 3;
+      }
+
+      .asset-meta {
+        align-items: start;
+        display: grid;
+        gap: 6px;
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
+
+      .asset-title {
+        font-size: 14px;
+        font-weight: 750;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .status-pill {
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+        padding: 3px 8px;
+      }
+
+      .status-pill.review {
+        background: var(--amber-soft);
+        color: var(--amber);
+      }
+
+      .status-pill.ready {
+        background: var(--green-soft);
+        color: var(--green);
+      }
+
+      .tag-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .work-queue {
+        align-items: center;
+        background: var(--chrome);
+        border-radius: 8px;
+        color: #dce5e9;
+        display: grid;
+        gap: 10px;
+        grid-template-columns: auto minmax(0, 1fr) auto auto;
+        min-height: 58px;
+        padding: 10px 12px;
+      }
+
+      .queue-progress {
+        background: rgba(255, 255, 255, 0.12);
+        border-radius: 999px;
+        height: 6px;
+        overflow: hidden;
+      }
+
+      .queue-progress span {
+        background: #d8f75f;
+        display: block;
+        height: 100%;
+        width: 62%;
+      }
+
+      .inspector {
+        background: var(--surface);
+        border-left: 1px solid var(--line);
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr);
+        min-width: 0;
+        overflow: hidden;
+        padding: 16px;
+      }
+
+      .inspector-top h2 {
+        font-size: 18px;
+      }
+
+      .hero-preview {
+        background:
+          linear-gradient(180deg, transparent 40%, rgba(8, 12, 15, 0.62)),
+          radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.55), transparent 16%),
+          linear-gradient(135deg, #211915, #087e8b 46%, #f05a28);
+        border-radius: 8px;
+        height: 246px;
+        margin: 14px 0;
+        position: relative;
+      }
+
+      .hero-preview span {
+        bottom: 14px;
+        color: #ffffff;
+        font-weight: 800;
+        left: 14px;
+        position: absolute;
+      }
+
+      .inspector-scroll {
+        display: grid;
+        gap: 10px;
+        min-height: 0;
+        overflow: auto;
+        padding-bottom: 20px;
+      }
+
+      .panel {
+        background: var(--surface-raised);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px;
+      }
+
+      .panel-title {
+        align-items: center;
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 9px;
+      }
+
+      .panel-title h3 {
+        font-size: 13px;
+      }
+
+      .prompt {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+        margin: 0;
+      }
+
+      .kv {
+        display: grid;
+        gap: 7px;
+      }
+
+      .kv div {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: 90px minmax(0, 1fr);
+      }
+
+      .kv span:first-child {
+        color: var(--subtle);
+        font-size: 12px;
+      }
+
+      .kv span:last-child {
+        font-size: 12px;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .lineage-item {
+        align-items: center;
+        display: grid;
+        gap: 8px;
+        grid-template-columns: 36px minmax(0, 1fr) auto;
+      }
+
+      .lineage-thumb {
+        background: var(--art);
+        border-radius: 6px;
+        height: 36px;
+        width: 36px;
+      }
+
+      .code {
+        background: var(--chrome);
+        border-radius: 8px;
+        color: #dce5e9;
+        font-family: var(--mono);
+        font-size: 11px;
+        line-height: 1.5;
+        margin: 0;
+        max-height: 126px;
+        overflow: auto;
+        padding: 10px;
+        white-space: pre-wrap;
+      }
+
+      @media (max-width: 1180px) {
+        .shell {
+          grid-template-columns: 64px minmax(0, 1fr) 46px;
+        }
+
+        .library {
+          display: none;
+        }
+
+        .inspector {
+          padding: 10px 6px;
+        }
+
+        .inspector > *:not(.inspector-top) {
+          display: none;
+        }
+
+        .inspector-top {
+          justify-content: center;
+          writing-mode: vertical-rl;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <aside class="rail" aria-label="Primary navigation">
+        <div class="mark">IP</div>
+        <button class="active" title="Gallery" aria-label="Gallery">
+          <svg class="icon" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1" /><rect x="13" y="4" width="7" height="7" rx="1" /><rect x="4" y="13" width="7" height="7" rx="1" /><rect x="13" y="13" width="7" height="7" rx="1" /></svg>
+        </button>
+        <button title="Albums" aria-label="Albums">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M4 6h6l2 2h8v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" /></svg>
+        </button>
+        <button title="Review" aria-label="Review">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></svg>
+        </button>
+        <button title="Queue" aria-label="Queue">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M6 8h12" /><path d="M6 12h12" /><path d="M6 16h8" /></svg>
+        </button>
+        <div class="rail-spacer"></div>
+        <button title="Settings" aria-label="Settings">
+          <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a8 8 0 0 0 .1-2l2-1.5-2-3.4-2.4 1a8 8 0 0 0-1.7-1L15 5.5h-4l-.4 2.6a8 8 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.5a8 8 0 0 0 .1 2l-2 1.5 2 3.4 2.4-1a8 8 0 0 0 1.7 1l.4 2.6h4l.4-2.6a8 8 0 0 0 1.7-1l2.4 1 2-3.4z" /></svg>
+        </button>
+      </aside>
+
+      <aside class="library">
+        <div>
+          <h1>Image Prompt Lab</h1>
+          <div class="tiny">Local-first asset library</div>
+          <div class="library-switcher">
+            <strong>MyImageLab.library</strong>
+            <span class="tiny">/Users/demo/ImagePromptLab</span>
+          </div>
+        </div>
+
+        <div class="metric-grid">
+          <div class="metric"><strong>1,248</strong><span class="tiny">Assets</span></div>
+          <div class="metric"><strong>92</strong><span class="tiny">Pending</span></div>
+          <div class="metric"><strong>18</strong><span class="tiny">Albums</span></div>
+          <div class="metric"><strong>146 GB</strong><span class="tiny">Storage</span></div>
+        </div>
+
+        <div>
+          <div class="section-label">Collections</div>
+          <div class="collection-list">
+            <button class="collection active"><span class="dot teal"></span><span>All generated assets</span><strong>1,248</strong></button>
+            <button class="collection"><span class="dot blue"></span><span>Prompt experiments</span><strong>316</strong></button>
+            <button class="collection"><span class="dot amber"></span><span>Needs metadata review</span><strong>92</strong></button>
+            <button class="collection"><span class="dot teal"></span><span>Reference imports</span><strong>184</strong></button>
+          </div>
+
+          <div class="section-label">Active jobs</div>
+          <div class="job-list">
+            <div class="panel">
+              <div class="panel-title"><h3>Botanical variations</h3><span class="tiny">Running</span></div>
+              <div class="queue-progress"><span></span></div>
+            </div>
+            <div class="panel">
+              <div class="panel-title"><h3>Metadata suggestions</h3><span class="tiny">Queued</span></div>
+              <div class="queue-progress"><span style="width: 28%"></span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="library-footer">
+          <button class="ghost">Run integrity check</button>
+          <span class="tiny">Healthy, 0 integrity issues</span>
+        </div>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div class="title-block">
+            <div class="tiny">Gallery / Current Library</div>
+            <h2>Generated Image Assets</h2>
+          </div>
+          <label class="search">
+            <svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m16 16 4 4" /></svg>
+            <input value="botanical neon" aria-label="Search" />
+          </label>
+          <button class="primary">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
+            Generate
+          </button>
+        </header>
+
+        <div class="filterbar">
+          <div class="filters">
+            <span class="chip active">Provider: Codex CLI</span>
+            <span class="chip">Rating: 4+</span>
+            <span class="chip active">Review pending</span>
+            <span class="chip">Square</span>
+            <span class="chip">Has lineage</span>
+          </div>
+          <strong class="tiny">64 matches</strong>
+        </div>
+
+        <section class="board" aria-label="Asset board">
+          <article class="asset selected">
+            <div class="preview" style="--art: linear-gradient(135deg, #211915, #087e8b 46%, #f05a28)"></div>
+            <div class="asset-meta"><span class="asset-title">Neon Botanical Study</span><span class="status-pill review">Review</span></div>
+            <div class="tag-row"><span class="chip active">botanical</span><span class="chip">v3</span><span class="chip">Codex</span></div>
+          </article>
+          <article class="asset">
+            <div class="preview wide" style="--art: linear-gradient(135deg, #475569, #f97316)"></div>
+            <div class="asset-meta"><span class="asset-title">Alpine Reflections</span><span class="status-pill review">Review</span></div>
+            <div class="tag-row"><span class="chip">landscape</span><span class="chip">v2</span><span class="chip">DALL-E</span></div>
+          </article>
+          <article class="asset">
+            <div class="preview" style="--art: linear-gradient(135deg, #f8fafc, #47685e)"></div>
+            <div class="asset-meta"><span class="asset-title">Solarpunk Atrium</span><span class="status-pill ready">Ready</span></div>
+            <div class="tag-row"><span class="chip">interior</span><span class="chip">v4</span><span class="chip">SDXL</span></div>
+          </article>
+          <article class="asset">
+            <div class="preview" style="--art: linear-gradient(135deg, #ca522c, #40163a)"></div>
+            <div class="asset-meta"><span class="asset-title">Canyon Flow</span><span class="status-pill ready">Ready</span></div>
+            <div class="tag-row"><span class="chip">abstract</span><span class="chip">v1</span><span class="chip">Codex</span></div>
+          </article>
+          <article class="asset">
+            <div class="preview" style="--art: linear-gradient(135deg, #111827, #c3a978)"></div>
+            <div class="asset-meta"><span class="asset-title">Orbital Outpost</span><span class="status-pill review">Review</span></div>
+            <div class="tag-row"><span class="chip">sci-fi</span><span class="chip">v2</span><span class="chip">SDXL</span></div>
+          </article>
+          <article class="asset">
+            <div class="preview" style="--art: linear-gradient(135deg, #04283f, #d98646)"></div>
+            <div class="asset-meta"><span class="asset-title">Rainy Tokyo Night</span><span class="status-pill ready">Ready</span></div>
+            <div class="tag-row"><span class="chip">city</span><span class="chip">v3</span><span class="chip">DALL-E</span></div>
+          </article>
+        </section>
+
+        <footer class="work-queue">
+          <strong>Generation queue</strong>
+          <div class="queue-progress"><span></span></div>
+          <span class="tiny">2 running, 5 queued</span>
+          <button>Open queue</button>
+        </footer>
+      </section>
+
+      <aside class="inspector">
+        <header class="inspector-top">
+          <h2>Inspector</h2>
+          <button class="icon-only" aria-label="Close inspector">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+          </button>
+        </header>
+
+        <div class="hero-preview"><span>Neon Botanical Study</span></div>
+
+        <div class="inspector-scroll">
+          <section class="panel">
+            <div class="panel-title"><h3>Review suggestion</h3><span class="status-pill review">Pending</span></div>
+            <p class="prompt">Suggested title, category, tags, and schema prompt are staged for manual acceptance. Canonical metadata stays unchanged until review is accepted.</p>
+          </section>
+
+          <section class="panel">
+            <div class="panel-title"><h3>Prompt</h3><button class="ghost">Copy</button></div>
+            <p class="prompt">Botanical study of exotic plants and flowers, neon line art glow, dark background, ultra detailed, high contrast, editorial composition.</p>
+          </section>
+
+          <section class="panel">
+            <div class="panel-title"><h3>Provider and file</h3></div>
+            <div class="kv">
+              <div><span>Provider</span><span>Codex CLI imagegen adapter</span></div>
+              <div><span>Model label</span><span>default</span></div>
+              <div><span>Dimensions</span><span>1024 x 1024, 1:1</span></div>
+              <div><span>Checksum</span><span>4f72bd81d8c5f1a7...</span></div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-title"><h3>Version lineage</h3><button class="primary">Variation</button></div>
+            <div class="lineage">
+              <div class="lineage-item"><span class="lineage-thumb" style="--art: linear-gradient(135deg, #211915, #087e8b 46%, #f05a28)"></span><span>v3, current image-to-image</span><span class="tiny">now</span></div>
+              <div class="lineage-item"><span class="lineage-thumb" style="--art: linear-gradient(135deg, #33261c, #284fd6 56%, #f0c94a)"></span><span>v2, refined composition</span><span class="tiny">09:10</span></div>
+              <div class="lineage-item"><span class="lineage-thumb" style="--art: linear-gradient(135deg, #171411, #918779)"></span><span>v1, initial draft</span><span class="tiny">09:02</span></div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-title"><h3>Schema prompt</h3></div>
+            <pre class="code">{
+  "style": "high-contrast digital illustration",
+  "lighting": "neon rim light",
+  "render_flags": ["sharp_foreground", "micro_texture"]
+}</pre>
+          </section>
+        </div>
+      </aside>
+    </main>
+  </body>
+</html>

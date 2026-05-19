@@ -6,8 +6,10 @@ use super::{
 };
 use crate::{
     AssetId, AssetSummary, BatchReviewMetadataSuggestionRequest, ConfidenceScoreView, DomainError,
-    DomainResult, LibraryId, MetadataReviewService, MetadataSuggestion, MetadataSuggestionId,
-    ReviewMetadataSuggestionRequest,
+    DomainResult, GalleryReadService, GeneratedReviewFieldResultView, LibraryId,
+    MetadataReviewService, MetadataSuggestion, MetadataSuggestionId, RelatedTaskSummaryView,
+    ReviewDraftDetailView, ReviewDraftSeedView, ReviewMetadataSuggestionRequest, TaskId,
+    TaskStatus, TaskType,
 };
 use rusqlite::{params, Connection};
 use serde_json::Value;
@@ -183,9 +185,138 @@ impl MetadataReviewService for LocalLibraryService {
         rows.collect::<Result<Vec<_>, _>>().map_err(database_error)
     }
 
+    fn get_review_draft_detail(
+        &self,
+        library_path: &Path,
+        suggestion_id: &MetadataSuggestionId,
+    ) -> DomainResult<ReviewDraftDetailView> {
+        let connection = Self::open_library_database(library_path)?;
+        let suggestion = load_suggestion(&connection, suggestion_id)?;
+        let asset = self.get_asset_detail(library_path, &suggestion.asset_id, None)?;
+        let history = self.list_history(library_path, &suggestion.asset_id)?;
+        let generated_field_results = load_generated_field_results(&connection, suggestion_id)?;
+        let related_tasks = load_related_review_tasks(&connection, suggestion_id)?;
+        Ok(ReviewDraftDetailView {
+            draft_seed: ReviewDraftSeedView {
+                title: suggestion.suggested_title.clone(),
+                description: suggestion.suggested_description.clone(),
+                schema_prompt: suggestion.suggested_schema_prompt.clone(),
+                tags: suggestion.suggested_tags.clone(),
+                category: suggestion.suggested_category.clone(),
+            },
+            confidence: normalize_confidence_json(&suggestion.confidence_json),
+            suggestion,
+            history,
+            generated_field_results,
+            related_tasks,
+            asset,
+        })
+    }
+
     fn normalize_confidence(&self, confidence_json: &str) -> ConfidenceScoreView {
         normalize_confidence_json(confidence_json)
     }
+}
+
+fn load_generated_field_results(
+    connection: &Connection,
+    suggestion_id: &MetadataSuggestionId,
+) -> DomainResult<Vec<GeneratedReviewFieldResultView>> {
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT task_id, payload_json, created_at
+            FROM task_outputs
+            WHERE output_type = 'metadata_field_result' AND target_id = ?1
+            ORDER BY created_at DESC, id
+            ",
+        )
+        .map_err(database_error)?;
+    let rows = statement
+        .query_map(params![suggestion_id.0], |row| {
+            let payload_json: Option<String> = row.get(1)?;
+            let payload = payload_json
+                .as_deref()
+                .and_then(|json| serde_json::from_str::<Value>(json).ok())
+                .unwrap_or(Value::Null);
+            Ok(GeneratedReviewFieldResultView {
+                task_id: TaskId(row.get(0)?),
+                field: payload
+                    .get("field")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown")
+                    .to_string(),
+                value: payload
+                    .get("value")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                base_revision: payload
+                    .get("baseRevision")
+                    .and_then(Value::as_str)
+                    .map(ToString::to_string),
+                created_at: row.get(2)?,
+            })
+        })
+        .map_err(database_error)?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(database_error)
+}
+
+fn load_related_review_tasks(
+    connection: &Connection,
+    suggestion_id: &MetadataSuggestionId,
+) -> DomainResult<Vec<RelatedTaskSummaryView>> {
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT DISTINCT tasks.id, tasks.task_type, tasks.status, tasks.provider, tasks.operation_type
+            FROM tasks
+            INNER JOIN task_outputs ON task_outputs.task_id = tasks.id
+            WHERE task_outputs.target_id = ?1
+            ORDER BY tasks.updated_at DESC, tasks.id
+            ",
+        )
+        .map_err(database_error)?;
+    let rows = statement
+        .query_map(params![suggestion_id.0], |row| {
+            let task_type_value: String = row.get(1)?;
+            let status_value: String = row.get(2)?;
+            let operation_value: Option<String> = row.get(4)?;
+            let task_type = TaskType::from_str(&task_type_value).ok_or_else(|| {
+                rusqlite::Error::InvalidColumnType(
+                    1,
+                    "task_type".to_string(),
+                    rusqlite::types::Type::Text,
+                )
+            })?;
+            let status = TaskStatus::from_str(&status_value).ok_or_else(|| {
+                rusqlite::Error::InvalidColumnType(
+                    2,
+                    "status".to_string(),
+                    rusqlite::types::Type::Text,
+                )
+            })?;
+            let operation = operation_value
+                .as_deref()
+                .map(super::operation_from_str)
+                .transpose()
+                .map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        4,
+                        rusqlite::types::Type::Text,
+                        Box::new(error),
+                    )
+                })?;
+            Ok(RelatedTaskSummaryView {
+                id: TaskId(row.get(0)?),
+                task_type,
+                status,
+                provider: row.get(3)?,
+                operation,
+            })
+        })
+        .map_err(database_error)?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(database_error)
 }
 
 fn accept_suggestions(

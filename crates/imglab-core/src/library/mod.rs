@@ -1,12 +1,14 @@
 use crate::{
     AssetId, AssetService, AssetVersionId, CreateChildVersionRequest, CreateGenerationEventRequest,
-    CreateLibraryRequest, CreateMetadataSuggestionRequest, DomainError, DomainResult,
-    ExportLibraryBackupRequest, ExportLibraryRequest, ExportSummary, GenerateImageRequest,
-    GenerationOperation, GenerationParameters, GenerationRequestInput, ImageProvider,
-    ImportAssetRequest, ImportLibraryBackupRequest, IntegrityIssue, IntegrityIssueKind,
-    LibraryBackupSummary, LibraryId, LibraryService, LibraryStatusView, LibrarySummary,
-    MetadataReviewService, PreparedGenerationRequest, RenameLibraryAliasRequest, RepairIssue,
-    RepairLibraryRequest, RepairSummary, VersionSummary,
+    CreateLibraryRequest, CreateMetadataSuggestionRequest, DaemonStatusView,
+    DiagnosticsOverviewView, DomainError, DomainResult, ExportLibraryBackupRequest,
+    ExportLibraryRequest, ExportSummary, GenerateImageRequest, GenerationOperation,
+    GenerationParameters, GenerationRequestInput, ImageProvider, ImportAssetRequest,
+    ImportLibraryBackupRequest, IntegrityIssue, IntegrityIssueKind, LibraryBackupSummary,
+    LibraryId, LibraryService, LibraryStatusView, LibrarySummary, MetadataReviewService,
+    PreparedGenerationRequest, ProviderHealthSummaryView, RenameLibraryAliasRequest, RepairIssue,
+    RepairLibraryRequest, RepairSummary, StudioOverviewView, StudioTaskSummaryView, TaskService,
+    TaskStatus, VersionSummary,
 };
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -957,6 +959,128 @@ impl LibraryService for LocalLibraryService {
             integrity_issue_count: issues.len() as u32,
         })
     }
+
+    fn studio_overview(&self, root_path: &Path) -> DomainResult<StudioOverviewView> {
+        Self::validate_layout(root_path)?;
+        let manifest = Self::read_manifest(root_path)?;
+        let library = Self::summary_from_manifest(root_path, &manifest, false);
+        let status = self.library_status(root_path)?;
+        let (registered_library_count, missing_library_count) = self.registry_counts()?;
+        let review_pending_count = count_pending_reviews(root_path)?;
+        let task_summary = summarize_tasks(&self.list_tasks(root_path)?);
+
+        Ok(StudioOverviewView {
+            library,
+            status,
+            registered_library_count,
+            missing_library_count,
+            review_pending_count,
+            task_summary,
+            provider_health: default_provider_health(),
+        })
+    }
+
+    fn diagnostics_overview(&self, root_path: &Path) -> DomainResult<DiagnosticsOverviewView> {
+        Self::validate_layout(root_path)?;
+        let status = self.library_status(root_path)?;
+        let (library_count, missing_library_count) = self.registry_counts()?;
+        Ok(DiagnosticsOverviewView {
+            provider_health: default_provider_health(),
+            daemon_status: DaemonStatusView {
+                state: "not_checked".to_string(),
+                recoverable_error: None,
+            },
+            library_status: status,
+            library_count,
+            missing_library_count,
+        })
+    }
+}
+
+impl LocalLibraryService {
+    fn registry_counts(&self) -> DomainResult<(u32, u32)> {
+        let libraries = self.list_libraries(true)?;
+        let registered_library_count = libraries.len() as u32;
+        let missing_library_count = libraries
+            .iter()
+            .filter(|library| !Self::manifest_path(&library.root_path).is_file())
+            .count() as u32;
+        Ok((registered_library_count, missing_library_count))
+    }
+}
+
+fn count_pending_reviews(root_path: &Path) -> DomainResult<u32> {
+    let connection = LocalLibraryService::open_library_database(root_path)?;
+    let count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM metadata_suggestions WHERE status = 'pending_review'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(database_error)?;
+    Ok(count as u32)
+}
+
+fn summarize_tasks(tasks: &[crate::TaskSummary]) -> StudioTaskSummaryView {
+    let mut queued_count = 0;
+    let mut running_count = 0;
+    let mut retry_waiting_count = 0;
+    let mut failed_count = 0;
+
+    for task in tasks {
+        match task.status {
+            TaskStatus::Queued => queued_count += 1,
+            TaskStatus::Running | TaskStatus::CancelRequested => running_count += 1,
+            TaskStatus::RetryWaiting => retry_waiting_count += 1,
+            TaskStatus::FailedRetryable
+            | TaskStatus::FailedFinal
+            | TaskStatus::InterruptedFinal => {
+                failed_count += 1;
+            }
+            TaskStatus::InterruptedRetryable => retry_waiting_count += 1,
+            TaskStatus::Canceled | TaskStatus::Completed => {}
+        }
+    }
+
+    StudioTaskSummaryView {
+        active_count: queued_count + running_count + retry_waiting_count,
+        queued_count,
+        running_count,
+        retry_waiting_count,
+        failed_count,
+    }
+}
+
+fn default_provider_health() -> Vec<ProviderHealthSummaryView> {
+    vec![
+        ProviderHealthSummaryView {
+            provider: "fake".to_string(),
+            display_name: "Fake".to_string(),
+            availability: "available".to_string(),
+            credential_state: "not_required".to_string(),
+            supported_operations: vec![GenerationOperation::TextToImage],
+            recoverable_error: None,
+        },
+        ProviderHealthSummaryView {
+            provider: "codex-cli".to_string(),
+            display_name: "Codex CLI".to_string(),
+            availability: "not_checked".to_string(),
+            credential_state: "external".to_string(),
+            supported_operations: vec![
+                GenerationOperation::TextToImage,
+                GenerationOperation::ImageToImage,
+            ],
+            recoverable_error: None,
+        },
+        ProviderHealthSummaryView {
+            provider: "grok".to_string(),
+            display_name: "Grok".to_string(),
+            availability: "not_configured".to_string(),
+            credential_state: "missing".to_string(),
+            supported_operations: vec![GenerationOperation::TextToImage],
+            recoverable_error: Some("native provider client is deferred".to_string()),
+        },
+    ]
 }
 
 fn io_error(path: &Path, error: std::io::Error) -> DomainError {
@@ -1001,11 +1125,13 @@ mod tests {
     use crate::GenerationService;
     use crate::MetadataReviewService;
     use crate::{
-        AlbumId, AlbumKind, AlbumService, BatchAddAssetsToAlbumRequest,
-        BatchReviewMetadataSuggestionRequest, GalleryQuery, GalleryReadService, GallerySort,
-        GeneratedImage, GenerationResult, ReorderAlbumItemsRequest, ReorderAlbumsRequest,
-        ReviewMetadataSuggestionRequest, ReviewStatusFilter, SearchQuery, SearchService,
-        UpdateAssetMetadataRequest,
+        AlbumId, AlbumKind, AlbumService, AppendTaskOutputRequest, AssetService,
+        BatchAddAssetsToAlbumRequest, BatchCreateTasksRequest,
+        BatchReviewMetadataSuggestionRequest, CreateTaskInput, GalleryQuery, GalleryReadService,
+        GallerySort, GeneratedImage, GenerationResult, ReorderAlbumItemsRequest,
+        ReorderAlbumsRequest, ReviewMetadataSuggestionRequest, ReviewStatusFilter, SearchQuery,
+        SearchService, TaskOutputType, TaskService, TaskStatus, TaskType,
+        UpdateAssetMetadataRequest, UpdateTaskStatusRequest,
     };
     use std::time::Instant;
 
@@ -1083,6 +1209,94 @@ mod tests {
         let libraries = service.list_libraries(false).expect("list libraries");
         assert_eq!(libraries.len(), 1);
         assert_eq!(libraries[0].id, summary.id);
+    }
+
+    #[test]
+    fn studio_overview_summarizes_library_workflow_state() {
+        let root = test_root("studio-overview");
+        let registry = test_root("studio-overview-registry").join("registry.sqlite");
+        let service = LocalLibraryService::new(registry);
+        let library = service
+            .create_library(CreateLibraryRequest {
+                root_path: root.clone(),
+                name: "Studio".to_string(),
+            })
+            .expect("create library");
+        let source = test_root("studio-overview-source").join("image.png");
+        fs::create_dir_all(source.parent().expect("source parent")).expect("create source parent");
+        fs::write(&source, png_bytes(64, 48)).expect("write png");
+        let (asset, _) = service
+            .import_asset(ImportAssetRequest {
+                library_path: root.clone(),
+                source_path: source,
+            })
+            .expect("import asset");
+        service
+            .create_suggestion(CreateMetadataSuggestionRequest {
+                library_path: root.clone(),
+                asset_id: asset.id,
+                source: "test".to_string(),
+                suggested_title: Some("Suggested title".to_string()),
+                suggested_description: None,
+                suggested_schema_prompt: None,
+                suggested_tags: vec!["tag".to_string()],
+                suggested_category: None,
+                confidence_json: "{}".to_string(),
+            })
+            .expect("create suggestion");
+        let tasks = service
+            .create_tasks(BatchCreateTasksRequest {
+                library_path: root.clone(),
+                library_id: library.id.clone(),
+                tasks: vec![
+                    CreateTaskInput {
+                        task_type: TaskType::ImageGeneration,
+                        provider: Some("fake".to_string()),
+                        operation: Some(GenerationOperation::TextToImage),
+                        priority: 1,
+                        concurrency_group: Some("fake".to_string()),
+                        max_attempts: 3,
+                        input_json: "{}".to_string(),
+                    },
+                    CreateTaskInput {
+                        task_type: TaskType::MetadataSuggestionGeneration,
+                        provider: None,
+                        operation: None,
+                        priority: 0,
+                        concurrency_group: None,
+                        max_attempts: 1,
+                        input_json: "{}".to_string(),
+                    },
+                ],
+            })
+            .expect("create tasks");
+        service
+            .update_task_status(UpdateTaskStatusRequest {
+                library_path: root.clone(),
+                task_id: tasks[1].id.clone(),
+                status: TaskStatus::FailedFinal,
+                next_retry_at: None,
+                last_error_code: Some("provider_error".to_string()),
+                last_error_message: Some("failed".to_string()),
+                error_classification: None,
+                wait_reason: None,
+            })
+            .expect("fail task");
+
+        let overview = service.studio_overview(&root).expect("studio overview");
+
+        assert_eq!(overview.library.id, library.id);
+        assert_eq!(overview.status.integrity_status, "healthy");
+        assert_eq!(overview.registered_library_count, 1);
+        assert_eq!(overview.missing_library_count, 0);
+        assert_eq!(overview.review_pending_count, 1);
+        assert_eq!(overview.task_summary.active_count, 1);
+        assert_eq!(overview.task_summary.queued_count, 1);
+        assert_eq!(overview.task_summary.failed_count, 1);
+        assert!(overview
+            .provider_health
+            .iter()
+            .any(|provider| provider.provider == "codex-cli"));
     }
 
     #[test]
@@ -2170,6 +2384,30 @@ mod tests {
             .expect("duplicate add is no-op");
         let albums = service.list_albums(&library.id).expect("list albums");
         assert_eq!(albums[0].item_count, 1);
+        let tasks = service
+            .create_tasks(BatchCreateTasksRequest {
+                library_path: root.clone(),
+                library_id: library.id.clone(),
+                tasks: vec![CreateTaskInput {
+                    task_type: TaskType::ImageGeneration,
+                    provider: Some("fake".to_string()),
+                    operation: Some(GenerationOperation::TextToImage),
+                    priority: 0,
+                    concurrency_group: Some("fake".to_string()),
+                    max_attempts: 1,
+                    input_json: "{}".to_string(),
+                }],
+            })
+            .expect("create task");
+        service
+            .append_task_output(AppendTaskOutputRequest {
+                library_path: root.clone(),
+                task_id: tasks[0].id.clone(),
+                output_type: TaskOutputType::Asset,
+                target_id: asset.id.0.clone(),
+                payload_json: None,
+            })
+            .expect("append output");
 
         let album_results = service
             .query_gallery(
@@ -2182,6 +2420,24 @@ mod tests {
             .expect("query album gallery");
         assert_eq!(album_results.len(), 1);
         assert_eq!(album_results[0].id, asset.id);
+        assert_eq!(album_results[0].albums.len(), 1);
+        assert_eq!(album_results[0].albums[0].id, album.id);
+        assert_eq!(
+            album_results[0]
+                .album_context
+                .as_ref()
+                .expect("album context")
+                .id,
+            album.id
+        );
+        assert_eq!(
+            album_results[0]
+                .task_origin
+                .as_ref()
+                .expect("task origin")
+                .task_id,
+            tasks[0].id
+        );
 
         service
             .update_asset_metadata(UpdateAssetMetadataRequest {
