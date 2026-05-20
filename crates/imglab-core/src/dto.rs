@@ -559,16 +559,11 @@ pub enum GallerySort {
     AlbumOrder,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ReviewStatusFilter {
+    #[default]
     Any,
     Pending,
-}
-
-impl Default for ReviewStatusFilter {
-    fn default() -> Self {
-        Self::Any
-    }
 }
 
 #[derive(Debug, Clone)]
