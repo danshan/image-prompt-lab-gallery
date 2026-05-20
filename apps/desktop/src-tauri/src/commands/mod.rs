@@ -1,0 +1,9 @@
+pub(crate) mod albums;
+pub(crate) mod daemon;
+pub(crate) mod gallery;
+pub(crate) mod generation;
+pub(crate) mod library;
+pub(crate) mod logs;
+pub(crate) mod metadata;
+pub(crate) mod review;
+pub(crate) mod updater;

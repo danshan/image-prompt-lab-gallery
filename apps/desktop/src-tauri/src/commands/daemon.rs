@@ -1,10 +1,12 @@
+use crate::*;
+
 #[tauri::command]
-fn daemon_health(state: tauri::State<'_, DesktopState>) -> Result<bool, CommandError> {
+pub(crate) fn daemon_health(state: tauri::State<'_, DesktopState>) -> Result<bool, CommandError> {
     ensure_daemon_client(&state).map(|_| true)
 }
 
 #[tauri::command]
-fn enqueue_generation_tasks(
+pub(crate) fn enqueue_generation_tasks(
     input: EnqueueGenerationTasksInput,
     state: tauri::State<'_, DesktopState>,
 ) -> Result<Vec<DaemonTaskView>, CommandError> {
@@ -21,7 +23,7 @@ fn enqueue_generation_tasks(
 }
 
 #[tauri::command]
-fn list_daemon_tasks(
+pub(crate) fn list_daemon_tasks(
     input: DaemonTaskQueryInput,
     state: tauri::State<'_, DesktopState>,
 ) -> Result<Vec<DaemonTaskView>, CommandError> {
@@ -33,7 +35,7 @@ fn list_daemon_tasks(
 }
 
 #[tauri::command]
-fn get_daemon_task_detail(
+pub(crate) fn get_daemon_task_detail(
     input: DaemonTaskActionInput,
     state: tauri::State<'_, DesktopState>,
 ) -> Result<DaemonTaskDetailView, CommandError> {
@@ -48,7 +50,7 @@ fn get_daemon_task_detail(
 }
 
 #[tauri::command]
-fn reorder_daemon_tasks(
+pub(crate) fn reorder_daemon_tasks(
     input: ReorderDaemonTasksInput,
     state: tauri::State<'_, DesktopState>,
 ) -> Result<(), CommandError> {
@@ -58,7 +60,7 @@ fn reorder_daemon_tasks(
 }
 
 #[tauri::command]
-fn cancel_daemon_task(
+pub(crate) fn cancel_daemon_task(
     input: DaemonTaskActionInput,
     state: tauri::State<'_, DesktopState>,
 ) -> Result<DaemonTaskView, CommandError> {
@@ -68,7 +70,7 @@ fn cancel_daemon_task(
 }
 
 #[tauri::command]
-fn retry_daemon_task(
+pub(crate) fn retry_daemon_task(
     input: DaemonTaskActionInput,
     state: tauri::State<'_, DesktopState>,
 ) -> Result<DaemonTaskView, CommandError> {
@@ -78,7 +80,7 @@ fn retry_daemon_task(
 }
 
 #[tauri::command]
-fn duplicate_daemon_task(
+pub(crate) fn duplicate_daemon_task(
     input: DaemonTaskActionInput,
     state: tauri::State<'_, DesktopState>,
 ) -> Result<DaemonTaskView, CommandError> {
@@ -87,7 +89,7 @@ fn duplicate_daemon_task(
         .map(daemon_task_view)
 }
 
-fn generation_draft_to_daemon_task(
+pub(crate) fn generation_draft_to_daemon_task(
     input: GenerationTaskDraftInput,
 ) -> Result<DaemonTaskInput, CommandError> {
     let parameters = input
@@ -125,7 +127,7 @@ fn generation_draft_to_daemon_task(
     })
 }
 
-fn execute_generation(
+pub(crate) fn execute_generation(
     input: GenerateImageInput,
     log_path: Option<PathBuf>,
 ) -> Result<Vec<VersionView>, CommandError> {
@@ -154,7 +156,10 @@ fn execute_generation(
     }
 }
 
-fn codex_provider(library_path: &PathBuf, log_path: Option<PathBuf>) -> CodexCliImageProvider {
+pub(crate) fn codex_provider(
+    library_path: &PathBuf,
+    log_path: Option<PathBuf>,
+) -> CodexCliImageProvider {
     let provider = CodexCliImageProvider::new("codex", library_path);
     match log_path {
         Some(path) => provider.with_log_path(path),

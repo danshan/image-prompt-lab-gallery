@@ -55,70 +55,7 @@ impl GalleryReadService for LocalLibraryService {
             .map(|album_id| load_album_membership_context(&connection, album_id))
             .transpose()?;
 
-        if let Some(text) = query
-            .text
-            .as_deref()
-            .map(str::trim)
-            .filter(|text| !text.is_empty())
-        {
-            let needle = text.to_ascii_lowercase();
-            items.retain(|item| {
-                item.title
-                    .as_deref()
-                    .unwrap_or_default()
-                    .to_ascii_lowercase()
-                    .contains(&needle)
-                    || item
-                        .category
-                        .as_deref()
-                        .unwrap_or_default()
-                        .to_ascii_lowercase()
-                        .contains(&needle)
-                    || item
-                        .provider
-                        .as_deref()
-                        .unwrap_or_default()
-                        .to_ascii_lowercase()
-                        .contains(&needle)
-                    || item
-                        .model_label
-                        .as_deref()
-                        .unwrap_or_default()
-                        .to_ascii_lowercase()
-                        .contains(&needle)
-                    || item
-                        .prompt
-                        .as_deref()
-                        .unwrap_or_default()
-                        .to_ascii_lowercase()
-                        .contains(&needle)
-                    || item
-                        .tags
-                        .iter()
-                        .any(|tag| tag.to_ascii_lowercase().contains(&needle))
-            });
-        }
-
-        if !query.providers.is_empty() {
-            items.retain(|item| {
-                item.provider
-                    .as_ref()
-                    .map(|provider| query.providers.iter().any(|wanted| wanted == provider))
-                    .unwrap_or(false)
-            });
-        }
-
-        if let Some(min_rating) = query.min_rating {
-            items.retain(|item| item.rating.unwrap_or_default() >= min_rating);
-        }
-
-        if query.review_status == ReviewStatusFilter::Pending {
-            items.retain(|item| item.review_pending_count > 0);
-        }
-
-        if !query.tags.is_empty() {
-            items.retain(|item| query.tags.iter().all(|tag| item.tags.contains(tag)));
-        }
+        apply_gallery_filter_spec(&mut items, GalleryFilterSpec::from_gallery_query(&query));
 
         if let Some(context) = &album_context {
             match context {
@@ -137,45 +74,7 @@ impl GalleryReadService for LocalLibraryService {
             _ => query.sort,
         };
 
-        match effective_sort {
-            GallerySort::Newest => items.sort_by(|left, right| {
-                right
-                    .updated_at
-                    .cmp(&left.updated_at)
-                    .then_with(|| right.created_at.cmp(&left.created_at))
-            }),
-            GallerySort::Oldest => items.sort_by(|left, right| {
-                left.created_at
-                    .cmp(&right.created_at)
-                    .then_with(|| left.updated_at.cmp(&right.updated_at))
-            }),
-            GallerySort::RatingDesc => items.sort_by(|left, right| {
-                right
-                    .rating
-                    .unwrap_or_default()
-                    .cmp(&left.rating.unwrap_or_default())
-                    .then_with(|| left.title.cmp(&right.title))
-            }),
-            GallerySort::TitleAsc => items.sort_by(|left, right| left.title.cmp(&right.title)),
-            GallerySort::ProviderAsc => {
-                items.sort_by(|left, right| left.provider.cmp(&right.provider))
-            }
-            GallerySort::AlbumOrder => {
-                let Some(AlbumFilterContext::Manual(album_id)) = &album_context else {
-                    return Err(DomainError::InvalidGalleryQuery {
-                        message: "album_order sort requires a manual album filter".to_string(),
-                    });
-                };
-                let sort_orders = load_album_item_sort_orders(&connection, album_id)?;
-                items.sort_by(|left, right| {
-                    sort_orders
-                        .get(&left.id.0)
-                        .copied()
-                        .unwrap_or(i64::MAX)
-                        .cmp(&sort_orders.get(&right.id.0).copied().unwrap_or(i64::MAX))
-                });
-            }
-        }
+        sort_gallery_items(&mut items, effective_sort, &album_context, &connection)?;
 
         if let Some(album) = album_context_view {
             for item in &mut items {
@@ -1079,6 +978,48 @@ enum AlbumFilterContext {
     Smart(crate::SmartAlbumQuery),
 }
 
+struct GalleryFilterSpec<'a> {
+    text: Option<&'a str>,
+    providers: &'a [String],
+    min_rating: Option<u8>,
+    review_pending_only: bool,
+    tags: &'a [String],
+    category: Option<&'a str>,
+    status: Option<&'a str>,
+    created_at_from: Option<&'a str>,
+    created_at_to: Option<&'a str>,
+}
+
+impl<'a> GalleryFilterSpec<'a> {
+    fn from_gallery_query(query: &'a GalleryQuery) -> Self {
+        Self {
+            text: query.text.as_deref(),
+            providers: &query.providers,
+            min_rating: query.min_rating,
+            review_pending_only: query.review_status == ReviewStatusFilter::Pending,
+            tags: &query.tags,
+            category: None,
+            status: None,
+            created_at_from: None,
+            created_at_to: None,
+        }
+    }
+
+    fn from_smart_album_query(query: &'a crate::SmartAlbumQuery) -> Self {
+        Self {
+            text: query.text.as_deref(),
+            providers: &query.providers,
+            min_rating: query.min_rating,
+            review_pending_only: query.review_status == ReviewStatusFilter::Pending,
+            tags: &query.tags,
+            category: query.category.as_deref(),
+            status: query.status.as_deref(),
+            created_at_from: query.created_at_from.as_deref(),
+            created_at_to: query.created_at_to.as_deref(),
+        }
+    }
+}
+
 fn load_album_filter_context(
     connection: &Connection,
     album_id: &AlbumId,
@@ -1101,44 +1042,89 @@ fn load_album_filter_context(
 }
 
 fn apply_smart_album_query(items: &mut Vec<GalleryAssetView>, query: &crate::SmartAlbumQuery) {
-    if let Some(text) = query
-        .text
-        .as_deref()
-        .map(str::trim)
-        .filter(|text| !text.is_empty())
-    {
+    apply_gallery_filter_spec(items, GalleryFilterSpec::from_smart_album_query(query));
+}
+
+fn apply_gallery_filter_spec(items: &mut Vec<GalleryAssetView>, spec: GalleryFilterSpec<'_>) {
+    if let Some(text) = spec.text.map(str::trim).filter(|text| !text.is_empty()) {
         let needle = text.to_ascii_lowercase();
         items.retain(|item| gallery_item_matches_text(item, &needle));
     }
-    if !query.providers.is_empty() {
+    if !spec.providers.is_empty() {
         items.retain(|item| {
             item.provider
                 .as_ref()
-                .map(|provider| query.providers.iter().any(|wanted| wanted == provider))
+                .map(|provider| spec.providers.iter().any(|wanted| wanted == provider))
                 .unwrap_or(false)
         });
     }
-    if let Some(min_rating) = query.min_rating {
+    if let Some(min_rating) = spec.min_rating {
         items.retain(|item| item.rating.unwrap_or_default() >= min_rating);
     }
-    if query.review_status == ReviewStatusFilter::Pending {
+    if spec.review_pending_only {
         items.retain(|item| item.review_pending_count > 0);
     }
-    if !query.tags.is_empty() {
-        items.retain(|item| query.tags.iter().all(|tag| item.tags.contains(tag)));
+    if !spec.tags.is_empty() {
+        items.retain(|item| spec.tags.iter().all(|tag| item.tags.contains(tag)));
     }
-    if let Some(category) = query.category.as_deref() {
+    if let Some(category) = spec.category {
         items.retain(|item| item.category.as_deref() == Some(category));
     }
-    if let Some(status) = query.status.as_deref() {
+    if let Some(status) = spec.status {
         items.retain(|item| item.status == status);
     }
-    if let Some(from) = query.created_at_from.as_deref() {
+    if let Some(from) = spec.created_at_from {
         items.retain(|item| item.created_at.as_str() >= from);
     }
-    if let Some(to) = query.created_at_to.as_deref() {
+    if let Some(to) = spec.created_at_to {
         items.retain(|item| item.created_at.as_str() <= to);
     }
+}
+
+fn sort_gallery_items(
+    items: &mut [GalleryAssetView],
+    sort: GallerySort,
+    album_context: &Option<AlbumFilterContext>,
+    connection: &Connection,
+) -> DomainResult<()> {
+    match sort {
+        GallerySort::Newest => items.sort_by(|left, right| {
+            right
+                .updated_at
+                .cmp(&left.updated_at)
+                .then_with(|| right.created_at.cmp(&left.created_at))
+        }),
+        GallerySort::Oldest => items.sort_by(|left, right| {
+            left.created_at
+                .cmp(&right.created_at)
+                .then_with(|| left.updated_at.cmp(&right.updated_at))
+        }),
+        GallerySort::RatingDesc => items.sort_by(|left, right| {
+            right
+                .rating
+                .unwrap_or_default()
+                .cmp(&left.rating.unwrap_or_default())
+                .then_with(|| left.title.cmp(&right.title))
+        }),
+        GallerySort::TitleAsc => items.sort_by(|left, right| left.title.cmp(&right.title)),
+        GallerySort::ProviderAsc => items.sort_by(|left, right| left.provider.cmp(&right.provider)),
+        GallerySort::AlbumOrder => {
+            let Some(AlbumFilterContext::Manual(album_id)) = album_context else {
+                return Err(DomainError::InvalidGalleryQuery {
+                    message: "album_order sort requires a manual album filter".to_string(),
+                });
+            };
+            let sort_orders = load_album_item_sort_orders(connection, album_id)?;
+            items.sort_by(|left, right| {
+                sort_orders
+                    .get(&left.id.0)
+                    .copied()
+                    .unwrap_or(i64::MAX)
+                    .cmp(&sort_orders.get(&right.id.0).copied().unwrap_or(i64::MAX))
+            });
+        }
+    }
+    Ok(())
 }
 
 fn gallery_item_matches_text(item: &GalleryAssetView, needle: &str) -> bool {

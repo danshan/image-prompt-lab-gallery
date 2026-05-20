@@ -1,4 +1,6 @@
-fn run_generation<P>(
+use crate::*;
+
+pub(crate) fn run_generation<P>(
     provider: P,
     request: GenerateImageRequest,
 ) -> Result<Vec<VersionView>, CommandError>
@@ -17,11 +19,11 @@ where
         .map_err(Into::into)
 }
 
-fn service() -> LocalLibraryService {
+pub(crate) fn service() -> LocalLibraryService {
     LocalLibraryService::new(default_registry_path())
 }
 
-fn default_registry_path() -> PathBuf {
+pub(crate) fn default_registry_path() -> PathBuf {
     std::env::var_os("IMGLAB_REGISTRY")
         .map(PathBuf::from)
         .unwrap_or_else(|| std::env::temp_dir().join("imglab-desktop-registry.sqlite"))

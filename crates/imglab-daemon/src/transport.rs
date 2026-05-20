@@ -1,3 +1,10 @@
+use crate::executors::*;
+use crate::routes::*;
+use crate::runtime::*;
+use crate::scheduler::execute_task;
+use crate::views::*;
+use crate::*;
+
 pub fn spawn_scheduler_loop(
     state: SharedDaemonState,
     config: TaskSchedulerConfig,
@@ -30,7 +37,7 @@ pub fn run_scheduler_loop_iteration(
     run_scheduler_tick(&mut snapshot, config, retry_policy)
 }
 
-fn daemon_has_runnable_work(state: &DaemonState) -> DomainResult<bool> {
+pub(crate) fn daemon_has_runnable_work(state: &DaemonState) -> DomainResult<bool> {
     let now = unix_timestamp_string(0);
     for library_path in state.opened_libraries.values() {
         for task in state.service.list_tasks(library_path)? {
@@ -212,7 +219,7 @@ pub fn run_scheduler_tick(
     execute_task(state, &library_path, &task_id, retry_policy).map(Some)
 }
 
-fn route_request(
+pub(crate) fn route_request(
     method: &str,
     path: &str,
     query: Option<&str>,
@@ -278,7 +285,7 @@ fn route_request(
     }
 }
 
-fn route_task_member(
+pub(crate) fn route_task_member(
     method: &str,
     path: &str,
     state: &mut DaemonState,
@@ -323,7 +330,10 @@ fn route_task_member(
     }
 }
 
-fn find_task_detail(state: &DaemonState, task_id: &TaskId) -> DomainResult<(PathBuf, TaskDetail)> {
+pub(crate) fn find_task_detail(
+    state: &DaemonState,
+    task_id: &TaskId,
+) -> DomainResult<(PathBuf, TaskDetail)> {
     for library_path in state.opened_libraries.values() {
         match state.service.get_task_detail(library_path, task_id) {
             Ok(detail) => return Ok((library_path.clone(), detail)),
@@ -336,7 +346,7 @@ fn find_task_detail(state: &DaemonState, task_id: &TaskId) -> DomainResult<(Path
     })
 }
 
-fn request_task_cancel(
+pub(crate) fn request_task_cancel(
     state: &mut DaemonState,
     library_path: PathBuf,
     task_id: TaskId,
@@ -379,7 +389,7 @@ fn request_task_cancel(
     })
 }
 
-fn tail_task_log(detail: &TaskDetail, log_root: &Path) -> DomainResult<LogTailView> {
+pub(crate) fn tail_task_log(detail: &TaskDetail, log_root: &Path) -> DomainResult<LogTailView> {
     let Some(log_path) = detail
         .attempts
         .iter()
@@ -401,7 +411,7 @@ fn tail_task_log(detail: &TaskDetail, log_root: &Path) -> DomainResult<LogTailVi
     })
 }
 
-fn ensure_app_owned_log_path(log_path: &Path, log_root: &Path) -> DomainResult<()> {
+pub(crate) fn ensure_app_owned_log_path(log_path: &Path, log_root: &Path) -> DomainResult<()> {
     let canonical_log = log_path
         .canonicalize()
         .map_err(|error| io_error(log_path, error))?;
@@ -415,4 +425,3 @@ fn ensure_app_owned_log_path(log_path: &Path, log_root: &Path) -> DomainResult<(
     }
     Ok(())
 }
-

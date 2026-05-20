@@ -1,3 +1,6 @@
+use crate::transport::recover_open_libraries;
+use crate::*;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeFile {
@@ -46,10 +49,10 @@ pub struct HttpResponse {
 
 #[derive(Debug, Clone)]
 pub struct DaemonState {
-    service: LocalLibraryService,
-    opened_libraries: BTreeMap<String, PathBuf>,
-    recovered_libraries: BTreeSet<String>,
-    log_root: PathBuf,
+    pub(crate) service: LocalLibraryService,
+    pub(crate) opened_libraries: BTreeMap<String, PathBuf>,
+    pub(crate) recovered_libraries: BTreeSet<String>,
+    pub(crate) log_root: PathBuf,
 }
 
 pub type SharedDaemonState = Arc<Mutex<DaemonState>>;
@@ -64,7 +67,7 @@ impl DaemonState {
         }
     }
 
-    fn open_library(&mut self, root_path: &Path) -> DomainResult<LibrarySummary> {
+    pub(crate) fn open_library(&mut self, root_path: &Path) -> DomainResult<LibrarySummary> {
         let library = self.service.open_library(root_path)?;
         let should_recover = !self.recovered_libraries.contains(&library.id.0);
         self.opened_libraries
@@ -76,7 +79,7 @@ impl DaemonState {
         Ok(library)
     }
 
-    fn library_path(&self, library_id: &str) -> DomainResult<PathBuf> {
+    pub(crate) fn library_path(&self, library_id: &str) -> DomainResult<PathBuf> {
         self.opened_libraries
             .get(library_id)
             .cloned()
@@ -101,167 +104,166 @@ pub struct ImageGenerationTaskInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct MetadataFieldTaskInput {
-    suggestion_id: String,
-    asset_id: String,
-    field: String,
-    base_revision: Option<String>,
-    context: MetadataTaskContext,
+pub(crate) struct MetadataFieldTaskInput {
+    pub(crate) suggestion_id: String,
+    pub(crate) asset_id: String,
+    pub(crate) field: String,
+    pub(crate) base_revision: Option<String>,
+    pub(crate) context: MetadataTaskContext,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct MetadataSuggestionTaskInput {
-    suggestion_id: String,
-    asset_id: String,
-    base_revision: Option<String>,
-    context: MetadataTaskContext,
+pub(crate) struct MetadataSuggestionTaskInput {
+    pub(crate) suggestion_id: String,
+    pub(crate) asset_id: String,
+    pub(crate) base_revision: Option<String>,
+    pub(crate) context: MetadataTaskContext,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct MetadataTaskContext {
-    title: Option<String>,
-    description: Option<String>,
-    schema_prompt: Option<String>,
-    tags: Vec<String>,
-    category: Option<String>,
-    source_prompt: Option<String>,
+pub(crate) struct MetadataTaskContext {
+    pub(crate) title: Option<String>,
+    pub(crate) description: Option<String>,
+    pub(crate) schema_prompt: Option<String>,
+    pub(crate) tags: Vec<String>,
+    pub(crate) category: Option<String>,
+    pub(crate) source_prompt: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct OpenLibraryInput {
-    library_path: PathBuf,
+pub(crate) struct OpenLibraryInput {
+    pub(crate) library_path: PathBuf,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct CreateTaskInputView {
-    task_type: String,
-    provider: Option<String>,
-    operation: Option<String>,
-    priority: Option<i64>,
-    concurrency_group: Option<String>,
-    max_attempts: Option<u32>,
-    input: Option<Value>,
-    input_json: Option<Value>,
+pub(crate) struct CreateTaskInputView {
+    pub(crate) task_type: String,
+    pub(crate) provider: Option<String>,
+    pub(crate) operation: Option<String>,
+    pub(crate) priority: Option<i64>,
+    pub(crate) concurrency_group: Option<String>,
+    pub(crate) max_attempts: Option<u32>,
+    pub(crate) input: Option<Value>,
+    pub(crate) input_json: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct BatchCreateTasksInput {
-    library_id: String,
-    tasks: Vec<CreateTaskInputView>,
+pub(crate) struct BatchCreateTasksInput {
+    pub(crate) library_id: String,
+    pub(crate) tasks: Vec<CreateTaskInputView>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct SingleCreateTaskInput {
-    library_id: String,
+pub(crate) struct SingleCreateTaskInput {
+    pub(crate) library_id: String,
     #[serde(flatten)]
-    task: CreateTaskInputView,
+    pub(crate) task: CreateTaskInputView,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ReorderTasksInput {
-    library_id: String,
-    task_ids: Vec<String>,
+pub(crate) struct ReorderTasksInput {
+    pub(crate) library_id: String,
+    pub(crate) task_ids: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct LibraryView {
-    id: String,
-    name: String,
-    root_path: PathBuf,
-    schema_version: u32,
+pub(crate) struct LibraryView {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) root_path: PathBuf,
+    pub(crate) schema_version: u32,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct TaskSummaryView {
-    id: String,
-    library_id: String,
-    task_type: String,
-    status: String,
-    queue_position: i64,
-    priority: i64,
-    provider: Option<String>,
-    operation: Option<String>,
-    concurrency_group: Option<String>,
-    attempt_count: u32,
-    max_attempts: u32,
-    next_retry_at: Option<String>,
-    input: Value,
-    created_at: String,
-    updated_at: String,
-    last_error_code: Option<String>,
-    last_error_message: Option<String>,
-    error_classification: Option<String>,
-    wait_reason: Option<String>,
+pub(crate) struct TaskSummaryView {
+    pub(crate) id: String,
+    pub(crate) library_id: String,
+    pub(crate) task_type: String,
+    pub(crate) status: String,
+    pub(crate) queue_position: i64,
+    pub(crate) priority: i64,
+    pub(crate) provider: Option<String>,
+    pub(crate) operation: Option<String>,
+    pub(crate) concurrency_group: Option<String>,
+    pub(crate) attempt_count: u32,
+    pub(crate) max_attempts: u32,
+    pub(crate) next_retry_at: Option<String>,
+    pub(crate) input: Value,
+    pub(crate) created_at: String,
+    pub(crate) updated_at: String,
+    pub(crate) last_error_code: Option<String>,
+    pub(crate) last_error_message: Option<String>,
+    pub(crate) error_classification: Option<String>,
+    pub(crate) wait_reason: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct TaskAttemptView {
-    id: String,
-    task_id: String,
-    attempt_number: u32,
-    status: String,
-    started_at: String,
-    completed_at: Option<String>,
-    log_path: Option<PathBuf>,
-    exit_code: Option<i32>,
-    error_code: Option<String>,
-    error_message: Option<String>,
-    error_classification: Option<String>,
+pub(crate) struct TaskAttemptView {
+    pub(crate) id: String,
+    pub(crate) task_id: String,
+    pub(crate) attempt_number: u32,
+    pub(crate) status: String,
+    pub(crate) started_at: String,
+    pub(crate) completed_at: Option<String>,
+    pub(crate) log_path: Option<PathBuf>,
+    pub(crate) exit_code: Option<i32>,
+    pub(crate) error_code: Option<String>,
+    pub(crate) error_message: Option<String>,
+    pub(crate) error_classification: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct TaskEventView {
-    id: String,
-    task_id: String,
-    event_type: String,
-    message: Option<String>,
-    payload: Option<Value>,
-    created_at: String,
+pub(crate) struct TaskEventView {
+    pub(crate) id: String,
+    pub(crate) task_id: String,
+    pub(crate) event_type: String,
+    pub(crate) message: Option<String>,
+    pub(crate) payload: Option<Value>,
+    pub(crate) created_at: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct TaskOutputView {
-    id: String,
-    task_id: String,
-    output_type: String,
-    target_id: String,
-    payload: Option<Value>,
-    created_at: String,
+pub(crate) struct TaskOutputView {
+    pub(crate) id: String,
+    pub(crate) task_id: String,
+    pub(crate) output_type: String,
+    pub(crate) target_id: String,
+    pub(crate) payload: Option<Value>,
+    pub(crate) created_at: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct TaskDetailView {
-    task: TaskSummaryView,
-    attempts: Vec<TaskAttemptView>,
-    events: Vec<TaskEventView>,
-    outputs: Vec<TaskOutputView>,
+pub(crate) struct TaskDetailView {
+    pub(crate) task: TaskSummaryView,
+    pub(crate) attempts: Vec<TaskAttemptView>,
+    pub(crate) events: Vec<TaskEventView>,
+    pub(crate) outputs: Vec<TaskOutputView>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct LogTailView {
-    content: String,
-    truncated: bool,
+pub(crate) struct LogTailView {
+    pub(crate) content: String,
+    pub(crate) truncated: bool,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ApiErrorView {
-    code: String,
-    message: String,
-    recoverable: bool,
+pub(crate) struct ApiErrorView {
+    pub(crate) code: String,
+    pub(crate) message: String,
+    pub(crate) recoverable: bool,
 }
-

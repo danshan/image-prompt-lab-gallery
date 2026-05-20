@@ -1,3 +1,10 @@
+use crate::logs::*;
+use crate::routes::*;
+use crate::runtime::*;
+use crate::task_dto::*;
+use crate::transport::route_request;
+use crate::*;
+
 pub fn handle_http_request(request: &str, token: &str) -> HttpResponse {
     let registry_path = std::env::temp_dir().join("imglab-daemon-stateless-registry.sqlite");
     let log_root = std::env::temp_dir().join("imglab-daemon-logs");
@@ -75,7 +82,7 @@ pub fn handle_http_request_with_shared_state(
     }
 }
 
-fn handle_lock_free_shared_request(request: &str, token: &str) -> Option<HttpResponse> {
+pub(crate) fn handle_lock_free_shared_request(request: &str, token: &str) -> Option<HttpResponse> {
     let request_line = request.lines().next()?;
     let mut parts = request_line.split_whitespace();
     let method = parts.next().unwrap_or_default();
@@ -160,4 +167,3 @@ pub fn serve_one_with_shared_state(
     })?;
     handle_shared_stream(&mut stream, token, state)
 }
-

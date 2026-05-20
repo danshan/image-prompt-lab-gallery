@@ -50,6 +50,19 @@ import { useGalleryDerivedState } from "./hooks/gallery";
 import { useReviewDerivedState } from "./hooks/review";
 import { useTaskActivitySummary } from "./hooks/tasks";
 import {
+  useAlbumControllerState,
+  useAppOperationsActions,
+  useAppOperationsControllerState,
+  useGallerySelectionActions,
+  useGallerySelectionControllerState,
+  useLibrarySettingsActions,
+  useLibrarySettingsControllerState,
+  useReviewActions,
+  useReviewControllerState,
+  useTaskGenerationActions,
+  useTaskGenerationControllerState,
+} from "./hooks/controllers";
+import {
   compareTaskOrder,
   completedTaskKey,
   formatOperation,
@@ -100,7 +113,6 @@ import {
 import {
   buildChildPath,
   descriptionFromPrompt,
-  mockDetailFor,
   nextAnimationFrame,
   previewGeneratedReviewField,
   reviewFieldContext,
@@ -150,72 +162,250 @@ import type {
 export function App() {
   const runningInTauri = hasTauriRuntime();
   const [activeView, setActiveView] = useState<View>("gallery");
-  const [libraries, setLibraries] = useState<Library[]>(runningInTauri ? [] : mockLibraries);
-  const [library, setLibrary] = useState<Library | null>(runningInTauri ? null : mockLibrary);
-  const [libraryStatus, setLibraryStatus] = useState<LibraryStatus | null>(
-    runningInTauri ? null : mockLibraryStatus,
-  );
-  const [providerHealth, setProviderHealth] = useState<ProviderHealth[]>(mockProviderHealth);
-  const [gallery, setGallery] = useState<GalleryAsset[]>(runningInTauri ? [] : mockGallery);
-  const [selectedGalleryAssetIds, setSelectedGalleryAssetIds] = useState<string[]>([]);
-  const [query, setQuery] = useState<GalleryQueryState>(defaultGalleryQuery);
-  const [selectedAssetId, setSelectedAssetId] = useState(runningInTauri ? "" : mockGallery[0].id);
-  const [detailState, setDetailState] = useState<DetailLoadState<AssetDetail>>({
-    assetId: runningInTauri ? null : mockDetail.id,
-    detail: runningInTauri ? null : mockDetail,
-    loading: false,
-    error: null,
-  });
-  const [albums, setAlbums] = useState<AlbumListItem[]>(runningInTauri ? [] : mockAlbumList);
-  const [selectedAlbumId, setSelectedAlbumId] = useState<string | null>(null);
-  const [albumSearchInput, setAlbumSearchInput] = useState("");
-  const [albumNameInput, setAlbumNameInput] = useState("");
-  const [albumCreateOpen, setAlbumCreateOpen] = useState(false);
-  const [albumLoading, setAlbumLoading] = useState(false);
-  const [suggestions, setSuggestions] = useState<Suggestion[]>(runningInTauri ? [] : mockSuggestions);
-  const [selectedSuggestionId, setSelectedSuggestionId] = useState<string | null>(
-    runningInTauri ? null : mockSuggestions[0]?.id ?? null,
-  );
-  const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<string[]>([]);
-  const [suggestionHistory, setSuggestionHistory] = useState<Suggestion[]>([]);
-  const [suggestionRegenerating, setSuggestionRegenerating] = useState(false);
-  const [reviewForm, setReviewForm] = useState<ReviewFormState | null>(
-    runningInTauri && mockSuggestions[0] ? null : createReviewFormState(mockSuggestions[0]),
-  );
-  const [taskDrafts, setTaskDrafts] = useState<TaskDraft[]>([createTaskDraft()]);
-  const [tasks, setTasks] = useState<DaemonTask[]>(runningInTauri ? [] : mockTasks);
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(runningInTauri ? null : mockTasks[0]?.id ?? null);
-  const [taskDetail, setTaskDetail] = useState<DaemonTaskDetail | null>(null);
-  const [tasksLoading, setTasksLoading] = useState(false);
-  const [daemonOnline, setDaemonOnline] = useState(false);
-  const [pendingTaskActions, setPendingTaskActions] = useState<string[]>([]);
-  const [prompt, setPrompt] = useState("");
-  const [provider, setProvider] = useState("codex-cli");
-  const [composerOpen, setComposerOpen] = useState(false);
-  const [composerInputVersionId, setComposerInputVersionId] = useState<string | null>(null);
-  const [composerInputFile, setComposerInputFile] = useState<string>("");
-  const [composerInputFileName, setComposerInputFileName] = useState<string | null>(null);
-  const [generationSubmitting, setGenerationSubmitting] = useState(false);
-  const [status, setStatus] = useState(runningInTauri ? "Open or create a library" : "Preview mode");
-  const [recoverableError, setRecoverableError] = useState<string | null>(null);
-  const [libraryFolderNameInput, setLibraryFolderNameInput] = useState("image-prompt-lab");
-  const [libraryNameInput, setLibraryNameInput] = useState("Image Prompt Lab");
-  const [settingsSection, setSettingsSection] = useState<SettingsSection>(defaultSettingsSection);
-  const [pendingLibraryActions, setPendingLibraryActions] = useState<string[]>([]);
-  const [missingLibraryPaths, setMissingLibraryPaths] = useState<string[]>([]);
-  const [appLogs, setAppLogs] = useState<AppLog[]>([]);
-  const [logsLoading, setLogsLoading] = useState(false);
-  const [selectedLogPath, setSelectedLogPath] = useState<string | null>(null);
-  const [selectedLogContent, setSelectedLogContent] = useState<AppLogContent | null>(null);
-  const [logContentLoading, setLogContentLoading] = useState(false);
-  const [updateState, setUpdateState] = useState<UpdateState>(initialUpdateState);
-  const [lightboxImage, setLightboxImage] = useState<LightboxImage | null>(null);
-  const [sidebarExpanded, setSidebarExpanded] = useState(false);
-  const [inspectorOpen, setInspectorOpen] = useState(false);
-  const [activeTaskPanel, setActiveTaskPanel] = useState<TaskPanel>("queue");
+  const {
+    libraries,
+    setLibraries,
+    library,
+    setLibrary,
+    libraryStatus,
+    setLibraryStatus,
+    providerHealth,
+    setProviderHealth,
+    libraryFolderNameInput,
+    setLibraryFolderNameInput,
+    libraryNameInput,
+    setLibraryNameInput,
+    settingsSection,
+    setSettingsSection,
+    pendingLibraryActions,
+    setPendingLibraryActions,
+    missingLibraryPaths,
+    setMissingLibraryPaths,
+  } = useLibrarySettingsControllerState(runningInTauri);
+  const {
+    gallery,
+    setGallery,
+    selectedGalleryAssetIds,
+    setSelectedGalleryAssetIds,
+    query,
+    setQuery,
+    selectedAssetId,
+    setSelectedAssetId,
+    detailState,
+    setDetailState,
+    lightboxImage,
+    setLightboxImage,
+    sidebarExpanded,
+    setSidebarExpanded,
+    inspectorOpen,
+    setInspectorOpen,
+  } = useGallerySelectionControllerState(runningInTauri);
+  const {
+    albums,
+    setAlbums,
+    selectedAlbumId,
+    setSelectedAlbumId,
+    albumSearchInput,
+    setAlbumSearchInput,
+    albumNameInput,
+    setAlbumNameInput,
+    albumCreateOpen,
+    setAlbumCreateOpen,
+    albumLoading,
+    setAlbumLoading,
+  } = useAlbumControllerState(runningInTauri);
+  const {
+    suggestions,
+    setSuggestions,
+    selectedSuggestionId,
+    setSelectedSuggestionId,
+    selectedSuggestionIds,
+    setSelectedSuggestionIds,
+    suggestionHistory,
+    setSuggestionHistory,
+    suggestionRegenerating,
+    setSuggestionRegenerating,
+    reviewForm,
+    setReviewForm,
+  } = useReviewControllerState(runningInTauri);
+  const {
+    taskDrafts,
+    setTaskDrafts,
+    tasks,
+    setTasks,
+    selectedTaskId,
+    setSelectedTaskId,
+    taskDetail,
+    setTaskDetail,
+    tasksLoading,
+    setTasksLoading,
+    daemonOnline,
+    setDaemonOnline,
+    pendingTaskActions,
+    setPendingTaskActions,
+    prompt,
+    setPrompt,
+    provider,
+    setProvider,
+    composerOpen,
+    setComposerOpen,
+    composerInputVersionId,
+    setComposerInputVersionId,
+    composerInputFile,
+    setComposerInputFile,
+    composerInputFileName,
+    setComposerInputFileName,
+    generationSubmitting,
+    setGenerationSubmitting,
+    activeTaskPanel,
+    setActiveTaskPanel,
+  } = useTaskGenerationControllerState(runningInTauri);
+  const {
+    status,
+    setStatus,
+    recoverableError,
+    setRecoverableError,
+    appLogs,
+    setAppLogs,
+    logsLoading,
+    setLogsLoading,
+    selectedLogPath,
+    setSelectedLogPath,
+    selectedLogContent,
+    setSelectedLogContent,
+    logContentLoading,
+    setLogContentLoading,
+    updateState,
+    setUpdateState,
+  } = useAppOperationsControllerState(runningInTauri);
   const logReadRequestRef = useRef<string | null>(null);
   const completedTaskKeysRef = useRef<Set<string>>(new Set());
   const metadataPollTimeoutsRef = useRef<Set<number>>(new Set());
+  const {
+    refreshLibraries,
+    refreshLibraryStatus,
+    createLibrary,
+    openExistingLibraryFromPrompt,
+    renameLibraryAlias,
+    unregisterLibrary,
+    exportLibraryBackup,
+    importLibraryBackup,
+    revealLibraryFolder,
+  } = useLibrarySettingsActions({
+    runningInTauri,
+    library,
+    query,
+    libraryFolderNameInput,
+    libraryNameInput,
+    setLibraries,
+    setLibrary,
+    setLibraryStatus,
+    setProviderHealth,
+    setGallery,
+    setSelectedGalleryAssetIds,
+    setSelectedAssetId,
+    setDetailState,
+    setAlbums,
+    setSelectedAlbumId,
+    setAlbumSearchInput,
+    setAlbumNameInput,
+    setAlbumCreateOpen,
+    setSuggestions,
+    setSelectedSuggestionId,
+    setSelectedSuggestionIds,
+    setSuggestionHistory,
+    setReviewForm,
+    setTasks,
+    setSelectedTaskId,
+    setTaskDetail,
+    setQuery,
+    setLibraryFolderNameInput,
+    setStatus,
+    setRecoverableError,
+    setPendingLibraryActions,
+    setMissingLibraryPaths,
+  });
+  const {
+    selectGalleryAsset,
+    selectAssetVersion,
+    refreshGallery,
+    loadAssetDetail,
+    loadPreviewAssetDetail,
+  } = useGallerySelectionActions({
+    library,
+    query,
+    detailState,
+    setGallery,
+    setSelectedAssetId,
+    setDetailState,
+    setInspectorOpen,
+    setStatus,
+    setRecoverableError,
+  });
+  const {
+    refreshAppLogs,
+    readAppLog,
+    checkForAppUpdate,
+    installAppUpdate,
+    restartApp,
+  } = useAppOperationsActions({
+    runningInTauri,
+    logReadRequestRef,
+    setAppLogs,
+    setLogsLoading,
+    setSelectedLogPath,
+    setSelectedLogContent,
+    setLogContentLoading,
+    setUpdateState,
+    setStatus,
+    setRecoverableError,
+  });
+  const {
+    refreshDaemonHealth,
+    refreshTasks,
+    loadTaskDetail,
+    waitForMetadataFieldResult,
+    waitForMetadataSuggestionResult,
+    startGeneration,
+    openComposerForTextGeneration,
+    openComposerForVersionGeneration,
+    openComposerForReferenceGeneration,
+    enqueueTaskDrafts,
+    reorderQueuedTask,
+    runTaskAction,
+  } = useTaskGenerationActions({
+    runningInTauri,
+    library,
+    prompt,
+    provider,
+    taskDrafts,
+    tasks,
+    selectedTaskId,
+    generationSubmitting,
+    pendingTaskActions,
+    completedTaskKeysRef,
+    metadataPollTimeoutsRef,
+    setDaemonOnline,
+    setTasks,
+    setSelectedTaskId,
+    setTaskDetail,
+    setTasksLoading,
+    setPendingTaskActions,
+    setTaskDrafts,
+    setPrompt,
+    setComposerOpen,
+    setComposerInputVersionId,
+    setComposerInputFile,
+    setComposerInputFileName,
+    setGenerationSubmitting,
+    setActiveView,
+    setActiveTaskPanel,
+    setStatus,
+    setRecoverableError,
+    refreshGallery,
+    refreshSuggestions,
+  });
+
 
   const {
     displayedGallery,
@@ -232,20 +422,57 @@ export function App() {
   });
   const { pendingSuggestions, selectedSuggestion } = useReviewDerivedState(suggestions, selectedSuggestionId);
   const { queueCount, runningTaskCount, failedTaskCount } = useTaskActivitySummary(tasks);
+  const {
+    selectSuggestion,
+    toggleSuggestionForBatch,
+    acceptReviewForm,
+    batchAcceptReviewSuggestions,
+    batchRejectReviewSuggestions,
+    addReviewSelectionToAlbum,
+    pickReviewHistoryField,
+    restoreReviewForm,
+    regenerateReviewField,
+    regenerateFullSuggestion,
+    requestAssetReview,
+  } = useReviewActions({
+    runningInTauri,
+    library,
+    selectedSuggestion,
+    reviewForm,
+    suggestions,
+    selectedSuggestionIds,
+    pendingSuggestions,
+    suggestionRegenerating,
+    gallery,
+    selectedAsset,
+    availableCategories,
+    selectedTaskId,
+    detailState,
+    setSuggestions,
+    setSelectedSuggestionId,
+    setSelectedSuggestionIds,
+    setSuggestionHistory,
+    setSuggestionRegenerating,
+    setReviewForm,
+    setGallery,
+    setDetailState,
+    setTasks,
+    setSelectedTaskId,
+    setActiveView,
+    setStatus,
+    setRecoverableError,
+    refreshGallery,
+    refreshSuggestions,
+    refreshAlbums,
+    refreshSuggestionHistory,
+    refreshTasks,
+    loadAssetDetail,
+    waitForMetadataFieldResult,
+    waitForMetadataSuggestionResult,
+  });
   const changeView = (view: View) => {
     setActiveView(view);
     setSidebarExpanded(false);
-  };
-  const selectGalleryAsset = (assetId: string) => {
-    setSelectedAssetId(assetId);
-    setInspectorOpen(true);
-  };
-  const selectAssetVersion = (versionId: string) => {
-    const detail = detailState.detail;
-    if (!detail) {
-      return;
-    }
-    void loadAssetDetail(detail.id, versionId);
   };
   const selectTask = (taskId: string) => {
     setSelectedTaskId(taskId);
@@ -341,87 +568,9 @@ export function App() {
     if (runningInTauri && library) {
       void loadAssetDetail(selectedAsset.id, selectedAsset.currentVersionId);
     } else {
-      setDetailState(completeDetailLoad(selectedAsset.id, mockDetailFor(selectedAsset)));
+      loadPreviewAssetDetail(selectedAsset);
     }
   }, [runningInTauri, library?.rootPath, selectedAsset?.id, selectedAsset?.currentVersionId]);
-
-  async function refreshLibraries() {
-    try {
-      const libraries = await invokeCommand<Library[]>("list_libraries", { includeHidden: false });
-      const nextLibrary = libraries[0] ?? null;
-      setLibraries(libraries);
-      setLibrary(nextLibrary);
-      setStatus(nextLibrary ? "Library opened" : "No library registered");
-      if (nextLibrary) {
-        void refreshLibraryStatus(nextLibrary.rootPath);
-      }
-    } catch (error) {
-      setStatus(errorMessage(error));
-    }
-  }
-
-  function setLibraryActionPending(key: string, pending: boolean) {
-    setPendingLibraryActions((current) => {
-      if (pending) {
-        return current.includes(key) ? current : [...current, key];
-      }
-      return current.filter((item) => item !== key);
-    });
-  }
-
-  function rememberMissingLibraryPath(rootPath: string) {
-    setMissingLibraryPaths((current) => (current.includes(rootPath) ? current : [...current, rootPath]));
-  }
-
-  function forgetMissingLibraryPath(rootPath: string) {
-    setMissingLibraryPaths((current) => current.filter((path) => path !== rootPath));
-  }
-
-  function replaceRegisteredLibrary(updated: Library) {
-    setLibraries((current) => current.map((item) => (item.id === updated.id ? updated : item)));
-    setLibrary((current) => (current?.id === updated.id ? updated : current));
-  }
-
-  function clearCurrentLibraryContext() {
-    const cleared = clearLibraryWorkspaceState<AssetDetail>();
-    setLibrary(null);
-    setLibraryStatus(null);
-    setGallery([]);
-    setSelectedGalleryAssetIds(cleared.selectedGalleryAssetIds);
-    setSelectedAssetId(cleared.selectedAssetId);
-    setDetailState(cleared.detailState);
-    setAlbums([]);
-    setSelectedAlbumId(cleared.selectedAlbumId);
-    setAlbumSearchInput("");
-    setAlbumNameInput("");
-    setAlbumCreateOpen(false);
-    setSuggestions([]);
-    setSelectedSuggestionId(cleared.selectedSuggestionId);
-    setSelectedSuggestionIds(cleared.selectedSuggestionIds);
-    setSuggestionHistory([]);
-    setReviewForm(cleared.reviewForm);
-    setTasks([]);
-    setSelectedTaskId(cleared.selectedTaskId);
-    setTaskDetail(null);
-    setQuery(clearAlbumQuery(query));
-    setLibraryFolderNameInput("image-prompt-lab");
-    setStatus("No library selected");
-    setRecoverableError(null);
-  }
-
-  async function refreshLibraryStatus(rootPath: string) {
-    try {
-      const nextStatus = await invokeCommand<LibraryStatus>("library_status", { rootPath });
-      setLibraryStatus(nextStatus);
-      if (runningInTauri) {
-        const overview = await invokeCommand<{ providerHealth: ProviderHealth[] }>("diagnostics_overview", { rootPath });
-        setProviderHealth(overview.providerHealth);
-      }
-    } catch (error) {
-      setLibraryStatus(null);
-      setRecoverableError(errorMessage(error));
-    }
-  }
 
   async function refreshAlbums() {
     if (!runningInTauri || !library) {
@@ -484,152 +633,6 @@ export function App() {
     }
   }
 
-  async function refreshAppLogs() {
-    setLogsLoading(true);
-    try {
-      if (!runningInTauri) {
-        setAppLogs([]);
-        setSelectedLogPath(null);
-        setSelectedLogContent(null);
-        setRecoverableError(null);
-        return;
-      }
-      const logs = await invokeCommand<AppLog[]>("list_app_logs");
-      setAppLogs(logs);
-      setSelectedLogPath((current) => {
-        const next = current && logs.some((log) => log.path === current) ? current : logs[0]?.path ?? null;
-        if (!next) {
-          setSelectedLogContent(null);
-        } else if (next !== current) {
-          void readAppLog(next);
-        }
-        return next;
-      });
-      setRecoverableError(null);
-    } catch (error) {
-      setAppLogs([]);
-      setSelectedLogPath(null);
-      setSelectedLogContent(null);
-      setRecoverableError(errorMessage(error));
-    } finally {
-      setLogsLoading(false);
-    }
-  }
-
-  async function readAppLog(path: string) {
-    const requestId = crypto.randomUUID();
-    logReadRequestRef.current = requestId;
-    setSelectedLogPath(path);
-    setLogContentLoading(true);
-    try {
-      if (!runningInTauri) {
-        if (logReadRequestRef.current === requestId) {
-          setSelectedLogContent(null);
-        }
-        setRecoverableError(null);
-        return;
-      }
-      const content = await invokeCommand<AppLogContent>("read_app_log", { input: { path } });
-      if (logReadRequestRef.current === requestId && content.path === path) {
-        setSelectedLogContent(content);
-      }
-      setRecoverableError(null);
-    } catch (error) {
-      if (logReadRequestRef.current === requestId) {
-        setSelectedLogContent(null);
-      }
-      setRecoverableError(errorMessage(error));
-    } finally {
-      if (logReadRequestRef.current === requestId) {
-        setLogContentLoading(false);
-      }
-    }
-  }
-
-  async function checkForAppUpdate({ silent = false }: { silent?: boolean } = {}) {
-    setUpdateState((current) => ({
-      ...current,
-      checking: true,
-      error: null,
-      status: "checking",
-    }));
-    try {
-      if (!runningInTauri) {
-        setUpdateState({
-          ...initialUpdateState,
-          lastCheckedAt: new Date().toISOString(),
-          status: "upToDate",
-        });
-        return;
-      }
-      const result = await invokeCommand<UpdateCheck>("check_for_update");
-      setUpdateState((current) => ({
-        ...current,
-        currentVersion: result.currentVersion,
-        lastCheckedAt: new Date().toISOString(),
-        checking: false,
-        availableUpdate: result.update,
-        error: null,
-        status: result.available ? "available" : "upToDate",
-      }));
-      if (!silent) {
-        setStatus(result.available ? `Update ${result.update?.version ?? ""} available` : "App is up to date");
-      }
-    } catch (error) {
-      setUpdateState((current) => ({
-        ...current,
-        checking: false,
-        lastCheckedAt: new Date().toISOString(),
-        error: errorMessage(error),
-        status: "error",
-      }));
-      if (!silent) {
-        setStatus("Update check failed");
-      }
-    }
-  }
-
-  async function installAppUpdate() {
-    setUpdateState((current) => ({
-      ...current,
-      installing: true,
-      error: null,
-      status: "installing",
-    }));
-    try {
-      const result = await invokeCommand<{ installed: boolean; version: string | null }>("install_update");
-      setUpdateState((current) => ({
-        ...current,
-        installing: false,
-        pendingRestart: result.installed,
-        availableUpdate: result.installed ? current.availableUpdate : null,
-        error: null,
-        status: result.installed ? "pendingRestart" : "upToDate",
-      }));
-      setStatus(result.installed ? `Update ${result.version ?? ""} installed` : "No update available");
-    } catch (error) {
-      setUpdateState((current) => ({
-        ...current,
-        installing: false,
-        error: errorMessage(error),
-        status: "error",
-      }));
-      setStatus("Update install failed");
-    }
-  }
-
-  async function restartApp() {
-    try {
-      await invokeCommand<void>("restart_app");
-    } catch (error) {
-      setUpdateState((current) => ({
-        ...current,
-        error: errorMessage(error),
-        status: "error",
-      }));
-    }
-  }
-
   function switchLibrary(libraryId: string) {
     const nextLibrary = libraries.find((item) => item.id === libraryId) ?? null;
     const cleared = clearCurationStateForLibrarySwitch();
@@ -657,531 +660,6 @@ export function App() {
       void refreshLibraryStatus(nextLibrary.rootPath);
     } else {
       setLibraryStatus(nextLibrary ? mockLibraryStatus : null);
-    }
-  }
-
-  async function refreshGallery() {
-    if (!library) {
-      return;
-    }
-    try {
-      const items = await invokeCommand<GalleryAsset[]>("query_gallery", {
-        input: galleryQueryInput(library.rootPath, query),
-      });
-      setGallery(items);
-      setSelectedAssetId((current) => items.find((item) => item.id === current)?.id ?? items[0]?.id ?? "");
-      setStatus(`${items.length} item${items.length === 1 ? "" : "s"}`);
-      setRecoverableError(null);
-    } catch (error) {
-      setRecoverableError(errorMessage(error));
-    }
-  }
-
-  async function loadAssetDetail(assetId: string, versionId: string | null) {
-    if (!library) {
-      return;
-    }
-    setDetailState(beginDetailLoad(assetId));
-    try {
-      const detail = await invokeCommand<AssetDetail>("get_asset_detail", {
-        input: {
-          libraryPath: library.rootPath,
-          assetId,
-          currentVersionId: versionId,
-        },
-      });
-      setDetailState(completeDetailLoad(assetId, detail));
-    } catch (error) {
-      setDetailState(failDetailLoad(assetId, errorMessage(error)));
-    }
-  }
-
-  async function createLibrary() {
-    const folderName = libraryFolderNameInput.trim();
-    if (!validLibraryFolderName(folderName)) {
-      setStatus("Folder name must not be empty or contain path separators");
-      return;
-    }
-    try {
-      const parentPath = await pickDirectory("Choose Library Parent Folder");
-      if (!parentPath) {
-        return;
-      }
-      const rootPath = buildChildPath(parentPath, folderName);
-      const created = await invokeCommand<Library>("create_library", {
-        input: {
-          rootPath,
-          name: libraryNameInput.trim() || "Image Prompt Lab",
-        },
-      });
-      setLibraries((current) => [created, ...current.filter((item) => item.id !== created.id)]);
-      setLibrary(created);
-      setLibraryStatus(null);
-      setGallery([]);
-      setAlbums([]);
-      setAlbumSearchInput("");
-      setAlbumNameInput("");
-      setAlbumCreateOpen(false);
-      setSuggestions([]);
-      setSelectedAlbumId(null);
-      setAlbumSearchInput("");
-      setAlbumNameInput("");
-      setAlbumCreateOpen(false);
-      setSelectedSuggestionId(null);
-      setReviewForm(null);
-      setSelectedAssetId("");
-      setStatus("Library created");
-    } catch (error) {
-      setStatus(errorMessage(error));
-    }
-  }
-
-  async function openExistingLibraryFromPrompt() {
-    try {
-      const selectedPath = await pickDirectory("Open Existing Library");
-      if (!selectedPath) {
-        return;
-      }
-      const opened = await invokeCommand<Library>("open_library", {
-        rootPath: selectedPath,
-      });
-      setLibraries((current) => [opened, ...current.filter((item) => item.id !== opened.id)]);
-      setLibrary(opened);
-      forgetMissingLibraryPath(opened.rootPath);
-      setLibraryStatus(null);
-      setSelectedAlbumId(null);
-      setSelectedSuggestionId(null);
-      setReviewForm(null);
-      setStatus("Library opened");
-    } catch (error) {
-      setStatus(errorMessage(error));
-    }
-  }
-
-  async function renameLibraryAlias(item: Library) {
-    const alias = window.prompt("Rename Library", item.name);
-    if (alias === null) {
-      return;
-    }
-    const actionKey = `rename:${item.id}`;
-    setLibraryActionPending(actionKey, true);
-    try {
-      const updated = await invokeCommand<Library>("rename_library_alias", {
-        input: {
-          libraryId: item.id,
-          alias,
-        },
-      });
-      replaceRegisteredLibrary(updated);
-      setStatus("Library renamed");
-    } catch (error) {
-      setStatus(errorMessage(error));
-    } finally {
-      setLibraryActionPending(actionKey, false);
-    }
-  }
-
-  async function unregisterLibrary(item: Library) {
-    const confirmed = window.confirm("Close this library in the app? Files on disk are not deleted.");
-    if (!confirmed) {
-      return;
-    }
-    const actionKey = `close:${item.id}`;
-    setLibraryActionPending(actionKey, true);
-    try {
-      await invokeCommand<void>("unregister_library", { libraryId: item.id });
-      setLibraries((current) => current.filter((library) => library.id !== item.id));
-      if (library?.id === item.id) {
-        clearCurrentLibraryContext();
-      } else {
-        setStatus("Library closed");
-      }
-    } catch (error) {
-      setStatus(errorMessage(error));
-    } finally {
-      setLibraryActionPending(actionKey, false);
-    }
-  }
-
-  async function exportLibraryBackup(item: Library) {
-    const defaultPath = `${item.rootPath.replace(/\/$/, "")}.zip`;
-    const actionKey = `export:${item.id}`;
-    setLibraryActionPending(actionKey, true);
-    try {
-      const outputZipPath = await pickSaveZipPath("Export Library Zip", defaultPath);
-      if (!outputZipPath) {
-        return;
-      }
-      await invokeCommand<void>("export_library_backup_zip", {
-        input: {
-          libraryPath: item.rootPath,
-          outputZipPath,
-        },
-      });
-      setStatus(`Library exported to ${outputZipPath}`);
-      forgetMissingLibraryPath(item.rootPath);
-    } catch (error) {
-      const message = errorMessage(error);
-      setStatus(message);
-      if (message.includes("not found") || message.includes("missing")) {
-        rememberMissingLibraryPath(item.rootPath);
-      }
-    } finally {
-      setLibraryActionPending(actionKey, false);
-    }
-  }
-
-  async function importLibraryBackup() {
-    const actionKey = "import";
-    setLibraryActionPending(actionKey, true);
-    try {
-      const zipPath = await pickZipFile("Import Library Zip");
-      if (!zipPath) {
-        return;
-      }
-      const destinationPath = await pickDirectory("Import Destination Folder");
-      if (!destinationPath) {
-        return;
-      }
-      const imported = await invokeCommand<LibraryBackup>("import_library_backup_zip", {
-        input: {
-          zipPath,
-          destinationPath,
-        },
-      });
-      setLibraries((current) => [imported.library, ...current.filter((item) => item.id !== imported.library.id)]);
-      setLibrary(imported.library);
-      forgetMissingLibraryPath(imported.library.rootPath);
-      setLibraryStatus(null);
-      setSelectedAlbumId(null);
-      setSelectedSuggestionId(null);
-      setReviewForm(null);
-      setStatus(imported.cloned ? "Library imported as copy" : "Library imported");
-    } catch (error) {
-      setStatus(errorMessage(error));
-    } finally {
-      setLibraryActionPending(actionKey, false);
-    }
-  }
-
-  async function revealLibraryFolder(item: Library) {
-    const actionKey = `reveal:${item.id}`;
-    setLibraryActionPending(actionKey, true);
-    try {
-      await invokeCommand<void>("reveal_library_folder", { rootPath: item.rootPath });
-      setStatus("Library folder opened");
-      forgetMissingLibraryPath(item.rootPath);
-    } catch (error) {
-      const message = errorMessage(error);
-      setStatus(message);
-      if (message.includes("missing") || message.includes("not found")) {
-        rememberMissingLibraryPath(item.rootPath);
-      }
-    } finally {
-      setLibraryActionPending(actionKey, false);
-    }
-  }
-
-  async function refreshDaemonHealth() {
-    if (!runningInTauri) {
-      setDaemonOnline(true);
-      return;
-    }
-    try {
-      const online = await invokeCommand<boolean>("daemon_health");
-      setDaemonOnline(online);
-    } catch (error) {
-      setDaemonOnline(false);
-      setRecoverableError(errorMessage(error));
-    }
-  }
-
-  async function refreshTasks(options: { showLoading?: boolean } = {}): Promise<DaemonTask[]> {
-    const showLoading = options.showLoading ?? true;
-    if (!library) {
-      setTasks([]);
-      setSelectedTaskId(null);
-      return [];
-    }
-    if (!runningInTauri) {
-      setTasks(mockTasks);
-      return mockTasks;
-    }
-    if (showLoading) {
-      setTasksLoading(true);
-    }
-    try {
-      const nextTasks = await invokeCommand<DaemonTask[]>("list_daemon_tasks", {
-        input: { libraryPath: library.rootPath },
-      });
-      const nextCompletedKeys = nextTasks
-        .filter((task) => task.status === "completed")
-        .map((task) => completedTaskKey(task));
-      const hasNewCompletedTask = nextCompletedKeys.some((key) => !completedTaskKeysRef.current.has(key));
-      completedTaskKeysRef.current = new Set(nextCompletedKeys);
-      setTasks(nextTasks);
-      setSelectedTaskId((current) => {
-        if (current && nextTasks.some((task) => task.id === current)) {
-          return current;
-        }
-        return nextTasks[0]?.id ?? null;
-      });
-      setDaemonOnline(true);
-      setRecoverableError(null);
-      if (hasNewCompletedTask) {
-        void refreshGallery();
-        void refreshSuggestions();
-      }
-      return nextTasks;
-    } catch (error) {
-      setDaemonOnline(false);
-      setRecoverableError(errorMessage(error));
-      return [];
-    } finally {
-      if (showLoading) {
-        setTasksLoading(false);
-      }
-    }
-  }
-
-  async function loadTaskDetail(taskId: string) {
-    if (!runningInTauri) {
-      const task = mockTasks.find((item) => item.id === taskId) ?? null;
-      setTaskDetail(task ? { task, attempts: [], events: [], outputs: [], logTail: "", logTailTruncated: false } : null);
-      return;
-    }
-    try {
-      const detail = await invokeCommand<DaemonTaskDetail>("get_daemon_task_detail", {
-        input: { taskId },
-      });
-      setTaskDetail(detail);
-      setRecoverableError(null);
-    } catch (error) {
-      setTaskDetail(null);
-      setRecoverableError(errorMessage(error));
-    }
-  }
-
-  function waitForMetadataPollDelay() {
-    return new Promise<void>((resolve) => {
-      const timer = window.setTimeout(() => {
-        metadataPollTimeoutsRef.current.delete(timer);
-        resolve();
-      }, METADATA_POLL_INTERVAL_MS);
-      metadataPollTimeoutsRef.current.add(timer);
-    });
-  }
-
-  async function waitForMetadataFieldResult(
-    taskId: string,
-    suggestionId: string,
-    field: ReviewFieldName,
-    baseRevision: string,
-  ) {
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      const detail = await invokeCommand<DaemonTaskDetail>("get_daemon_task_detail", {
-        input: { taskId },
-      });
-      setTaskDetail(detail);
-      const output = detail.outputs.find(
-        (item) => item.outputType === "metadata_field_result" && item.targetId === suggestionId,
-      );
-      if (output?.payload?.field === field && output.payload.baseRevision === baseRevision) {
-        const value = output.payload.value;
-        if (typeof value === "string") {
-          return value;
-        }
-      }
-      if (isTerminalFailureStatus(detail.task.status)) {
-        throw new Error(detail.task.lastErrorMessage ?? "Metadata field generation failed");
-      }
-      await waitForMetadataPollDelay();
-    }
-    throw new Error("Metadata field generation timed out");
-  }
-
-  async function waitForMetadataSuggestionResult(taskId: string) {
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      const detail = await invokeCommand<DaemonTaskDetail>("get_daemon_task_detail", {
-        input: { taskId },
-      });
-      setTaskDetail(detail);
-      const output = detail.outputs.find((item) => item.outputType === "metadata_suggestion");
-      if (output) {
-        return output.targetId;
-      }
-      if (isTerminalFailureStatus(detail.task.status)) {
-        throw new Error(detail.task.lastErrorMessage ?? "Metadata suggestion generation failed");
-      }
-      await waitForMetadataPollDelay();
-    }
-    throw new Error("Metadata suggestion generation timed out");
-  }
-
-  async function startGeneration(inputVersionId: string | null = null, inputFile = "") {
-    if (generationSubmitting) {
-      return;
-    }
-    if (!library || prompt.trim().length === 0) {
-      setRecoverableError("Open a real library and enter a prompt before generation.");
-      return;
-    }
-    setGenerationSubmitting(true);
-    try {
-      const created = await enqueueTaskDrafts([
-        createTaskDraft({
-          provider,
-          prompt,
-          operation: inputVersionId || inputFile ? "image_to_image" : "text_to_image",
-          inputFile,
-          inputVersionId,
-        }),
-      ]);
-      if (created.length === 0) {
-        setRecoverableError((current) => current ?? "No generation task was created. Check daemon status and try again.");
-        return;
-      }
-      setPrompt("");
-      setComposerOpen(false);
-      setComposerInputVersionId(null);
-      setComposerInputFile("");
-      setComposerInputFileName(null);
-      setActiveView("queue");
-      setActiveTaskPanel("queue");
-    } catch (error) {
-      setRecoverableError(errorMessage(error));
-    } finally {
-      setGenerationSubmitting(false);
-    }
-  }
-
-  function openComposerForTextGeneration(open: boolean) {
-    if (open) {
-      setComposerInputVersionId(null);
-      setComposerInputFile("");
-      setComposerInputFileName(null);
-      setRecoverableError(null);
-    }
-    setComposerOpen(open);
-  }
-
-  function openComposerForVersionGeneration(versionId: string | null) {
-    if (!versionId) {
-      setRecoverableError("Select an asset version before generating a new version.");
-      return;
-    }
-    setComposerInputVersionId(versionId);
-    setComposerInputFile("");
-    setComposerInputFileName(null);
-    setRecoverableError(null);
-    setComposerOpen(true);
-  }
-
-  function openComposerForReferenceGeneration(reference: ReferenceSource) {
-    setComposerInputVersionId(null);
-    setComposerInputFile(reference.filePath);
-    setComposerInputFileName(reference.assetTitle ?? reference.versionName);
-    setRecoverableError(null);
-    setComposerOpen(true);
-  }
-
-  async function enqueueTaskDrafts(drafts: TaskDraft[] = taskDrafts): Promise<DaemonTask[]> {
-    if (!library) {
-      setRecoverableError("Open a real library before enqueueing tasks.");
-      return [];
-    }
-    const readyDrafts = drafts.filter((draft) => draft.prompt.trim().length > 0);
-    if (readyDrafts.length === 0) {
-      setRecoverableError("Add at least one task prompt before enqueueing.");
-      return [];
-    }
-    setStatus(`Enqueueing ${readyDrafts.length} task${readyDrafts.length === 1 ? "" : "s"}`);
-    try {
-      const created = await invokeCommand<DaemonTask[]>("enqueue_generation_tasks", {
-        input: {
-          libraryPath: library.rootPath,
-          tasks: readyDrafts.map((draft) => ({
-            provider: draft.provider,
-            prompt: draft.prompt,
-            negativePrompt: draft.negativePrompt.trim() || null,
-            operation: draft.operation,
-            inputFile: draft.inputFile.trim() || null,
-            inputVersionId: draft.inputVersionId,
-            parametersJson: draft.parametersJson,
-            priority: draft.priority,
-            maxAttempts: draft.maxAttempts,
-          })),
-        },
-      });
-      setTasks((current) => mergeTasks(created, current));
-      setSelectedTaskId(created[0]?.id ?? selectedTaskId);
-      setTaskDrafts((current) => {
-        const createdIds = new Set(readyDrafts.map((draft) => draft.id));
-        const remaining = current.filter((draft) => !createdIds.has(draft.id));
-        return remaining.length > 0 ? remaining : [createTaskDraft()];
-      });
-      setStatus(`${created.length} task${created.length === 1 ? "" : "s"} enqueued`);
-      setRecoverableError(null);
-      void refreshTasks();
-      return created;
-    } catch (error) {
-      setRecoverableError(errorMessage(error));
-      return [];
-    }
-  }
-
-  async function reorderQueuedTask(taskId: string, direction: -1 | 1) {
-    if (!library) {
-      return;
-    }
-    const queued = tasks.filter((task) => task.status === "queued").sort(compareTaskOrder);
-    const nextQueuedIds = moveQueuedTaskOrder(queued, taskId, direction);
-    if (nextQueuedIds.join("\0") === queued.map((task) => task.id).join("\0")) {
-      return;
-    }
-    setTasks((current) => reorderByIds(current, nextQueuedIds));
-    try {
-      await invokeCommand<void>("reorder_daemon_tasks", {
-        input: {
-          libraryPath: library.rootPath,
-          taskIds: nextQueuedIds,
-        },
-      });
-      await refreshTasks();
-    } catch (error) {
-      setRecoverableError(errorMessage(error));
-      await refreshTasks();
-    }
-  }
-
-  async function runTaskAction(command: "cancel_daemon_task" | "retry_daemon_task" | "duplicate_daemon_task", taskId: string) {
-    const actionKey = taskActionKey(command, taskId);
-    if (pendingTaskActions.includes(actionKey)) {
-      return;
-    }
-    setPendingTaskActions((current) => (current.includes(actionKey) ? current : [...current, actionKey]));
-    try {
-      const task = await invokeCommand<DaemonTask>(command, { input: { taskId } });
-      setTasks((current) => mergeTasks([task], current));
-      setSelectedTaskId(task.id);
-      await refreshTasks();
-      await loadTaskDetail(task.id);
-      if (task.status === "completed") {
-        await Promise.all([refreshGallery(), refreshSuggestions()]);
-      }
-    } catch (error) {
-      const nextTasks = await refreshTasks();
-      if (selectedTaskId) {
-        await loadTaskDetail(selectedTaskId);
-      }
-      const latestTask = nextTasks.find((task) => task.id === taskId);
-      if (command === "retry_daemon_task" && latestTask && !isRetryableTaskStatus(latestTask.status)) {
-        setRecoverableError(null);
-        return;
-      }
-      setRecoverableError(errorMessage(error));
-    } finally {
-      setPendingTaskActions((current) => current.filter((key) => key !== actionKey));
     }
   }
 
@@ -1540,394 +1018,6 @@ export function App() {
       ]);
       setStatus("Asset added to album");
       setRecoverableError(null);
-    } catch (error) {
-      setRecoverableError(errorMessage(error));
-    }
-  }
-
-  function selectSuggestion(suggestion: Suggestion) {
-    setSelectedSuggestionId(suggestion.id);
-    setReviewForm(createReviewFormState(suggestion));
-  }
-
-  function toggleSuggestionForBatch(suggestionId: string) {
-    setSelectedSuggestionIds((current) => toggleSelection(current, suggestionId));
-  }
-
-  async function acceptReviewForm() {
-    if (!library || !selectedSuggestion || !reviewForm) {
-      return;
-    }
-    const finalForm = addReviewFormTag(reviewForm, reviewForm.tagInput);
-    const finalSuggestion: Suggestion = {
-      ...selectedSuggestion,
-      title: finalForm.title.trim() || null,
-      description: finalForm.description.trim() || null,
-      schemaPrompt: finalForm.schemaPrompt.trim() || null,
-      tags: reviewFormTags(finalForm),
-      category:
-        finalForm.category.trim() && availableCategories.includes(finalForm.category.trim())
-          ? finalForm.category.trim()
-          : null,
-    };
-    await acceptSuggestion(finalSuggestion);
-  }
-
-  async function acceptSuggestion(suggestion: Suggestion) {
-    if (!library) {
-      return;
-    }
-    try {
-      const asset = await invokeCommand<AssetView>("accept_suggestion", {
-        input: {
-          libraryPath: library.rootPath,
-          suggestionId: suggestion.id,
-          title: suggestion.title,
-          description: suggestion.description,
-          schemaPrompt: suggestion.schemaPrompt,
-          tags: suggestion.tags,
-          category: suggestion.category,
-        },
-      });
-      setGallery((current) => {
-        const state = acceptSuggestionState(current, suggestions, {
-          id: suggestion.id,
-          assetId: asset.id,
-          title: asset.title,
-          description: suggestion.description,
-          schemaPrompt: suggestion.schemaPrompt,
-          category: asset.category,
-          tags: suggestion.tags,
-          status: suggestion.status,
-        });
-        return state.assets;
-      });
-      setSuggestions((current) => removeSuggestionState(current, suggestion.id));
-      await Promise.all([
-        refreshGallery(),
-        refreshSuggestions(),
-        detailState.detail?.id === asset.id
-          ? loadAssetDetail(asset.id, selectedAsset?.currentVersionId ?? null)
-          : Promise.resolve(),
-      ]);
-      setSelectedSuggestionIds((current) => current.filter((id) => id !== suggestion.id));
-      setReviewForm(null);
-    } catch (error) {
-      setRecoverableError(errorMessage(error));
-    }
-  }
-
-  async function batchAcceptReviewSuggestions() {
-    if (!library) {
-      return;
-    }
-    const ids = selectedOrCurrentIds(selectedSuggestionIds, selectedSuggestion?.id ?? null);
-    if (ids.length === 0) {
-      return;
-    }
-    const finalForm = reviewForm ? addReviewFormTag(reviewForm, reviewForm.tagInput) : null;
-    const payloads = buildBatchReviewPayloads(suggestions, ids, finalForm).map((suggestion) => ({
-      libraryPath: library.rootPath,
-      suggestionId: suggestion.id,
-      title: suggestion.title,
-      description: suggestion.description ?? null,
-      schemaPrompt: suggestion.schemaPrompt ?? null,
-      tags: suggestion.tags,
-      category:
-        suggestion.category && availableCategories.includes(suggestion.category)
-          ? suggestion.category
-          : null,
-    }));
-    try {
-      await invokeCommand<AssetView[]>("batch_accept_suggestions", {
-        input: {
-          libraryPath: library.rootPath,
-          suggestions: payloads,
-        },
-      });
-      await Promise.all([refreshGallery(), refreshSuggestions()]);
-      setSelectedSuggestionIds([]);
-      setReviewForm(null);
-      setRecoverableError(null);
-    } catch (error) {
-      setRecoverableError(errorMessage(error));
-      await refreshSuggestions();
-    }
-  }
-
-  async function batchRejectReviewSuggestions() {
-    if (!library) {
-      return;
-    }
-    const ids = selectedOrCurrentIds(selectedSuggestionIds, selectedSuggestion?.id ?? null);
-    if (ids.length === 0) {
-      return;
-    }
-    try {
-      await invokeCommand("batch_reject_suggestions", {
-        input: {
-          libraryPath: library.rootPath,
-          suggestionIds: ids,
-        },
-      });
-      await Promise.all([refreshGallery(), refreshSuggestions()]);
-      setSelectedSuggestionIds([]);
-      setReviewForm(null);
-      setRecoverableError(null);
-    } catch (error) {
-      setRecoverableError(errorMessage(error));
-      await refreshSuggestions();
-    }
-  }
-
-  async function addReviewSelectionToAlbum(albumId: string) {
-    if (!library || albumId.length === 0) {
-      return;
-    }
-    const ids = selectedOrCurrentIds(selectedSuggestionIds, selectedSuggestion?.id ?? null);
-    const assetIds = suggestions
-      .filter((suggestion) => ids.includes(suggestion.id))
-      .map((suggestion) => suggestion.assetId);
-    if (assetIds.length === 0) {
-      return;
-    }
-    try {
-      await invokeCommand("batch_add_assets_to_album", {
-        input: {
-          albumId,
-          assetIds,
-        },
-      });
-      await refreshAlbums();
-      setRecoverableError(null);
-      setStatus("Review assets added to album");
-    } catch (error) {
-      setRecoverableError(errorMessage(error));
-    }
-  }
-
-  function pickReviewHistoryField(suggestion: Suggestion, field: ReviewFieldName | "tags" | "category") {
-    if (!reviewForm) {
-      return;
-    }
-    setReviewForm(applySuggestionFieldToReviewForm(reviewForm, suggestion, field));
-  }
-
-  function restoreReviewForm() {
-    if (selectedSuggestion) {
-      setReviewForm(createReviewFormState(selectedSuggestion));
-    }
-  }
-
-  async function regenerateReviewField(field: ReviewFieldName) {
-    if (!reviewForm || !selectedSuggestion) {
-      return;
-    }
-    if (isReviewFieldGenerating(reviewForm, field)) {
-      return;
-    }
-    const requestId = crypto.randomUUID();
-    const suggestionId = selectedSuggestion.id;
-    setReviewForm(beginReviewFieldGeneration(reviewForm, field, requestId));
-    const asset = gallery.find((item) => item.id === selectedSuggestion.assetId) ?? selectedAsset;
-    const sourceText = asset?.prompt ?? selectedSuggestion.title ?? reviewForm.title;
-    if (!runningInTauri) {
-      const value = previewGeneratedReviewField(field, asset, sourceText);
-      setReviewForm((current) =>
-        current
-          ? completeReviewFieldGeneration(current, suggestionId, field, requestId, value, null)
-          : current,
-      );
-      return;
-    }
-    if (!library) {
-      setReviewForm((current) =>
-        current
-          ? failReviewFieldGeneration(
-              current,
-              suggestionId,
-              field,
-              requestId,
-              "Open a real library before regenerating review metadata.",
-            )
-          : current,
-      );
-      return;
-    }
-    try {
-      await nextAnimationFrame();
-      const created = await invokeCommand<DaemonTask[]>("enqueue_generation_tasks", {
-        input: {
-          libraryPath: library.rootPath,
-          tasks: [
-            {
-              taskType: "metadata_field_generation",
-              provider: "codex-cli",
-              prompt: `${field} metadata generation`,
-              operation: "text_to_image",
-              parametersJson: "{}",
-              priority: 0,
-              maxAttempts: 3,
-              input: {
-                suggestionId,
-                assetId: selectedSuggestion.assetId,
-                field,
-                baseRevision: requestId,
-                context: reviewFieldContext(reviewForm, selectedSuggestion, asset),
-              },
-            },
-          ],
-        },
-      });
-      setTasks((current) => mergeTasks(created, current));
-      setSelectedTaskId(created[0]?.id ?? selectedTaskId);
-      const result = await waitForMetadataFieldResult(created[0].id, suggestionId, field, requestId);
-      setReviewForm((current) =>
-        current
-          ? completeReviewFieldGeneration(
-              current,
-              suggestionId,
-              field,
-              requestId,
-              result,
-              null,
-            )
-          : current,
-      );
-      setRecoverableError(null);
-      void refreshTasks();
-    } catch (error) {
-      const message = errorMessage(error);
-      setReviewForm((current) =>
-        current
-          ? failReviewFieldGeneration(current, suggestionId, field, requestId, message, null)
-          : current,
-      );
-      setRecoverableError(message);
-    }
-  }
-
-  async function regenerateFullSuggestion() {
-    if (!selectedSuggestion || !reviewForm) {
-      return;
-    }
-    if (suggestionRegenerating) {
-      return;
-    }
-    setSuggestionRegenerating(true);
-    setStatus("Regenerating suggestion");
-    if (!runningInTauri) {
-      const regenerated: Suggestion = {
-        ...selectedSuggestion,
-        id: `suggestion-${crypto.randomUUID()}`,
-        title: `${reviewForm.title || selectedSuggestion.title || "Untitled"} variant`,
-        description: reviewForm.description || selectedSuggestion.description,
-        schemaPrompt: reviewForm.schemaPrompt || selectedSuggestion.schemaPrompt,
-        tags: reviewFormTags(reviewForm),
-        category: reviewForm.category || selectedSuggestion.category,
-      };
-      setSuggestions((current) => [regenerated, ...current]);
-      setSuggestionHistory((current) => [regenerated, ...current]);
-      setSelectedSuggestionId(regenerated.id);
-      setReviewForm(createReviewFormState(regenerated));
-      setStatus("Suggestion regenerated");
-      setSuggestionRegenerating(false);
-      return;
-    }
-    if (!library) {
-      setRecoverableError("Open a real library before regenerating suggestions.");
-      setSuggestionRegenerating(false);
-      return;
-    }
-    try {
-      const created = await invokeCommand<DaemonTask[]>("enqueue_generation_tasks", {
-        input: {
-          libraryPath: library.rootPath,
-          tasks: [
-            {
-              taskType: "metadata_suggestion_generation",
-              provider: "codex-cli",
-              prompt: "metadata suggestion generation",
-              operation: "text_to_image",
-              parametersJson: "{}",
-              priority: 0,
-              maxAttempts: 3,
-              input: {
-                suggestionId: selectedSuggestion.id,
-                assetId: selectedSuggestion.assetId,
-                baseRevision: reviewForm.suggestionId,
-                context: reviewFieldContext(
-                  reviewForm,
-                  selectedSuggestion,
-                  gallery.find((item) => item.id === selectedSuggestion.assetId) ?? selectedAsset,
-                ),
-              },
-            },
-          ],
-        },
-      });
-      setTasks((current) => mergeTasks(created, current));
-      setSelectedTaskId(created[0]?.id ?? selectedTaskId);
-      const regeneratedSuggestionId = await waitForMetadataSuggestionResult(created[0].id);
-      const nextSuggestions = await invokeCommand<Suggestion[]>("list_pending_suggestions", { libraryPath: library.rootPath });
-      setSuggestions(nextSuggestions);
-      const regenerated = nextSuggestions.find((item) => item.id === regeneratedSuggestionId);
-      if (regenerated) {
-        await refreshSuggestionHistory(regenerated);
-        setSelectedSuggestionId(regenerated.id);
-        setReviewForm(createReviewFormState(regenerated));
-      }
-      setStatus("Suggestion regenerated");
-      setRecoverableError(null);
-    } catch (error) {
-      setRecoverableError(errorMessage(error));
-    } finally {
-      setSuggestionRegenerating(false);
-    }
-  }
-
-  async function requestAssetReview(asset: GalleryAsset) {
-    const existing = pendingSuggestions.find((suggestion) => suggestion.assetId === asset.id);
-    if (existing) {
-      setSelectedSuggestionId(existing.id);
-      setReviewForm(createReviewFormState(existing));
-      setActiveView("review");
-      return;
-    }
-    if (!library) {
-      const suggestion = suggestionFromAsset(asset);
-      setSuggestions((current) => [suggestion, ...current.filter((item) => item.assetId !== asset.id)]);
-      setGallery((current) => markAssetReviewPending(current, asset.id));
-      setDetailState((current) =>
-        current.detail?.id === asset.id
-          ? { ...current, detail: { ...current.detail, reviewPendingCount: Math.max(current.detail.reviewPendingCount, 1) } }
-          : current,
-      );
-      setSelectedSuggestionId(suggestion.id);
-      setActiveView("review");
-      return;
-    }
-    try {
-      const suggestion = await invokeCommand<Suggestion>("create_suggestion", {
-        input: {
-          libraryPath: library.rootPath,
-          assetId: asset.id,
-          title: asset.title,
-          description: null,
-          schemaPrompt: schemaPromptFromAsset(asset, asset.prompt ?? asset.title ?? ""),
-          tags: asset.tags,
-          category: asset.category && availableCategories.includes(asset.category) ? asset.category : null,
-          confidenceJson: JSON.stringify({ source: "manual_re_review" }),
-        },
-      });
-      setGallery((current) => markAssetReviewPending(current, asset.id));
-      setSelectedSuggestionId(suggestion.id);
-      setActiveView("review");
-      await Promise.all([
-        refreshGallery(),
-        refreshSuggestions(),
-        detailState.detail?.id === asset.id ? loadAssetDetail(asset.id, asset.currentVersionId) : Promise.resolve(),
-      ]);
     } catch (error) {
       setRecoverableError(errorMessage(error));
     }

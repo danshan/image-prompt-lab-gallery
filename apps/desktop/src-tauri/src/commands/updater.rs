@@ -1,5 +1,9 @@
+use crate::*;
+
 #[tauri::command]
-async fn check_for_update(app: tauri::AppHandle) -> Result<UpdateCheckView, CommandError> {
+pub(crate) async fn check_for_update(
+    app: tauri::AppHandle,
+) -> Result<UpdateCheckView, CommandError> {
     let current_version = app.package_info().version.to_string();
     let update = app
         .updater()
@@ -20,7 +24,9 @@ async fn check_for_update(app: tauri::AppHandle) -> Result<UpdateCheckView, Comm
 }
 
 #[tauri::command]
-async fn install_update(app: tauri::AppHandle) -> Result<UpdateInstallView, CommandError> {
+pub(crate) async fn install_update(
+    app: tauri::AppHandle,
+) -> Result<UpdateInstallView, CommandError> {
     let update = app
         .updater()
         .map_err(updater_error)?
@@ -48,6 +54,6 @@ async fn install_update(app: tauri::AppHandle) -> Result<UpdateInstallView, Comm
 }
 
 #[tauri::command]
-fn restart_app(app: tauri::AppHandle) -> Result<(), CommandError> {
+pub(crate) fn restart_app(app: tauri::AppHandle) -> Result<(), CommandError> {
     app.restart();
 }

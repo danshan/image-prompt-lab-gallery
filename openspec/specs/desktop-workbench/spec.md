@@ -4,7 +4,7 @@ Define the desktop workbench, gallery, inspector, generation queue, and core rea
 ## Requirements
 ### Requirement: 提供三栏桌面工作台
 
-桌面应用 SHALL 提供 Studio Console shell, 在 normal desktop 下表达为 `Studio Rail | Library Context | Workspace | Inspector | Activity Strip`, 在 compact desktop 下允许 Library Context 和 Inspector 折叠或转换为 drawer/rail, 并让 Workspace 成为稳定主工作区. Workbench implementation MUST 按 shell, workflow, data hooks 和 pure state helpers 划分职责, 避免单个入口组件长期承载 Gallery, Albums, Review, Queue, Settings, Inspector 和 IPC orchestration 的全部逻辑. 桌面应用 MUST 将 `960px` 作为一等 compact desktop 最小宽度目标, 在该宽度下保证导航, 当前 workflow 主操作, 详情和错误恢复操作均可达.
+桌面应用 SHALL 提供 Studio Console shell, 在 normal desktop 下表达为 `Studio Rail | Library Context | Workspace | Inspector | Activity Strip`, 在 compact desktop 下允许 Library Context 和 Inspector 折叠或转换为 drawer/rail, 并让 Workspace 成为稳定主工作区. Workbench implementation MUST 按 shell, workflow, data hooks, controller hooks 和 pure state helpers 划分职责, 避免单个入口组件长期承载 Gallery, Albums, Review, Queue, Settings, Inspector 和 IPC orchestration 的全部逻辑. Desktop root component MUST primarily compose controllers and screens, while workflow screen components MUST live under focused workflow-owned modules rather than a single cross-workflow mega file. 桌面应用 MUST 将 `960px` 作为一等 compact desktop 最小宽度目标, 在该宽度下保证导航, 当前 workflow 主操作, 详情和错误恢复操作均可达.
 
 #### Scenario: Studio Console Shell
 - **WHEN** 用户在 normal desktop 打开桌面应用
@@ -12,7 +12,17 @@ Define the desktop workbench, gallery, inspector, generation queue, and core rea
 
 #### Scenario: Workflow 边界清晰
 - **WHEN** 开发者维护 desktop workbench
-- **THEN** shell components, Gallery, Albums, Review, Queue, Settings, Inspector, data hooks 和 pure state helpers 位于职责明确的模块中
+- **THEN** shell components, Gallery, Albums, Review, Queue, Settings, Inspector, data hooks, controller hooks 和 pure state helpers 位于职责明确的模块中
+
+#### Scenario: Root Component 保持组合职责
+- **WHEN** 开发者修改 `apps/desktop/src/app/App.tsx`
+- **THEN** root component 主要负责组合 shell, workflow controllers 和 screen components
+- **AND** library, gallery selection, generation composer, task queue, review, settings, logs 或 update 的 async orchestration 不应继续集中堆叠在 root component 中
+
+#### Scenario: Workflow Screens 按 Ownership 拆分
+- **WHEN** 开发者维护 Gallery, Albums, Review, Queue, Settings 或 Inspector screen
+- **THEN** screen implementation 位于对应 workflow-owned module 中
+- **AND** cross-workflow export file 不得成为多个大型 screen component 的主要实现位置
 
 #### Scenario: Compact Desktop Shell
 - **WHEN** 桌面窗口宽度处于 compact desktop 范围
@@ -1001,3 +1011,24 @@ Desktop workbench SHALL 在 output asset detail 中单独展示 uploaded referen
 
 - **WHEN** 用户点击 reference source link
 - **THEN** Workbench 打开对应 reference asset detail, 并显示 reference version 的文件上下文
+
+### Requirement: Desktop frontend SHALL organize code by workflow
+The desktop frontend SHALL separate workflow UI, workflow state hooks, transport adapters, mock preview data, and pure utilities so that a change to one workflow does not require editing the top-level application entry.
+
+#### Scenario: Gallery workflow changes are localized
+- **WHEN** gallery filtering, asset selection, lightbox, or gallery refresh behavior changes
+- **THEN** the change should be implementable in gallery workflow modules and shared utilities
+- **AND** unrelated review, queue, settings, and album components should not require edits
+
+#### Scenario: Preview mode data is isolated
+- **WHEN** the app runs without a Tauri runtime
+- **THEN** mock preview data must come from explicit preview/mock modules
+- **AND** production Tauri transport code must not depend on mock-only branches for correctness
+
+### Requirement: Desktop Tauri backend SHALL expose commands through workflow modules
+The Tauri backend SHALL group command handlers by workflow and keep serializable view mapping in a dedicated boundary.
+
+#### Scenario: Command group owns only transport concerns
+- **WHEN** a command handler receives frontend input
+- **THEN** it must map input to a core or daemon request, invoke the service, and map the result to a view
+- **AND** it must not duplicate core business rules that belong in `imglab-core`

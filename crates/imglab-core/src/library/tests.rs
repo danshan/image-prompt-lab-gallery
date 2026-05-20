@@ -2463,6 +2463,136 @@ fn smart_album_supports_created_range_and_album_order_validation() {
 }
 
 #[test]
+fn smart_album_uses_shared_gallery_filters() {
+    let root = test_root("smart-shared-filters");
+    let registry = test_root("smart-shared-filters-registry").join("registry.sqlite");
+    let source_dir = test_root("smart-shared-filters-source");
+    fs::create_dir_all(&source_dir).expect("create source dir");
+    let source_a = source_dir.join("a.png");
+    let source_b = source_dir.join("b.png");
+    fs::write(&source_a, png_bytes(10, 10)).expect("write a");
+    fs::write(&source_b, png_bytes(10, 10)).expect("write b");
+    let service = LocalLibraryService::new(registry);
+    service
+        .create_library(CreateLibraryRequest {
+            root_path: root.clone(),
+            name: "Smart Shared Filters".to_string(),
+        })
+        .expect("create library");
+    let (matching, _) = service
+        .import_asset(ImportAssetRequest {
+            library_path: root.clone(),
+            source_path: source_a,
+        })
+        .expect("import matching");
+    let (excluded, _) = service
+        .import_asset(ImportAssetRequest {
+            library_path: root.clone(),
+            source_path: source_b,
+        })
+        .expect("import excluded");
+
+    service
+        .update_asset_metadata(UpdateAssetMetadataRequest {
+            library_path: root.clone(),
+            asset_id: matching.id.clone(),
+            title: Some("Neon Botanical Study".to_string()),
+            description: None,
+            schema_prompt: None,
+            rating: Some(5),
+            category: Some("botanical".to_string()),
+            status: Some("curated".to_string()),
+        })
+        .expect("update matching");
+    service
+        .update_asset_metadata(UpdateAssetMetadataRequest {
+            library_path: root.clone(),
+            asset_id: excluded.id,
+            title: Some("Muted City Study".to_string()),
+            description: None,
+            schema_prompt: None,
+            rating: Some(2),
+            category: Some("city".to_string()),
+            status: Some("imported".to_string()),
+        })
+        .expect("update excluded");
+    service
+        .add_tag_to_asset(&root, &matching.id, "neon")
+        .expect("tag matching");
+    service
+        .record_generation_event(CreateGenerationEventRequest {
+            library_path: root.clone(),
+            asset_id: Some(matching.id.clone()),
+            output_version_id: None,
+            provider: "codex-cli".to_string(),
+            provider_model: "codex-imagegen".to_string(),
+            operation_type: GenerationOperation::TextToImage,
+            prompt: "neon botanical study".to_string(),
+            negative_prompt: None,
+            input_asset_version_id: None,
+            parameters_json: "{}".to_string(),
+            raw_request_json: None,
+            raw_response_json: None,
+            status: "completed".to_string(),
+            error_code: None,
+            error_message: None,
+        })
+        .expect("record generation");
+    service
+        .create_suggestion(crate::CreateMetadataSuggestionRequest {
+            library_path: root.clone(),
+            asset_id: matching.id.clone(),
+            source: "fake".to_string(),
+            suggested_title: Some("Neon Botanical Study".to_string()),
+            suggested_description: None,
+            suggested_schema_prompt: None,
+            suggested_tags: vec!["neon".to_string()],
+            suggested_category: Some("botanical".to_string()),
+            confidence_json: "{}".to_string(),
+        })
+        .expect("create suggestion");
+
+    let smart = service
+        .create_smart_album(crate::CreateSmartAlbumRequest {
+            library_path: root.clone(),
+            name: "Focused".to_string(),
+            smart_query_json: r#"{
+                "text":"botanical",
+                "tags":["neon"],
+                "providers":["codex-cli"],
+                "minRating":4,
+                "reviewStatus":"pending",
+                "category":"botanical",
+                "status":"curated",
+                "createdAtFrom":"0",
+                "createdAtTo":"999999999999999",
+                "sort":"ratingDesc"
+            }"#
+            .to_string(),
+        })
+        .expect("smart album");
+
+    let items = service
+        .query_gallery(
+            &root,
+            GalleryQuery {
+                album_id: Some(smart.id),
+                ..GalleryQuery::default()
+            },
+        )
+        .expect("query smart album");
+
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].id, matching.id);
+    assert_eq!(items[0].provider.as_deref(), Some("codex-cli"));
+    assert_eq!(items[0].rating, Some(5));
+    assert_eq!(items[0].review_pending_count, 1);
+    assert_eq!(items[0].category.as_deref(), Some("botanical"));
+    assert_eq!(items[0].status, "curated");
+    assert_eq!(items[0].tags, vec!["neon".to_string()]);
+}
+
+#[test]
 fn batch_review_rolls_back_and_confidence_normalizes() {
     let root = test_root("batch-review");
     let registry = test_root("batch-review-registry").join("registry.sqlite");

@@ -1,717 +1,719 @@
+use crate::*;
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct UpdateInfoView {
-    version: String,
-    date: Option<String>,
-    body: Option<String>,
+pub(crate) struct UpdateInfoView {
+    pub(crate) version: String,
+    pub(crate) date: Option<String>,
+    pub(crate) body: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct UpdateCheckView {
-    current_version: String,
-    available: bool,
-    update: Option<UpdateInfoView>,
+pub(crate) struct UpdateCheckView {
+    pub(crate) current_version: String,
+    pub(crate) available: bool,
+    pub(crate) update: Option<UpdateInfoView>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct UpdateInstallView {
-    installed: bool,
-    version: Option<String>,
+pub(crate) struct UpdateInstallView {
+    pub(crate) installed: bool,
+    pub(crate) version: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct LibraryView {
-    id: String,
-    name: String,
-    root_path: PathBuf,
-    hidden: bool,
-    schema_version: u32,
+pub(crate) struct LibraryView {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) root_path: PathBuf,
+    pub(crate) hidden: bool,
+    pub(crate) schema_version: u32,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct LibraryStatusView {
-    storage_size_bytes: u64,
-    integrity_status: String,
-    integrity_issue_count: u32,
+pub(crate) struct LibraryStatusView {
+    pub(crate) storage_size_bytes: u64,
+    pub(crate) integrity_status: String,
+    pub(crate) integrity_issue_count: u32,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct LibraryBackupView {
-    library: LibraryView,
-    cloned: bool,
+pub(crate) struct LibraryBackupView {
+    pub(crate) library: LibraryView,
+    pub(crate) cloned: bool,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct StudioOverviewView {
-    library: LibraryView,
-    status: LibraryStatusView,
-    registered_library_count: u32,
-    missing_library_count: u32,
-    review_pending_count: u32,
-    task_summary: StudioTaskSummaryView,
-    provider_health: Vec<ProviderHealthSummaryView>,
+pub(crate) struct StudioOverviewView {
+    pub(crate) library: LibraryView,
+    pub(crate) status: LibraryStatusView,
+    pub(crate) registered_library_count: u32,
+    pub(crate) missing_library_count: u32,
+    pub(crate) review_pending_count: u32,
+    pub(crate) task_summary: StudioTaskSummaryView,
+    pub(crate) provider_health: Vec<ProviderHealthSummaryView>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct StudioTaskSummaryView {
-    active_count: u32,
-    queued_count: u32,
-    running_count: u32,
-    retry_waiting_count: u32,
-    failed_count: u32,
+pub(crate) struct StudioTaskSummaryView {
+    pub(crate) active_count: u32,
+    pub(crate) queued_count: u32,
+    pub(crate) running_count: u32,
+    pub(crate) retry_waiting_count: u32,
+    pub(crate) failed_count: u32,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ProviderHealthSummaryView {
-    provider: String,
-    display_name: String,
-    availability: String,
-    credential_state: String,
-    supported_operations: Vec<String>,
-    recoverable_error: Option<String>,
+pub(crate) struct ProviderHealthSummaryView {
+    pub(crate) provider: String,
+    pub(crate) display_name: String,
+    pub(crate) availability: String,
+    pub(crate) credential_state: String,
+    pub(crate) supported_operations: Vec<String>,
+    pub(crate) recoverable_error: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct DiagnosticsOverviewView {
-    provider_health: Vec<ProviderHealthSummaryView>,
-    daemon_status: DaemonStatusView,
-    library_status: LibraryStatusView,
-    library_count: u32,
-    missing_library_count: u32,
+pub(crate) struct DiagnosticsOverviewView {
+    pub(crate) provider_health: Vec<ProviderHealthSummaryView>,
+    pub(crate) daemon_status: DaemonStatusView,
+    pub(crate) library_status: LibraryStatusView,
+    pub(crate) library_count: u32,
+    pub(crate) missing_library_count: u32,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct DaemonStatusView {
-    state: String,
-    recoverable_error: Option<String>,
+pub(crate) struct DaemonStatusView {
+    pub(crate) state: String,
+    pub(crate) recoverable_error: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct RepairIssueView {
-    version_id: String,
-    path: PathBuf,
-    message: String,
+pub(crate) struct RepairIssueView {
+    pub(crate) version_id: String,
+    pub(crate) path: PathBuf,
+    pub(crate) message: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct RepairSummaryView {
-    dry_run: bool,
-    scanned_versions: usize,
-    files_moved: usize,
-    paths_updated: usize,
-    checksums_updated: usize,
-    dimensions_updated: usize,
-    issues: Vec<RepairIssueView>,
+pub(crate) struct RepairSummaryView {
+    pub(crate) dry_run: bool,
+    pub(crate) scanned_versions: usize,
+    pub(crate) files_moved: usize,
+    pub(crate) paths_updated: usize,
+    pub(crate) checksums_updated: usize,
+    pub(crate) dimensions_updated: usize,
+    pub(crate) issues: Vec<RepairIssueView>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct AssetView {
-    id: String,
-    title: Option<String>,
-    category: Option<String>,
-    rating: Option<u8>,
-    status: String,
+pub(crate) struct AssetView {
+    pub(crate) id: String,
+    pub(crate) title: Option<String>,
+    pub(crate) category: Option<String>,
+    pub(crate) rating: Option<u8>,
+    pub(crate) status: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct GalleryAssetView {
-    id: String,
-    title: Option<String>,
-    category: Option<String>,
-    rating: Option<u8>,
-    status: String,
-    provider: Option<String>,
-    model_label: Option<String>,
-    prompt: Option<String>,
-    tags: Vec<String>,
-    review_pending_count: u32,
-    current_version_id: Option<String>,
-    current_version_number: Option<u32>,
-    current_version_name: Option<String>,
-    image_path: Option<PathBuf>,
-    width: Option<u32>,
-    height: Option<u32>,
-    version_label: Option<String>,
-    version_count: u32,
-    task_origin: Option<TaskOriginView>,
-    albums: Vec<AlbumView>,
-    album_context: Option<AlbumView>,
-    created_at: String,
-    updated_at: String,
+pub(crate) struct GalleryAssetView {
+    pub(crate) id: String,
+    pub(crate) title: Option<String>,
+    pub(crate) category: Option<String>,
+    pub(crate) rating: Option<u8>,
+    pub(crate) status: String,
+    pub(crate) provider: Option<String>,
+    pub(crate) model_label: Option<String>,
+    pub(crate) prompt: Option<String>,
+    pub(crate) tags: Vec<String>,
+    pub(crate) review_pending_count: u32,
+    pub(crate) current_version_id: Option<String>,
+    pub(crate) current_version_number: Option<u32>,
+    pub(crate) current_version_name: Option<String>,
+    pub(crate) image_path: Option<PathBuf>,
+    pub(crate) width: Option<u32>,
+    pub(crate) height: Option<u32>,
+    pub(crate) version_label: Option<String>,
+    pub(crate) version_count: u32,
+    pub(crate) task_origin: Option<TaskOriginView>,
+    pub(crate) albums: Vec<AlbumView>,
+    pub(crate) album_context: Option<AlbumView>,
+    pub(crate) created_at: String,
+    pub(crate) updated_at: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct TaskOriginView {
-    task_id: String,
-    task_type: String,
-    status: String,
-    provider: Option<String>,
-    operation: Option<String>,
+pub(crate) struct TaskOriginView {
+    pub(crate) task_id: String,
+    pub(crate) task_type: String,
+    pub(crate) status: String,
+    pub(crate) provider: Option<String>,
+    pub(crate) operation: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct VersionView {
-    id: String,
-    asset_id: String,
-    parent_version_id: Option<String>,
-    generation_event_id: Option<String>,
-    version_number: u32,
-    version_name: String,
-    file_path: PathBuf,
-    checksum_algorithm: String,
-    checksum: String,
-    mime_type: String,
+pub(crate) struct VersionView {
+    pub(crate) id: String,
+    pub(crate) asset_id: String,
+    pub(crate) parent_version_id: Option<String>,
+    pub(crate) generation_event_id: Option<String>,
+    pub(crate) version_number: u32,
+    pub(crate) version_name: String,
+    pub(crate) file_path: PathBuf,
+    pub(crate) checksum_algorithm: String,
+    pub(crate) checksum: String,
+    pub(crate) mime_type: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ReferenceSourceView {
-    asset_id: String,
-    asset_title: Option<String>,
-    asset_status: String,
-    version_id: String,
-    version_number: u32,
-    version_name: String,
-    file_path: PathBuf,
+pub(crate) struct ReferenceSourceView {
+    pub(crate) asset_id: String,
+    pub(crate) asset_title: Option<String>,
+    pub(crate) asset_status: String,
+    pub(crate) version_id: String,
+    pub(crate) version_number: u32,
+    pub(crate) version_name: String,
+    pub(crate) file_path: PathBuf,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct LineageEntryView {
-    version: VersionView,
-    generation_event: Option<GenerationEventView>,
+pub(crate) struct LineageEntryView {
+    pub(crate) version: VersionView,
+    pub(crate) generation_event: Option<GenerationEventView>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct GenerationEventView {
-    id: String,
-    asset_id: Option<String>,
-    output_version_id: Option<String>,
-    provider: String,
-    provider_model: String,
-    operation_type: String,
-    prompt: String,
-    parameters_json: String,
-    status: String,
+pub(crate) struct GenerationEventView {
+    pub(crate) id: String,
+    pub(crate) asset_id: Option<String>,
+    pub(crate) output_version_id: Option<String>,
+    pub(crate) provider: String,
+    pub(crate) provider_model: String,
+    pub(crate) operation_type: String,
+    pub(crate) prompt: String,
+    pub(crate) parameters_json: String,
+    pub(crate) status: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct AlbumView {
-    id: String,
-    name: String,
-    kind: String,
+pub(crate) struct AlbumView {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) kind: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct AlbumListItemView {
-    id: String,
-    name: String,
-    kind: String,
-    item_count: u32,
-    sort_order: i64,
+pub(crate) struct AlbumListItemView {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) kind: String,
+    pub(crate) item_count: u32,
+    pub(crate) sort_order: i64,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct FileContextView {
-    filename: String,
-    relative_location: PathBuf,
-    mime_type: String,
-    size_bytes: Option<u64>,
-    width: Option<u32>,
-    height: Option<u32>,
-    checksum_algorithm: String,
-    checksum: String,
-    integrity_status: String,
+pub(crate) struct FileContextView {
+    pub(crate) filename: String,
+    pub(crate) relative_location: PathBuf,
+    pub(crate) mime_type: String,
+    pub(crate) size_bytes: Option<u64>,
+    pub(crate) width: Option<u32>,
+    pub(crate) height: Option<u32>,
+    pub(crate) checksum_algorithm: String,
+    pub(crate) checksum: String,
+    pub(crate) integrity_status: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct AssetDetailView {
-    id: String,
-    title: Option<String>,
-    description: Option<String>,
-    schema_prompt: Option<String>,
-    category: Option<String>,
-    rating: Option<u8>,
-    status: String,
-    created_at: String,
-    updated_at: String,
-    prompt: Option<String>,
-    negative_prompt: Option<String>,
-    provider: Option<String>,
-    model_label: Option<String>,
-    parameters_json: Option<String>,
-    tags: Vec<String>,
-    albums: Vec<AlbumView>,
-    review_pending_count: u32,
-    current_version_id: Option<String>,
-    current_version_number: Option<u32>,
-    current_version_name: Option<String>,
-    versions: Vec<VersionView>,
-    lineage: Vec<LineageEntryView>,
-    source_reference: Option<ReferenceSourceView>,
-    file: Option<FileContextView>,
+pub(crate) struct AssetDetailView {
+    pub(crate) id: String,
+    pub(crate) title: Option<String>,
+    pub(crate) description: Option<String>,
+    pub(crate) schema_prompt: Option<String>,
+    pub(crate) category: Option<String>,
+    pub(crate) rating: Option<u8>,
+    pub(crate) status: String,
+    pub(crate) created_at: String,
+    pub(crate) updated_at: String,
+    pub(crate) prompt: Option<String>,
+    pub(crate) negative_prompt: Option<String>,
+    pub(crate) provider: Option<String>,
+    pub(crate) model_label: Option<String>,
+    pub(crate) parameters_json: Option<String>,
+    pub(crate) tags: Vec<String>,
+    pub(crate) albums: Vec<AlbumView>,
+    pub(crate) review_pending_count: u32,
+    pub(crate) current_version_id: Option<String>,
+    pub(crate) current_version_number: Option<u32>,
+    pub(crate) current_version_name: Option<String>,
+    pub(crate) versions: Vec<VersionView>,
+    pub(crate) lineage: Vec<LineageEntryView>,
+    pub(crate) source_reference: Option<ReferenceSourceView>,
+    pub(crate) file: Option<FileContextView>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct AssetInspectorDetailView {
-    asset: AssetDetailView,
-    canonical_metadata: CanonicalMetadataView,
-    pending_suggestions: Vec<PendingSuggestionSummaryView>,
-    generated_task_origin: Option<TaskOriginView>,
+pub(crate) struct AssetInspectorDetailView {
+    pub(crate) asset: AssetDetailView,
+    pub(crate) canonical_metadata: CanonicalMetadataView,
+    pub(crate) pending_suggestions: Vec<PendingSuggestionSummaryView>,
+    pub(crate) generated_task_origin: Option<TaskOriginView>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct CanonicalMetadataView {
-    title: Option<String>,
-    description: Option<String>,
-    schema_prompt: Option<String>,
-    category: Option<String>,
-    rating: Option<u8>,
-    tags: Vec<String>,
-    status: String,
+pub(crate) struct CanonicalMetadataView {
+    pub(crate) title: Option<String>,
+    pub(crate) description: Option<String>,
+    pub(crate) schema_prompt: Option<String>,
+    pub(crate) category: Option<String>,
+    pub(crate) rating: Option<u8>,
+    pub(crate) tags: Vec<String>,
+    pub(crate) status: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct PendingSuggestionSummaryView {
-    id: String,
-    asset_id: String,
-    title: Option<String>,
-    category: Option<String>,
-    tag_count: u32,
-    created_at: Option<String>,
+pub(crate) struct PendingSuggestionSummaryView {
+    pub(crate) id: String,
+    pub(crate) asset_id: String,
+    pub(crate) title: Option<String>,
+    pub(crate) category: Option<String>,
+    pub(crate) tag_count: u32,
+    pub(crate) created_at: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct SuggestionView {
-    id: String,
-    asset_id: String,
-    title: Option<String>,
-    description: Option<String>,
-    schema_prompt: Option<String>,
-    tags: Vec<String>,
-    category: Option<String>,
-    status: String,
-    confidence_json: String,
-    created_at: Option<String>,
-    reviewed_at: Option<String>,
-    confidence: ConfidenceScoreView,
+pub(crate) struct SuggestionView {
+    pub(crate) id: String,
+    pub(crate) asset_id: String,
+    pub(crate) title: Option<String>,
+    pub(crate) description: Option<String>,
+    pub(crate) schema_prompt: Option<String>,
+    pub(crate) tags: Vec<String>,
+    pub(crate) category: Option<String>,
+    pub(crate) status: String,
+    pub(crate) confidence_json: String,
+    pub(crate) created_at: Option<String>,
+    pub(crate) reviewed_at: Option<String>,
+    pub(crate) confidence: ConfidenceScoreView,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ConfidenceScoreView {
-    overall: Option<u8>,
-    title: Option<u8>,
-    description: Option<u8>,
-    schema_prompt: Option<u8>,
-    tags: Option<u8>,
-    category: Option<u8>,
+pub(crate) struct ConfidenceScoreView {
+    pub(crate) overall: Option<u8>,
+    pub(crate) title: Option<u8>,
+    pub(crate) description: Option<u8>,
+    pub(crate) schema_prompt: Option<u8>,
+    pub(crate) tags: Option<u8>,
+    pub(crate) category: Option<u8>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ReviewDraftDetailView {
-    suggestion: SuggestionView,
-    draft_seed: ReviewDraftSeedView,
-    confidence: ConfidenceScoreView,
-    history: Vec<SuggestionView>,
-    generated_field_results: Vec<GeneratedReviewFieldResultView>,
-    related_tasks: Vec<RelatedTaskSummaryView>,
-    asset: AssetDetailView,
+pub(crate) struct ReviewDraftDetailView {
+    pub(crate) suggestion: SuggestionView,
+    pub(crate) draft_seed: ReviewDraftSeedView,
+    pub(crate) confidence: ConfidenceScoreView,
+    pub(crate) history: Vec<SuggestionView>,
+    pub(crate) generated_field_results: Vec<GeneratedReviewFieldResultView>,
+    pub(crate) related_tasks: Vec<RelatedTaskSummaryView>,
+    pub(crate) asset: AssetDetailView,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ReviewDraftSeedView {
-    title: Option<String>,
-    description: Option<String>,
-    schema_prompt: Option<String>,
-    tags: Vec<String>,
-    category: Option<String>,
+pub(crate) struct ReviewDraftSeedView {
+    pub(crate) title: Option<String>,
+    pub(crate) description: Option<String>,
+    pub(crate) schema_prompt: Option<String>,
+    pub(crate) tags: Vec<String>,
+    pub(crate) category: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct GeneratedReviewFieldResultView {
-    task_id: String,
-    field: String,
-    value: String,
-    base_revision: Option<String>,
-    created_at: String,
+pub(crate) struct GeneratedReviewFieldResultView {
+    pub(crate) task_id: String,
+    pub(crate) field: String,
+    pub(crate) value: String,
+    pub(crate) base_revision: Option<String>,
+    pub(crate) created_at: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct RelatedTaskSummaryView {
-    id: String,
-    task_type: String,
-    status: String,
-    provider: Option<String>,
-    operation: Option<String>,
+pub(crate) struct RelatedTaskSummaryView {
+    pub(crate) id: String,
+    pub(crate) task_type: String,
+    pub(crate) status: String,
+    pub(crate) provider: Option<String>,
+    pub(crate) operation: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct CreateLibraryInput {
-    root_path: PathBuf,
-    name: String,
+pub(crate) struct CreateLibraryInput {
+    pub(crate) root_path: PathBuf,
+    pub(crate) name: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ImportAssetInput {
-    library_path: PathBuf,
-    source_path: PathBuf,
+pub(crate) struct ImportAssetInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) source_path: PathBuf,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ExportLibraryInput {
-    library_path: PathBuf,
-    output_path: PathBuf,
-    album_id: Option<String>,
+pub(crate) struct ExportLibraryInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) output_path: PathBuf,
+    pub(crate) album_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct RenameLibraryAliasInput {
-    library_id: String,
-    alias: String,
+pub(crate) struct RenameLibraryAliasInput {
+    pub(crate) library_id: String,
+    pub(crate) alias: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ExportLibraryBackupInput {
-    library_path: PathBuf,
-    output_zip_path: PathBuf,
+pub(crate) struct ExportLibraryBackupInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) output_zip_path: PathBuf,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ImportLibraryBackupInput {
-    zip_path: PathBuf,
-    destination_path: PathBuf,
+pub(crate) struct ImportLibraryBackupInput {
+    pub(crate) zip_path: PathBuf,
+    pub(crate) destination_path: PathBuf,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct RepairLibraryInput {
-    library_path: PathBuf,
-    dry_run: bool,
+pub(crate) struct RepairLibraryInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) dry_run: bool,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct SearchInput {
-    library_path: PathBuf,
-    text: Option<String>,
-    tags: Vec<String>,
-    min_rating: Option<u8>,
-    provider: Option<String>,
-    status: Option<String>,
-    category: Option<String>,
+pub(crate) struct SearchInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) text: Option<String>,
+    pub(crate) tags: Vec<String>,
+    pub(crate) min_rating: Option<u8>,
+    pub(crate) provider: Option<String>,
+    pub(crate) status: Option<String>,
+    pub(crate) category: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct QueryGalleryInput {
-    library_path: PathBuf,
-    text: Option<String>,
-    providers: Option<Vec<String>>,
-    min_rating: Option<u8>,
-    review_status: Option<String>,
-    tags: Option<Vec<String>>,
-    album_id: Option<String>,
-    sort: Option<String>,
+pub(crate) struct QueryGalleryInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) text: Option<String>,
+    pub(crate) providers: Option<Vec<String>>,
+    pub(crate) min_rating: Option<u8>,
+    pub(crate) review_status: Option<String>,
+    pub(crate) tags: Option<Vec<String>>,
+    pub(crate) album_id: Option<String>,
+    pub(crate) sort: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct AssetDetailInput {
-    library_path: PathBuf,
-    asset_id: String,
-    current_version_id: Option<String>,
+pub(crate) struct AssetDetailInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) asset_id: String,
+    pub(crate) current_version_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct GenerateImageInput {
-    library_path: PathBuf,
-    provider: String,
-    prompt: String,
-    negative_prompt: Option<String>,
-    input_file: Option<PathBuf>,
-    input_version_id: Option<String>,
-    parameters_json: Option<String>,
+pub(crate) struct GenerateImageInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) provider: String,
+    pub(crate) prompt: String,
+    pub(crate) negative_prompt: Option<String>,
+    pub(crate) input_file: Option<PathBuf>,
+    pub(crate) input_version_id: Option<String>,
+    pub(crate) parameters_json: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct DaemonTaskQueryInput {
-    library_path: PathBuf,
+pub(crate) struct DaemonTaskQueryInput {
+    pub(crate) library_path: PathBuf,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct EnqueueGenerationTasksInput {
-    library_path: PathBuf,
-    tasks: Vec<GenerationTaskDraftInput>,
+pub(crate) struct EnqueueGenerationTasksInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) tasks: Vec<GenerationTaskDraftInput>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ReorderDaemonTasksInput {
-    library_path: PathBuf,
-    task_ids: Vec<String>,
+pub(crate) struct ReorderDaemonTasksInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) task_ids: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct DaemonTaskActionInput {
-    task_id: String,
+pub(crate) struct DaemonTaskActionInput {
+    pub(crate) task_id: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct GenerationTaskDraftInput {
-    task_type: Option<String>,
-    provider: String,
-    prompt: String,
-    negative_prompt: Option<String>,
-    operation: Option<String>,
-    input_file: Option<PathBuf>,
-    input_version_id: Option<String>,
-    parameters_json: Option<String>,
-    priority: Option<i64>,
-    max_attempts: Option<u32>,
-    input: Option<serde_json::Value>,
+pub(crate) struct GenerationTaskDraftInput {
+    pub(crate) task_type: Option<String>,
+    pub(crate) provider: String,
+    pub(crate) prompt: String,
+    pub(crate) negative_prompt: Option<String>,
+    pub(crate) operation: Option<String>,
+    pub(crate) input_file: Option<PathBuf>,
+    pub(crate) input_version_id: Option<String>,
+    pub(crate) parameters_json: Option<String>,
+    pub(crate) priority: Option<i64>,
+    pub(crate) max_attempts: Option<u32>,
+    pub(crate) input: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct DaemonTaskView {
-    id: String,
-    library_id: String,
-    task_type: String,
-    status: String,
-    queue_position: i64,
-    priority: i64,
-    provider: Option<String>,
-    operation: Option<String>,
-    concurrency_group: Option<String>,
-    attempt_count: u32,
-    max_attempts: u32,
-    next_retry_at: Option<String>,
-    input: serde_json::Value,
-    created_at: String,
-    updated_at: String,
-    last_error_code: Option<String>,
-    last_error_message: Option<String>,
-    error_classification: Option<String>,
-    wait_reason: Option<String>,
+pub(crate) struct DaemonTaskView {
+    pub(crate) id: String,
+    pub(crate) library_id: String,
+    pub(crate) task_type: String,
+    pub(crate) status: String,
+    pub(crate) queue_position: i64,
+    pub(crate) priority: i64,
+    pub(crate) provider: Option<String>,
+    pub(crate) operation: Option<String>,
+    pub(crate) concurrency_group: Option<String>,
+    pub(crate) attempt_count: u32,
+    pub(crate) max_attempts: u32,
+    pub(crate) next_retry_at: Option<String>,
+    pub(crate) input: serde_json::Value,
+    pub(crate) created_at: String,
+    pub(crate) updated_at: String,
+    pub(crate) last_error_code: Option<String>,
+    pub(crate) last_error_message: Option<String>,
+    pub(crate) error_classification: Option<String>,
+    pub(crate) wait_reason: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct DaemonTaskAttemptView {
-    id: String,
-    task_id: String,
-    attempt_number: u32,
-    status: String,
-    started_at: String,
-    completed_at: Option<String>,
-    log_path: Option<PathBuf>,
-    exit_code: Option<i32>,
-    error_code: Option<String>,
-    error_message: Option<String>,
-    error_classification: Option<String>,
+pub(crate) struct DaemonTaskAttemptView {
+    pub(crate) id: String,
+    pub(crate) task_id: String,
+    pub(crate) attempt_number: u32,
+    pub(crate) status: String,
+    pub(crate) started_at: String,
+    pub(crate) completed_at: Option<String>,
+    pub(crate) log_path: Option<PathBuf>,
+    pub(crate) exit_code: Option<i32>,
+    pub(crate) error_code: Option<String>,
+    pub(crate) error_message: Option<String>,
+    pub(crate) error_classification: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct DaemonTaskEventView {
-    id: String,
-    task_id: String,
-    event_type: String,
-    message: Option<String>,
-    payload: Option<serde_json::Value>,
-    created_at: String,
+pub(crate) struct DaemonTaskEventView {
+    pub(crate) id: String,
+    pub(crate) task_id: String,
+    pub(crate) event_type: String,
+    pub(crate) message: Option<String>,
+    pub(crate) payload: Option<serde_json::Value>,
+    pub(crate) created_at: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct DaemonTaskOutputView {
-    id: String,
-    task_id: String,
-    output_type: String,
-    target_id: String,
-    payload: Option<serde_json::Value>,
-    created_at: String,
+pub(crate) struct DaemonTaskOutputView {
+    pub(crate) id: String,
+    pub(crate) task_id: String,
+    pub(crate) output_type: String,
+    pub(crate) target_id: String,
+    pub(crate) payload: Option<serde_json::Value>,
+    pub(crate) created_at: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct DaemonTaskDetailView {
-    task: DaemonTaskView,
-    attempts: Vec<DaemonTaskAttemptView>,
-    events: Vec<DaemonTaskEventView>,
-    outputs: Vec<DaemonTaskOutputView>,
-    log_tail: String,
-    log_tail_truncated: bool,
+pub(crate) struct DaemonTaskDetailView {
+    pub(crate) task: DaemonTaskView,
+    pub(crate) attempts: Vec<DaemonTaskAttemptView>,
+    pub(crate) events: Vec<DaemonTaskEventView>,
+    pub(crate) outputs: Vec<DaemonTaskOutputView>,
+    pub(crate) log_tail: String,
+    pub(crate) log_tail_truncated: bool,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct UpdateMetadataInput {
-    library_path: PathBuf,
-    asset_id: String,
-    title: Option<String>,
-    description: Option<String>,
-    schema_prompt: Option<String>,
-    rating: Option<u8>,
-    category: Option<String>,
-    status: Option<String>,
+pub(crate) struct UpdateMetadataInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) asset_id: String,
+    pub(crate) title: Option<String>,
+    pub(crate) description: Option<String>,
+    pub(crate) schema_prompt: Option<String>,
+    pub(crate) rating: Option<u8>,
+    pub(crate) category: Option<String>,
+    pub(crate) status: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct AddTagInput {
-    library_path: PathBuf,
-    asset_id: String,
-    tag: String,
+pub(crate) struct AddTagInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) asset_id: String,
+    pub(crate) tag: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct CreateAlbumInput {
-    library_path: PathBuf,
-    name: String,
+pub(crate) struct CreateAlbumInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) name: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct AddAlbumAssetInput {
-    album_id: String,
-    asset_id: String,
+pub(crate) struct AddAlbumAssetInput {
+    pub(crate) album_id: String,
+    pub(crate) asset_id: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct BatchAddAlbumAssetsInput {
-    album_id: String,
-    asset_ids: Vec<String>,
+pub(crate) struct BatchAddAlbumAssetsInput {
+    pub(crate) album_id: String,
+    pub(crate) asset_ids: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct RenameAlbumInput {
-    album_id: String,
-    name: String,
+pub(crate) struct RenameAlbumInput {
+    pub(crate) album_id: String,
+    pub(crate) name: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct RemoveAlbumAssetInput {
-    album_id: String,
-    asset_id: String,
+pub(crate) struct RemoveAlbumAssetInput {
+    pub(crate) album_id: String,
+    pub(crate) asset_id: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ReorderAlbumsInput {
-    library_path: PathBuf,
-    album_ids: Vec<String>,
+pub(crate) struct ReorderAlbumsInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) album_ids: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ReorderAlbumItemsInput {
-    album_id: String,
-    asset_ids: Vec<String>,
+pub(crate) struct ReorderAlbumItemsInput {
+    pub(crate) album_id: String,
+    pub(crate) asset_ids: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct CreateSmartAlbumInput {
-    library_path: PathBuf,
-    name: String,
-    smart_query_json: String,
+pub(crate) struct CreateSmartAlbumInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) name: String,
+    pub(crate) smart_query_json: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct CreateSuggestionInput {
-    library_path: PathBuf,
-    asset_id: String,
-    title: Option<String>,
-    description: Option<String>,
-    schema_prompt: Option<String>,
-    tags: Vec<String>,
-    category: Option<String>,
-    confidence_json: Option<String>,
+pub(crate) struct CreateSuggestionInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) asset_id: String,
+    pub(crate) title: Option<String>,
+    pub(crate) description: Option<String>,
+    pub(crate) schema_prompt: Option<String>,
+    pub(crate) tags: Vec<String>,
+    pub(crate) category: Option<String>,
+    pub(crate) confidence_json: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ReviewSuggestionInput {
-    library_path: PathBuf,
-    suggestion_id: String,
-    title: Option<String>,
-    description: Option<String>,
-    schema_prompt: Option<String>,
-    tags: Vec<String>,
-    category: Option<String>,
+pub(crate) struct ReviewSuggestionInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) suggestion_id: String,
+    pub(crate) title: Option<String>,
+    pub(crate) description: Option<String>,
+    pub(crate) schema_prompt: Option<String>,
+    pub(crate) tags: Vec<String>,
+    pub(crate) category: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct BatchReviewSuggestionsInput {
-    library_path: PathBuf,
-    suggestions: Vec<ReviewSuggestionInput>,
+pub(crate) struct BatchReviewSuggestionsInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) suggestions: Vec<ReviewSuggestionInput>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct RejectSuggestionInput {
-    library_path: PathBuf,
-    suggestion_id: String,
+pub(crate) struct RejectSuggestionInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) suggestion_id: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct BatchRejectSuggestionsInput {
-    library_path: PathBuf,
-    suggestion_ids: Vec<String>,
+pub(crate) struct BatchRejectSuggestionsInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) suggestion_ids: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct SuggestionHistoryInput {
-    library_path: PathBuf,
-    asset_id: String,
+pub(crate) struct SuggestionHistoryInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) asset_id: String,
 }

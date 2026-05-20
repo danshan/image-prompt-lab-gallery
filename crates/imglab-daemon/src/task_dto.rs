@@ -1,3 +1,7 @@
+use crate::runtime::*;
+use crate::views::generation_operation_as_str;
+use crate::*;
+
 pub fn health_view() -> HealthView {
     HealthView {
         status: "ok".to_string(),
@@ -7,7 +11,7 @@ pub fn health_view() -> HealthView {
     }
 }
 
-fn provider_capabilities_view() -> Vec<ProviderCapabilityView> {
+pub(crate) fn provider_capabilities_view() -> Vec<ProviderCapabilityView> {
     let codex = CodexCliImageProvider::default();
     let fake = imglab_core::FakeImageProvider::success("fake");
     [
@@ -40,4 +44,3 @@ pub fn capabilities_view() -> CapabilitiesView {
         ],
     }
 }
-

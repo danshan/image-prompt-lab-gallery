@@ -1,3 +1,7 @@
+use crate::routes::{io_error, serialization_error};
+use crate::runtime::*;
+use crate::*;
+
 pub fn write_runtime_file(path: &Path, runtime: &RuntimeFile) -> DomainResult<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| io_error(parent, error))?;
@@ -45,7 +49,7 @@ pub fn is_loopback_addr(addr: SocketAddr) -> bool {
     }
 }
 
-fn summary_views(tasks: Vec<TaskSummary>) -> Vec<TaskSummaryView> {
+pub(crate) fn summary_views(tasks: Vec<TaskSummary>) -> Vec<TaskSummaryView> {
     tasks.into_iter().map(TaskSummaryView::from).collect()
 }
 
@@ -76,7 +80,7 @@ impl TryFrom<CreateTaskInputView> for CreateTaskInput {
     }
 }
 
-fn parse_generation_operation(value: &str) -> DomainResult<GenerationOperation> {
+pub(crate) fn parse_generation_operation(value: &str) -> DomainResult<GenerationOperation> {
     match value {
         "text_to_image" => Ok(GenerationOperation::TextToImage),
         "image_to_image" => Ok(GenerationOperation::ImageToImage),
@@ -86,14 +90,14 @@ fn parse_generation_operation(value: &str) -> DomainResult<GenerationOperation> 
     }
 }
 
-fn generation_operation_as_str(value: GenerationOperation) -> &'static str {
+pub(crate) fn generation_operation_as_str(value: GenerationOperation) -> &'static str {
     match value {
         GenerationOperation::TextToImage => "text_to_image",
         GenerationOperation::ImageToImage => "image_to_image",
     }
 }
 
-fn parse_optional_json(value: Option<String>) -> Option<Value> {
+pub(crate) fn parse_optional_json(value: Option<String>) -> Option<Value> {
     value.and_then(|text| serde_json::from_str(&text).ok())
 }
 
@@ -205,4 +209,3 @@ impl From<TaskDetail> for TaskDetailView {
         }
     }
 }
-

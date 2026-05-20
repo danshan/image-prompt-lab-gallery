@@ -1,4 +1,13 @@
-fn handle_stream(stream: &mut TcpStream, token: &str, state: &mut DaemonState) -> DomainResult<()> {
+use crate::routes::http_response_bytes;
+use crate::runtime::*;
+use crate::runtime_io::*;
+use crate::*;
+
+pub(crate) fn handle_stream(
+    stream: &mut TcpStream,
+    token: &str,
+    state: &mut DaemonState,
+) -> DomainResult<()> {
     let mut buffer = [0_u8; 8192];
     let read = stream.read(&mut buffer).map_err(|error| DomainError::Io {
         path: "daemon-http-stream".to_string(),
@@ -14,7 +23,7 @@ fn handle_stream(stream: &mut TcpStream, token: &str, state: &mut DaemonState) -
         })
 }
 
-fn handle_shared_stream(
+pub(crate) fn handle_shared_stream(
     stream: &mut TcpStream,
     token: &str,
     state: &SharedDaemonState,
@@ -33,4 +42,3 @@ fn handle_shared_stream(
             message: error.to_string(),
         })
 }
-

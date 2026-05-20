@@ -1,4 +1,6 @@
-fn library_view(summary: imglab_core::LibrarySummary) -> LibraryView {
+use crate::*;
+
+pub(crate) fn library_view(summary: imglab_core::LibrarySummary) -> LibraryView {
     let root_path = expand_home_path(summary.root_path.clone()).unwrap_or(summary.root_path);
     LibraryView {
         id: summary.id.0,
@@ -9,7 +11,7 @@ fn library_view(summary: imglab_core::LibrarySummary) -> LibraryView {
     }
 }
 
-fn asset_view(summary: imglab_core::AssetSummary) -> AssetView {
+pub(crate) fn asset_view(summary: imglab_core::AssetSummary) -> AssetView {
     AssetView {
         id: summary.id.0,
         title: summary.title,
@@ -19,7 +21,9 @@ fn asset_view(summary: imglab_core::AssetSummary) -> AssetView {
     }
 }
 
-fn gallery_query_from_input(input: QueryGalleryInput) -> Result<GalleryQuery, CommandError> {
+pub(crate) fn gallery_query_from_input(
+    input: QueryGalleryInput,
+) -> Result<GalleryQuery, CommandError> {
     Ok(GalleryQuery {
         text: input.text,
         providers: input.providers.unwrap_or_default(),
@@ -31,7 +35,9 @@ fn gallery_query_from_input(input: QueryGalleryInput) -> Result<GalleryQuery, Co
     })
 }
 
-fn review_status_from_input(value: Option<&str>) -> Result<ReviewStatusFilter, CommandError> {
+pub(crate) fn review_status_from_input(
+    value: Option<&str>,
+) -> Result<ReviewStatusFilter, CommandError> {
     match value.unwrap_or("any") {
         "any" => Ok(ReviewStatusFilter::Any),
         "pending" | "pending_review" => Ok(ReviewStatusFilter::Pending),
@@ -43,7 +49,7 @@ fn review_status_from_input(value: Option<&str>) -> Result<ReviewStatusFilter, C
     }
 }
 
-fn gallery_sort_from_input(value: Option<&str>) -> Result<GallerySort, CommandError> {
+pub(crate) fn gallery_sort_from_input(value: Option<&str>) -> Result<GallerySort, CommandError> {
     match value.unwrap_or("newest") {
         "newest" => Ok(GallerySort::Newest),
         "oldest" => Ok(GallerySort::Oldest),
@@ -59,7 +65,7 @@ fn gallery_sort_from_input(value: Option<&str>) -> Result<GallerySort, CommandEr
     }
 }
 
-fn gallery_asset_view(
+pub(crate) fn gallery_asset_view(
     library_path: &Path,
     summary: imglab_core::GalleryAssetView,
 ) -> GalleryAssetView {
@@ -96,7 +102,7 @@ fn gallery_asset_view(
     }
 }
 
-fn task_origin_view(origin: imglab_core::TaskOriginView) -> TaskOriginView {
+pub(crate) fn task_origin_view(origin: imglab_core::TaskOriginView) -> TaskOriginView {
     TaskOriginView {
         task_id: origin.task_id.0,
         task_type: task_type_value(origin.task_type),
@@ -106,15 +112,15 @@ fn task_origin_view(origin: imglab_core::TaskOriginView) -> TaskOriginView {
     }
 }
 
-fn task_type_value(task_type: imglab_core::TaskType) -> String {
+pub(crate) fn task_type_value(task_type: imglab_core::TaskType) -> String {
     task_type.as_str().to_string()
 }
 
-fn task_status_value(status: imglab_core::TaskStatus) -> String {
+pub(crate) fn task_status_value(status: imglab_core::TaskStatus) -> String {
     status.as_str().to_string()
 }
 
-fn operation_value(operation: GenerationOperation) -> String {
+pub(crate) fn operation_value(operation: GenerationOperation) -> String {
     match operation {
         GenerationOperation::TextToImage => "text_to_image",
         GenerationOperation::ImageToImage => "image_to_image",
@@ -122,7 +128,7 @@ fn operation_value(operation: GenerationOperation) -> String {
     .to_string()
 }
 
-fn version_view(summary: imglab_core::VersionSummary) -> VersionView {
+pub(crate) fn version_view(summary: imglab_core::VersionSummary) -> VersionView {
     VersionView {
         id: summary.id.0,
         asset_id: summary.asset_id.0,
@@ -137,7 +143,9 @@ fn version_view(summary: imglab_core::VersionSummary) -> VersionView {
     }
 }
 
-fn generation_event_view(summary: imglab_core::GenerationEventSummary) -> GenerationEventView {
+pub(crate) fn generation_event_view(
+    summary: imglab_core::GenerationEventSummary,
+) -> GenerationEventView {
     GenerationEventView {
         id: summary.id.0,
         asset_id: summary.asset_id.map(|id| id.0),
@@ -151,7 +159,7 @@ fn generation_event_view(summary: imglab_core::GenerationEventSummary) -> Genera
     }
 }
 
-fn studio_overview_view(summary: imglab_core::StudioOverviewView) -> StudioOverviewView {
+pub(crate) fn studio_overview_view(summary: imglab_core::StudioOverviewView) -> StudioOverviewView {
     StudioOverviewView {
         library: library_view(summary.library),
         status: library_status_view(summary.status),
@@ -173,7 +181,7 @@ fn studio_overview_view(summary: imglab_core::StudioOverviewView) -> StudioOverv
     }
 }
 
-fn provider_health_summary_view(
+pub(crate) fn provider_health_summary_view(
     summary: imglab_core::ProviderHealthSummaryView,
 ) -> ProviderHealthSummaryView {
     ProviderHealthSummaryView {
@@ -190,7 +198,7 @@ fn provider_health_summary_view(
     }
 }
 
-fn diagnostics_overview_view(
+pub(crate) fn diagnostics_overview_view(
     summary: imglab_core::DiagnosticsOverviewView,
 ) -> DiagnosticsOverviewView {
     DiagnosticsOverviewView {
@@ -209,7 +217,7 @@ fn diagnostics_overview_view(
     }
 }
 
-fn album_membership_view(album: imglab_core::AlbumMembershipView) -> AlbumView {
+pub(crate) fn album_membership_view(album: imglab_core::AlbumMembershipView) -> AlbumView {
     AlbumView {
         id: album.id.0,
         name: album.name,
@@ -221,7 +229,7 @@ fn album_membership_view(album: imglab_core::AlbumMembershipView) -> AlbumView {
     }
 }
 
-fn asset_detail_view(
+pub(crate) fn asset_detail_view(
     summary: imglab_core::AssetDetailView,
     library_path: &Path,
 ) -> AssetDetailView {
@@ -288,7 +296,7 @@ fn asset_detail_view(
     }
 }
 
-fn reference_source_view(
+pub(crate) fn reference_source_view(
     summary: imglab_core::ReferenceSourceView,
     library_path: &Path,
 ) -> ReferenceSourceView {
@@ -303,7 +311,7 @@ fn reference_source_view(
     }
 }
 
-fn asset_inspector_detail_view(
+pub(crate) fn asset_inspector_detail_view(
     summary: imglab_core::AssetInspectorDetailView,
     library_path: &Path,
 ) -> AssetInspectorDetailView {
@@ -334,7 +342,7 @@ fn asset_inspector_detail_view(
     }
 }
 
-fn library_status_view(summary: imglab_core::LibraryStatusView) -> LibraryStatusView {
+pub(crate) fn library_status_view(summary: imglab_core::LibraryStatusView) -> LibraryStatusView {
     LibraryStatusView {
         storage_size_bytes: summary.storage_size_bytes,
         integrity_status: summary.integrity_status,
@@ -342,7 +350,7 @@ fn library_status_view(summary: imglab_core::LibraryStatusView) -> LibraryStatus
     }
 }
 
-fn repair_summary_view(summary: imglab_core::RepairSummary) -> RepairSummaryView {
+pub(crate) fn repair_summary_view(summary: imglab_core::RepairSummary) -> RepairSummaryView {
     RepairSummaryView {
         dry_run: summary.dry_run,
         scanned_versions: summary.scanned_versions,
@@ -362,7 +370,7 @@ fn repair_summary_view(summary: imglab_core::RepairSummary) -> RepairSummaryView
     }
 }
 
-fn absolutize_library_path(library_path: &Path, path: PathBuf) -> PathBuf {
+pub(crate) fn absolutize_library_path(library_path: &Path, path: PathBuf) -> PathBuf {
     if path.is_absolute() {
         path
     } else {
@@ -370,7 +378,7 @@ fn absolutize_library_path(library_path: &Path, path: PathBuf) -> PathBuf {
     }
 }
 
-fn version_view_with_library_path(
+pub(crate) fn version_view_with_library_path(
     library_path: &Path,
     summary: imglab_core::VersionSummary,
 ) -> VersionView {
@@ -381,7 +389,7 @@ fn version_view_with_library_path(
     view
 }
 
-fn album_view(summary: imglab_core::AlbumSummary) -> AlbumView {
+pub(crate) fn album_view(summary: imglab_core::AlbumSummary) -> AlbumView {
     AlbumView {
         id: summary.id.0,
         name: summary.name,
@@ -393,7 +401,7 @@ fn album_view(summary: imglab_core::AlbumSummary) -> AlbumView {
     }
 }
 
-fn album_list_item_view(item: imglab_core::AlbumListItem) -> AlbumListItemView {
+pub(crate) fn album_list_item_view(item: imglab_core::AlbumListItem) -> AlbumListItemView {
     AlbumListItemView {
         id: item.id.0,
         name: item.name,
@@ -407,7 +415,7 @@ fn album_list_item_view(item: imglab_core::AlbumListItem) -> AlbumListItemView {
     }
 }
 
-fn suggestion_view(summary: imglab_core::MetadataSuggestion) -> SuggestionView {
+pub(crate) fn suggestion_view(summary: imglab_core::MetadataSuggestion) -> SuggestionView {
     let confidence = service().normalize_confidence(&summary.confidence_json);
     SuggestionView {
         id: summary.id.0,
@@ -425,7 +433,7 @@ fn suggestion_view(summary: imglab_core::MetadataSuggestion) -> SuggestionView {
     }
 }
 
-fn review_draft_detail_view(
+pub(crate) fn review_draft_detail_view(
     summary: imglab_core::ReviewDraftDetailView,
     library_path: &Path,
 ) -> ReviewDraftDetailView {
@@ -466,7 +474,9 @@ fn review_draft_detail_view(
     }
 }
 
-fn confidence_score_view(summary: imglab_core::ConfidenceScoreView) -> ConfidenceScoreView {
+pub(crate) fn confidence_score_view(
+    summary: imglab_core::ConfidenceScoreView,
+) -> ConfidenceScoreView {
     ConfidenceScoreView {
         overall: summary.overall,
         title: summary.title,
@@ -477,7 +487,7 @@ fn confidence_score_view(summary: imglab_core::ConfidenceScoreView) -> Confidenc
     }
 }
 
-fn daemon_task_view(task: DaemonTask) -> DaemonTaskView {
+pub(crate) fn daemon_task_view(task: DaemonTask) -> DaemonTaskView {
     DaemonTaskView {
         id: task.id,
         library_id: task.library_id,
@@ -501,7 +511,7 @@ fn daemon_task_view(task: DaemonTask) -> DaemonTaskView {
     }
 }
 
-fn daemon_task_attempt_view(attempt: DaemonTaskAttempt) -> DaemonTaskAttemptView {
+pub(crate) fn daemon_task_attempt_view(attempt: DaemonTaskAttempt) -> DaemonTaskAttemptView {
     DaemonTaskAttemptView {
         id: attempt.id,
         task_id: attempt.task_id,
@@ -517,7 +527,7 @@ fn daemon_task_attempt_view(attempt: DaemonTaskAttempt) -> DaemonTaskAttemptView
     }
 }
 
-fn daemon_task_event_view(event: DaemonTaskEvent) -> DaemonTaskEventView {
+pub(crate) fn daemon_task_event_view(event: DaemonTaskEvent) -> DaemonTaskEventView {
     DaemonTaskEventView {
         id: event.id,
         task_id: event.task_id,
@@ -528,7 +538,7 @@ fn daemon_task_event_view(event: DaemonTaskEvent) -> DaemonTaskEventView {
     }
 }
 
-fn daemon_task_output_view(output: DaemonTaskOutput) -> DaemonTaskOutputView {
+pub(crate) fn daemon_task_output_view(output: DaemonTaskOutput) -> DaemonTaskOutputView {
     DaemonTaskOutputView {
         id: output.id,
         task_id: output.task_id,
@@ -539,7 +549,7 @@ fn daemon_task_output_view(output: DaemonTaskOutput) -> DaemonTaskOutputView {
     }
 }
 
-fn daemon_task_detail_view(
+pub(crate) fn daemon_task_detail_view(
     detail: DaemonTaskDetail,
     log_tail: String,
     log_tail_truncated: bool,

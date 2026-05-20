@@ -1,9 +1,11 @@
+use crate::*;
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct CommandError {
-    code: String,
-    message: String,
-    recoverable: bool,
+pub(crate) struct CommandError {
+    pub(crate) code: String,
+    pub(crate) message: String,
+    pub(crate) recoverable: bool,
 }
 
 impl From<DomainError> for CommandError {
@@ -16,7 +18,7 @@ impl From<DomainError> for CommandError {
     }
 }
 
-fn updater_error(error: impl std::fmt::Display) -> CommandError {
+pub(crate) fn updater_error(error: impl std::fmt::Display) -> CommandError {
     CommandError {
         code: "UpdaterError".to_string(),
         message: error.to_string(),
@@ -24,8 +26,7 @@ fn updater_error(error: impl std::fmt::Display) -> CommandError {
     }
 }
 
-
-fn invalid_path_error(message: String) -> CommandError {
+pub(crate) fn invalid_path_error(message: String) -> CommandError {
     CommandError {
         code: "InvalidPath".to_string(),
         message,

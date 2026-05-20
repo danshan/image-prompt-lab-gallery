@@ -1,4 +1,9 @@
-fn execute_task(
+use crate::executors::*;
+use crate::routes::{io_error, serialization_error};
+use crate::runtime::*;
+use crate::*;
+
+pub(crate) fn execute_task(
     state: &mut DaemonState,
     library_path: &Path,
     task_id: &TaskId,
@@ -72,7 +77,7 @@ fn execute_task(
     }
 }
 
-fn execute_task_body(
+pub(crate) fn execute_task_body(
     state: &mut DaemonState,
     library_path: &Path,
     task_id: &TaskId,
@@ -92,7 +97,7 @@ fn execute_task_body(
     }
 }
 
-fn execute_image_generation_task(
+pub(crate) fn execute_image_generation_task(
     state: &mut DaemonState,
     library_path: &Path,
     task_id: &TaskId,
@@ -239,7 +244,7 @@ fn execute_image_generation_task(
     append_log(log_path, "task completed\n")
 }
 
-fn execute_metadata_field_task(
+pub(crate) fn execute_metadata_field_task(
     state: &mut DaemonState,
     library_path: &Path,
     task_id: &TaskId,
@@ -273,7 +278,7 @@ fn execute_metadata_field_task(
     append_log(log_path, "metadata field task completed\n")
 }
 
-fn execute_metadata_suggestion_task(
+pub(crate) fn execute_metadata_suggestion_task(
     state: &mut DaemonState,
     library_path: &Path,
     task_id: &TaskId,
@@ -318,7 +323,7 @@ fn execute_metadata_suggestion_task(
     append_log(log_path, "metadata suggestion task completed\n")
 }
 
-fn generated_metadata_field_value(
+pub(crate) fn generated_metadata_field_value(
     field: &str,
     context: &MetadataTaskContext,
 ) -> DomainResult<String> {
@@ -365,7 +370,7 @@ fn generated_metadata_field_value(
     }
 }
 
-fn wait_for_fake_slow_task(
+pub(crate) fn wait_for_fake_slow_task(
     state: &DaemonState,
     library_path: &Path,
     task_id: &TaskId,
@@ -390,7 +395,7 @@ fn wait_for_fake_slow_task(
     Ok(())
 }
 
-fn complete_successful_attempt(
+pub(crate) fn complete_successful_attempt(
     state: &mut DaemonState,
     library_path: &Path,
     task_id: &TaskId,
@@ -445,7 +450,7 @@ fn complete_successful_attempt(
     })
 }
 
-fn complete_canceled_attempt(
+pub(crate) fn complete_canceled_attempt(
     state: &mut DaemonState,
     library_path: &Path,
     task_id: &TaskId,
@@ -485,7 +490,7 @@ fn complete_canceled_attempt(
     })
 }
 
-fn complete_failed_attempt(
+pub(crate) fn complete_failed_attempt(
     state: &mut DaemonState,
     library_path: &Path,
     task_id: &TaskId,
@@ -545,4 +550,3 @@ fn complete_failed_attempt(
         wait_reason: None,
     })
 }
-

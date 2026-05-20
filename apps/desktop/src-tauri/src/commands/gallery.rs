@@ -1,5 +1,7 @@
+use crate::*;
+
 #[tauri::command]
-fn search_assets(input: SearchInput) -> Result<Vec<AssetView>, CommandError> {
+pub(crate) fn search_assets(input: SearchInput) -> Result<Vec<AssetView>, CommandError> {
     let service = service();
     let library = service.open_library(&input.library_path)?;
     service
@@ -19,7 +21,9 @@ fn search_assets(input: SearchInput) -> Result<Vec<AssetView>, CommandError> {
 }
 
 #[tauri::command]
-fn query_gallery(input: QueryGalleryInput) -> Result<Vec<GalleryAssetView>, CommandError> {
+pub(crate) fn query_gallery(
+    input: QueryGalleryInput,
+) -> Result<Vec<GalleryAssetView>, CommandError> {
     let library_path = input.library_path.clone();
     service()
         .query_gallery(&library_path, gallery_query_from_input(input)?)
@@ -33,7 +37,7 @@ fn query_gallery(input: QueryGalleryInput) -> Result<Vec<GalleryAssetView>, Comm
 }
 
 #[tauri::command]
-fn get_asset_detail(input: AssetDetailInput) -> Result<AssetDetailView, CommandError> {
+pub(crate) fn get_asset_detail(input: AssetDetailInput) -> Result<AssetDetailView, CommandError> {
     let current_version_id = input
         .current_version_id
         .as_ref()
@@ -49,7 +53,7 @@ fn get_asset_detail(input: AssetDetailInput) -> Result<AssetDetailView, CommandE
 }
 
 #[tauri::command]
-fn get_asset_inspector_detail(
+pub(crate) fn get_asset_inspector_detail(
     input: AssetDetailInput,
 ) -> Result<AssetInspectorDetailView, CommandError> {
     let current_version_id = input

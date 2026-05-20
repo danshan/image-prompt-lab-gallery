@@ -1,5 +1,9 @@
+use crate::*;
+
 #[tauri::command]
-fn create_suggestion(input: CreateSuggestionInput) -> Result<SuggestionView, CommandError> {
+pub(crate) fn create_suggestion(
+    input: CreateSuggestionInput,
+) -> Result<SuggestionView, CommandError> {
     service()
         .create_suggestion(CreateMetadataSuggestionRequest {
             library_path: input.library_path,
@@ -17,7 +21,9 @@ fn create_suggestion(input: CreateSuggestionInput) -> Result<SuggestionView, Com
 }
 
 #[tauri::command]
-fn list_pending_suggestions(library_path: PathBuf) -> Result<Vec<SuggestionView>, CommandError> {
+pub(crate) fn list_pending_suggestions(
+    library_path: PathBuf,
+) -> Result<Vec<SuggestionView>, CommandError> {
     let service = service();
     let library = service.open_library(&library_path)?;
     service
@@ -27,7 +33,7 @@ fn list_pending_suggestions(library_path: PathBuf) -> Result<Vec<SuggestionView>
 }
 
 #[tauri::command]
-fn get_review_draft_detail(
+pub(crate) fn get_review_draft_detail(
     library_path: PathBuf,
     suggestion_id: String,
 ) -> Result<ReviewDraftDetailView, CommandError> {
@@ -38,7 +44,7 @@ fn get_review_draft_detail(
 }
 
 #[tauri::command]
-fn accept_suggestion(input: ReviewSuggestionInput) -> Result<AssetView, CommandError> {
+pub(crate) fn accept_suggestion(input: ReviewSuggestionInput) -> Result<AssetView, CommandError> {
     service()
         .accept(ReviewMetadataSuggestionRequest {
             library_path: input.library_path,
@@ -54,7 +60,7 @@ fn accept_suggestion(input: ReviewSuggestionInput) -> Result<AssetView, CommandE
 }
 
 #[tauri::command]
-fn batch_accept_suggestions(
+pub(crate) fn batch_accept_suggestions(
     input: BatchReviewSuggestionsInput,
 ) -> Result<Vec<AssetView>, CommandError> {
     let library_path = input.library_path;
@@ -80,7 +86,7 @@ fn batch_accept_suggestions(
 }
 
 #[tauri::command]
-fn reject_suggestion(input: RejectSuggestionInput) -> Result<(), CommandError> {
+pub(crate) fn reject_suggestion(input: RejectSuggestionInput) -> Result<(), CommandError> {
     service()
         .reject(
             &input.library_path,
@@ -90,7 +96,9 @@ fn reject_suggestion(input: RejectSuggestionInput) -> Result<(), CommandError> {
 }
 
 #[tauri::command]
-fn batch_reject_suggestions(input: BatchRejectSuggestionsInput) -> Result<(), CommandError> {
+pub(crate) fn batch_reject_suggestions(
+    input: BatchRejectSuggestionsInput,
+) -> Result<(), CommandError> {
     let suggestion_ids = input
         .suggestion_ids
         .into_iter()
@@ -102,7 +110,7 @@ fn batch_reject_suggestions(input: BatchRejectSuggestionsInput) -> Result<(), Co
 }
 
 #[tauri::command]
-fn list_suggestion_history(
+pub(crate) fn list_suggestion_history(
     input: SuggestionHistoryInput,
 ) -> Result<Vec<SuggestionView>, CommandError> {
     service()
@@ -112,7 +120,7 @@ fn list_suggestion_history(
 }
 
 #[tauri::command]
-async fn regenerate_suggestion(
+pub(crate) async fn regenerate_suggestion(
     input: GenerateReviewFieldInput,
 ) -> Result<SuggestionView, CommandError> {
     let library_path = input.library_path.clone();
@@ -162,7 +170,7 @@ async fn regenerate_suggestion(
 }
 
 #[tauri::command]
-async fn generate_review_field(
+pub(crate) async fn generate_review_field(
     input: GenerateReviewFieldInput,
 ) -> Result<GeneratedReviewFieldView, CommandError> {
     tauri::async_runtime::spawn_blocking(move || {
