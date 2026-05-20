@@ -2513,6 +2513,7 @@ function App() {
             onToggleAssetSelection={(assetId) => setSelectedGalleryAssetIds((current) => toggleSelection(current, assetId))}
             onQueryChange={setQuery}
             onRequestReview={(asset) => void requestAssetReview(asset)}
+            onPreviewImage={setLightboxImage}
           />
         )}
         {activeView === "albums" && (
@@ -2902,6 +2903,7 @@ function GalleryWorkspace({
   onToggleAssetSelection,
   onQueryChange,
   onRequestReview,
+  onPreviewImage,
 }: {
   assets: GalleryAsset[];
   selectedAssetId: string;
@@ -2912,6 +2914,7 @@ function GalleryWorkspace({
   onToggleAssetSelection: (id: string) => void;
   onQueryChange: (query: GalleryQueryState) => void;
   onRequestReview: (asset: GalleryAsset) => void;
+  onPreviewImage: (image: LightboxImage) => void;
 }) {
   if (assets.length === 0) {
     return <div className="empty-state">No assets match the current query.</div>;
@@ -2934,14 +2937,37 @@ function GalleryWorkspace({
           <article
             key={asset.id}
             className={asset.id === selectedAssetId ? "asset-card selected" : "asset-card"}
+            role="button"
+            tabIndex={0}
+            onClick={() => onSelect(asset.id)}
+            onKeyDown={(event) => {
+              if (event.target !== event.currentTarget) {
+                return;
+              }
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onSelect(asset.id);
+              }
+            }}
           >
-            <button className="asset-card-main" onClick={() => onSelect(asset.id)}>
-              <Thumbnail asset={asset} index={index} />
+            <div className="asset-card-main">
+              <Thumbnail
+                asset={asset}
+                index={index}
+                onPreview={() => {
+                  if (asset.imagePath) {
+                    onPreviewImage({
+                      path: asset.imagePath,
+                      label: asset.title ?? "Generated image",
+                    });
+                  }
+                }}
+              />
               <span className="asset-title-row">
                 <span className="asset-title">{asset.title ?? "Untitled"}</span>
                 <span>{asset.currentVersionName ?? asset.versionLabel ?? "v1"}</span>
               </span>
-            </button>
+            </div>
             <span className="asset-card-meta">
               <span className="provider-pill">{asset.provider ?? "Unknown provider"}</span>
               <StarRatingDisplay rating={asset.rating} />
@@ -2956,14 +2982,23 @@ function GalleryWorkspace({
               <span>{asset.versionCount} version{asset.versionCount === 1 ? "" : "s"}</span>
             </span>
             <span className="asset-card-actions">
-              <button className="card-review-button" onClick={() => onRequestReview(asset)}>
+              <button
+                className="card-review-button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRequestReview(asset);
+                }}
+              >
                 Review
               </button>
-              <label className="checkbox-row card-select-row">
+              <label className="checkbox-row card-select-row" onClick={(event) => event.stopPropagation()}>
                 <input
                   type="checkbox"
                   checked={selectedAssetIds.includes(asset.id)}
-                  onChange={() => onToggleAssetSelection(asset.id)}
+                  onChange={(event) => {
+                    event.stopPropagation();
+                    onToggleAssetSelection(asset.id);
+                  }}
                 />
                 <span>Select</span>
               </label>
@@ -2975,19 +3010,39 @@ function GalleryWorkspace({
   );
 }
 
-function Thumbnail({ asset, index }: { asset: GalleryAsset; index: number }) {
-  const style = thumbnailStyle(index);
+function Thumbnail({ asset, index, onPreview }: { asset: GalleryAsset; index: number; onPreview?: () => void }) {
+  const style = thumbnailStyle(asset, index);
+  const imageStyle = thumbnailImageStyle(asset);
+  const image = asset.imagePath ? (
+    <img
+      alt={asset.title ?? "Generated image"}
+      src={convertImagePath(asset.imagePath)}
+      loading="lazy"
+      decoding="async"
+      style={imageStyle}
+    />
+  ) : null;
+  if (!onPreview) {
+    return (
+      <span className="thumbnail" style={style}>
+        {image}
+      </span>
+    );
+  }
   return (
-    <span className="thumbnail" style={style}>
-      {asset.imagePath && (
-        <img
-          alt={asset.title ?? "Generated image"}
-          src={convertImagePath(asset.imagePath)}
-          loading="lazy"
-          decoding="async"
-        />
-      )}
-    </span>
+    <button
+      className="thumbnail"
+      style={style}
+      type="button"
+      disabled={!asset.imagePath}
+      aria-label={asset.imagePath ? "Open original image preview" : "Image preview unavailable"}
+      onClick={(event) => {
+        event.stopPropagation();
+        onPreview();
+      }}
+    >
+      {image}
+    </button>
   );
 }
 
@@ -5180,7 +5235,7 @@ function schemaPromptFromAsset(asset: GalleryAsset | null | undefined, sourceTex
   return `// VERSION: 0.1\n// AESTHETIC: review draft\n${JSON.stringify(schema, null, 2)}`;
 }
 
-function thumbnailStyle(index: number): React.CSSProperties {
+function thumbnailStyle(asset: GalleryAsset, index: number): React.CSSProperties {
   const styles = [
     "linear-gradient(135deg, #0b0b0b, #052f34 45%, #d98b00)",
     "linear-gradient(135deg, #26465a, #f18f6f 50%, #ffd2a6)",
@@ -5189,7 +5244,35 @@ function thumbnailStyle(index: number): React.CSSProperties {
     "linear-gradient(135deg, #121820, #586878 45%, #c7a36f)",
     "linear-gradient(135deg, #081b2d, #184e63 45%, #e07f3b)",
   ];
-  return { background: styles[index % styles.length] };
+  return {
+    aspectRatio: thumbnailAspectRatio(asset),
+    background: styles[index % styles.length],
+  };
+}
+
+function thumbnailImageStyle(asset: GalleryAsset): React.CSSProperties {
+  return isOverTallThumbnail(asset) ? { objectPosition: "top center" } : {};
+}
+
+function thumbnailAspectRatio(asset: GalleryAsset) {
+  if (!hasValidDimensions(asset)) {
+    return "4 / 3";
+  }
+  if (isOverTallThumbnail(asset)) {
+    return "2 / 3";
+  }
+  return `${asset.width} / ${asset.height}`;
+}
+
+function isOverTallThumbnail(asset: GalleryAsset) {
+  if (!hasValidDimensions(asset)) {
+    return false;
+  }
+  return asset.height / asset.width > 3 / 2;
+}
+
+function hasValidDimensions(asset: GalleryAsset): asset is GalleryAsset & { width: number; height: number } {
+  return typeof asset.width === "number" && typeof asset.height === "number" && asset.width > 0 && asset.height > 0;
 }
 
 function StarRatingDisplay({ rating, showEmpty = false }: { rating: number | null; showEmpty?: boolean }) {

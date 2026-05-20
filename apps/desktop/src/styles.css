@@ -665,9 +665,9 @@ textarea {
 }
 
 .gallery-grid {
-  display: grid;
+  column-gap: 14px;
+  column-width: var(--card-min-width);
   gap: 14px;
-  grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width), 1fr));
   padding-bottom: 40px;
 }
 
@@ -678,14 +678,17 @@ textarea {
   border-radius: 7px;
   display: grid;
   gap: 7px;
+  break-inside: avoid;
+  margin: 0 0 14px;
   min-height: 0;
   min-width: 0;
   padding: 7px;
   text-align: left;
+  width: 100%;
 }
 
 .asset-card-main {
-  border: 0;
+  background: transparent;
   border-radius: 6px;
   display: grid;
   gap: 8px;
@@ -706,6 +709,11 @@ textarea {
 
 .asset-card:hover {
   border-color: var(--color-border-strong);
+}
+
+.asset-card:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
 }
 
 .asset-title-row,
@@ -745,15 +753,31 @@ textarea {
 
 .thumbnail {
   aspect-ratio: 1 / 1;
+  background: transparent;
+  border: 0;
   border-radius: 6px;
+  cursor: zoom-in;
   display: block;
   overflow: hidden;
+  padding: 0;
   position: relative;
+  width: 100%;
+}
+
+.thumbnail:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.thumbnail:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
 }
 
 .thumbnail img {
   height: 100%;
   object-fit: cover;
+  object-position: center;
   width: 100%;
 }
 
@@ -1341,6 +1365,7 @@ textarea {
 }
 
 .compact-grid {
+  display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   padding-bottom: 0;
 }
@@ -2109,7 +2134,7 @@ textarea {
   }
 
   .gallery-grid {
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    column-width: 180px;
   }
 
   .inspector-shell {
@@ -2615,14 +2640,14 @@ textarea {
 }
 
 .gallery-grid {
+  column-gap: 16px;
+  column-width: 246px;
   gap: 16px;
-  grid-template-columns: repeat(auto-fill, minmax(246px, 1fr));
 }
 
 .asset-card {
   border-radius: 8px;
   gap: 10px;
-  min-height: 318px;
   padding: 10px;
 }
 
@@ -2631,7 +2656,6 @@ textarea {
 }
 
 .thumbnail {
-  aspect-ratio: 4 / 3;
   border-radius: 7px;
 }
 
@@ -2935,7 +2959,8 @@ textarea {
 
   .studio-overview-band,
   .gallery-grid {
-    grid-template-columns: 1fr;
+    column-count: 1;
+    column-width: auto;
   }
 
   .activity-strip {
