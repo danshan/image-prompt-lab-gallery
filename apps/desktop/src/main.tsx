@@ -84,6 +84,17 @@ const METADATA_POLL_INTERVAL_MS = 800;
 const TASK_QUEUE_POLL_INTERVAL_MS = 1500;
 const TASK_QUEUE_BACKGROUND_POLL_INTERVAL_MS = 4000;
 
+const initialUpdateState: UpdateState = {
+  currentVersion: "0.1.0",
+  lastCheckedAt: null,
+  checking: false,
+  installing: false,
+  pendingRestart: false,
+  availableUpdate: null,
+  error: null,
+  status: "idle",
+};
+
 type Library = {
   id: string;
   name: string;
@@ -378,6 +389,29 @@ type AppLogContent = {
   path: string;
   content: string;
   truncated: boolean;
+};
+
+type UpdateInfo = {
+  version: string;
+  date: string | null;
+  body: string | null;
+};
+
+type UpdateCheck = {
+  currentVersion: string;
+  available: boolean;
+  update: UpdateInfo | null;
+};
+
+type UpdateState = {
+  currentVersion: string;
+  lastCheckedAt: string | null;
+  checking: boolean;
+  installing: boolean;
+  pendingRestart: boolean;
+  availableUpdate: UpdateInfo | null;
+  error: string | null;
+  status: "idle" | "checking" | "upToDate" | "available" | "installing" | "pendingRestart" | "error";
 };
 
 const mockLibrary: Library = {
@@ -797,6 +831,7 @@ function App() {
   const [selectedLogPath, setSelectedLogPath] = useState<string | null>(null);
   const [selectedLogContent, setSelectedLogContent] = useState<AppLogContent | null>(null);
   const [logContentLoading, setLogContentLoading] = useState(false);
+  const [updateState, setUpdateState] = useState<UpdateState>(initialUpdateState);
   const [lightboxImage, setLightboxImage] = useState<LightboxImage | null>(null);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
@@ -843,6 +878,7 @@ function App() {
   useEffect(() => {
     if (runningInTauri) {
       void refreshLibraries();
+      void checkForAppUpdate({ silent: true });
     }
   }, [runningInTauri]);
 
@@ -1130,6 +1166,90 @@ function App() {
       if (logReadRequestRef.current === requestId) {
         setLogContentLoading(false);
       }
+    }
+  }
+
+  async function checkForAppUpdate({ silent = false }: { silent?: boolean } = {}) {
+    setUpdateState((current) => ({
+      ...current,
+      checking: true,
+      error: null,
+      status: "checking",
+    }));
+    try {
+      if (!runningInTauri) {
+        setUpdateState({
+          ...initialUpdateState,
+          lastCheckedAt: new Date().toISOString(),
+          status: "upToDate",
+        });
+        return;
+      }
+      const result = await invokeCommand<UpdateCheck>("check_for_update");
+      setUpdateState((current) => ({
+        ...current,
+        currentVersion: result.currentVersion,
+        lastCheckedAt: new Date().toISOString(),
+        checking: false,
+        availableUpdate: result.update,
+        error: null,
+        status: result.available ? "available" : "upToDate",
+      }));
+      if (!silent) {
+        setStatus(result.available ? `Update ${result.update?.version ?? ""} available` : "App is up to date");
+      }
+    } catch (error) {
+      setUpdateState((current) => ({
+        ...current,
+        checking: false,
+        lastCheckedAt: new Date().toISOString(),
+        error: errorMessage(error),
+        status: "error",
+      }));
+      if (!silent) {
+        setStatus("Update check failed");
+      }
+    }
+  }
+
+  async function installAppUpdate() {
+    setUpdateState((current) => ({
+      ...current,
+      installing: true,
+      error: null,
+      status: "installing",
+    }));
+    try {
+      const result = await invokeCommand<{ installed: boolean; version: string | null }>("install_update");
+      setUpdateState((current) => ({
+        ...current,
+        installing: false,
+        pendingRestart: result.installed,
+        availableUpdate: result.installed ? current.availableUpdate : null,
+        error: null,
+        status: result.installed ? "pendingRestart" : "upToDate",
+      }));
+      setStatus(result.installed ? `Update ${result.version ?? ""} installed` : "No update available");
+    } catch (error) {
+      setUpdateState((current) => ({
+        ...current,
+        installing: false,
+        error: errorMessage(error),
+        status: "error",
+      }));
+      setStatus("Update install failed");
+    }
+  }
+
+  async function restartApp() {
+    try {
+      await invokeCommand<void>("restart_app");
+    } catch (error) {
+      setUpdateState((current) => ({
+        ...current,
+        error: errorMessage(error),
+        status: "error",
+      }));
     }
   }
 
@@ -2626,8 +2746,12 @@ function App() {
             selectedLogPath={selectedLogPath}
             selectedLogContent={selectedLogContent}
             logContentLoading={logContentLoading}
+            updateState={updateState}
             onRefreshLogs={() => void refreshAppLogs()}
             onSelectLog={(path) => void readAppLog(path)}
+            onCheckUpdate={() => void checkForAppUpdate()}
+            onInstallUpdate={() => void installAppUpdate()}
+            onRestartApp={() => void restartApp()}
           />
         )}
       </>
@@ -4220,8 +4344,12 @@ function SettingsWorkspace({
   selectedLogPath,
   selectedLogContent,
   logContentLoading,
+  updateState,
   onRefreshLogs,
   onSelectLog,
+  onCheckUpdate,
+  onInstallUpdate,
+  onRestartApp,
 }: {
   library: Library | null;
   libraries: Library[];
@@ -4249,8 +4377,12 @@ function SettingsWorkspace({
   selectedLogPath: string | null;
   selectedLogContent: AppLogContent | null;
   logContentLoading: boolean;
+  updateState: UpdateState;
   onRefreshLogs: () => void;
   onSelectLog: (path: string) => void;
+  onCheckUpdate: () => void;
+  onInstallUpdate: () => void;
+  onRestartApp: () => void;
 }) {
   return (
     <section className="settings-workspace">
@@ -4260,6 +4392,9 @@ function SettingsWorkspace({
         </button>
         <button className={activeSection === "providers" ? "active" : ""} onClick={() => onSectionChange("providers")}>
           Providers
+        </button>
+        <button className={activeSection === "updates" ? "active" : ""} onClick={() => onSectionChange("updates")}>
+          Updates
         </button>
         <button className={activeSection === "logs" ? "active" : ""} onClick={() => onSectionChange("logs")}>
           Logs
@@ -4289,6 +4424,13 @@ function SettingsWorkspace({
           providerHealth={providerHealth}
           daemonOnline={daemonOnline}
           libraryStatus={libraryStatus}
+        />
+      ) : activeSection === "updates" ? (
+        <SettingsUpdatesView
+          updateState={updateState}
+          onCheckUpdate={onCheckUpdate}
+          onInstallUpdate={onInstallUpdate}
+          onRestartApp={onRestartApp}
         />
       ) : (
         <SettingsLogsView
@@ -4561,6 +4703,83 @@ function SettingsProvidersView({
             {provider.recoverableError && <p className="error-text">{provider.recoverableError}</p>}
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function SettingsUpdatesView({
+  updateState,
+  onCheckUpdate,
+  onInstallUpdate,
+  onRestartApp,
+}: {
+  updateState: UpdateState;
+  onCheckUpdate: () => void;
+  onInstallUpdate: () => void;
+  onRestartApp: () => void;
+}) {
+  const update = updateState.availableUpdate;
+  const busy = updateState.checking || updateState.installing;
+  const statusText =
+    updateState.status === "checking"
+      ? "Checking"
+      : updateState.status === "available"
+        ? "Update available"
+        : updateState.status === "installing"
+          ? "Installing"
+          : updateState.status === "pendingRestart"
+            ? "Restart required"
+            : updateState.status === "error"
+              ? "Needs attention"
+              : updateState.status === "upToDate"
+                ? "Up to date"
+                : "Idle";
+
+  return (
+    <div className="settings-section">
+      <div className="panel-header">
+        <div>
+          <h3>App Updates</h3>
+          <p>
+            Current version {updateState.currentVersion}
+            {updateState.lastCheckedAt ? ` · checked ${displayDate(updateState.lastCheckedAt)}` : ""}
+          </p>
+        </div>
+        <span className={`status ${updateState.status === "error" ? "failed" : updateState.status === "available" ? "queued" : "completed"}`}>
+          {statusText}
+        </span>
+      </div>
+      <div className="updates-panel">
+        <div className="meta-grid">
+          <span>Current</span>
+          <strong>{updateState.currentVersion}</strong>
+          <span>Latest</span>
+          <strong>{update?.version ?? (updateState.status === "upToDate" ? updateState.currentVersion : "unknown")}</strong>
+          <span>Last checked</span>
+          <strong>{updateState.lastCheckedAt ? displayDate(updateState.lastCheckedAt) : "never"}</strong>
+        </div>
+        {update?.body && (
+          <div className="update-notes">
+            <h4>Release Notes</h4>
+            <p>{update.body}</p>
+          </div>
+        )}
+        {updateState.error && <p className="error-text">{updateState.error}</p>}
+        <div className="row-actions">
+          <button onClick={onCheckUpdate} disabled={busy}>
+            {updateState.checking ? "Checking..." : "Check for Updates"}
+          </button>
+          <button onClick={onInstallUpdate} disabled={busy || !update || updateState.pendingRestart}>
+            {updateState.installing ? "Installing..." : "Download and Install"}
+          </button>
+          <button onClick={onRestartApp} disabled={!updateState.pendingRestart}>
+            Restart
+          </button>
+        </div>
+        <p className="settings-note">
+          Updates are verified with the Tauri updater public key. Ad-hoc macOS signing is not Apple notarization.
+        </p>
       </div>
     </div>
   );

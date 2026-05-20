@@ -29,6 +29,7 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 #[cfg(target_os = "macos")]
 use tauri::Manager;
+use tauri_plugin_updater::UpdaterExt;
 
 #[derive(Clone, Default)]
 struct DesktopState {
@@ -51,6 +52,37 @@ impl From<DomainError> for CommandError {
             recoverable: error.recoverable(),
         }
     }
+}
+
+fn updater_error(error: impl std::fmt::Display) -> CommandError {
+    CommandError {
+        code: "UpdaterError".to_string(),
+        message: error.to_string(),
+        recoverable: true,
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateInfoView {
+    version: String,
+    date: Option<String>,
+    body: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateCheckView {
+    current_version: String,
+    available: bool,
+    update: Option<UpdateInfoView>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateInstallView {
+    installed: bool,
+    version: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -2212,10 +2244,66 @@ fn daemon_task_detail_view(
     }
 }
 
+#[tauri::command]
+async fn check_for_update(app: tauri::AppHandle) -> Result<UpdateCheckView, CommandError> {
+    let current_version = app.package_info().version.to_string();
+    let update = app
+        .updater()
+        .map_err(updater_error)?
+        .check()
+        .await
+        .map_err(updater_error)?;
+
+    Ok(UpdateCheckView {
+        current_version,
+        available: update.is_some(),
+        update: update.map(|update| UpdateInfoView {
+            version: update.version.to_string(),
+            date: update.date.map(|date| date.to_string()),
+            body: update.body,
+        }),
+    })
+}
+
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<UpdateInstallView, CommandError> {
+    let update = app
+        .updater()
+        .map_err(updater_error)?
+        .check()
+        .await
+        .map_err(updater_error)?;
+
+    let Some(update) = update else {
+        return Ok(UpdateInstallView {
+            installed: false,
+            version: None,
+        });
+    };
+
+    let version = update.version.to_string();
+    update
+        .download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(updater_error)?;
+
+    Ok(UpdateInstallView {
+        installed: true,
+        version: Some(version),
+    })
+}
+
+#[tauri::command]
+fn restart_app(app: tauri::AppHandle) -> Result<(), CommandError> {
+    app.restart();
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(DesktopState::default())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             #[cfg(target_os = "macos")]
             {
@@ -2278,7 +2366,10 @@ pub fn run() {
             generate_review_field,
             regenerate_suggestion,
             list_app_logs,
-            read_app_log
+            read_app_log,
+            check_for_update,
+            install_update,
+            restart_app
         ])
         .run(tauri::generate_context!())
         .expect("failed to run desktop application");

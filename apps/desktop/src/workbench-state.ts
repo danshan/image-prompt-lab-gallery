@@ -1,6 +1,6 @@
 export type GallerySort = "newest" | "oldest" | "ratingDesc" | "titleAsc" | "providerAsc" | "albumOrder";
 export type ReviewStatusFilter = "any" | "pending";
-export type SettingsSection = "libraries" | "providers" | "logs";
+export type SettingsSection = "libraries" | "providers" | "updates" | "logs";
 
 export const defaultSettingsSection: SettingsSection = "libraries";
 
