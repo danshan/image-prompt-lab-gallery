@@ -158,6 +158,8 @@ pub struct GenerationRequestInput {
     pub provider: String,
     pub prompt: String,
     pub negative_prompt: Option<String>,
+    pub model: Option<String>,
+    pub operation: Option<GenerationOperation>,
     pub input_file: Option<PathBuf>,
     pub input_version_id: Option<AssetVersionId>,
     pub parameters_json: Option<String>,

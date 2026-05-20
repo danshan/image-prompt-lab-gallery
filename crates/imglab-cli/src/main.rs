@@ -229,6 +229,8 @@ fn generate(args: &[String]) -> Result<(), DomainError> {
         provider: provider_name,
         prompt,
         negative_prompt: option_value(args, "--negative-prompt"),
+        model: None,
+        operation: None,
         input_file: option_value(args, "--input-file").map(PathBuf::from),
         input_version_id: option_value(args, "--input-version").map(imglab_core::AssetVersionId),
         parameters_json: option_value(args, "--parameters"),

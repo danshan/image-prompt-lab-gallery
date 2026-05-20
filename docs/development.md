@@ -59,9 +59,61 @@ cargo run --offline -p imglab-cli -- import --library /tmp/imglab-library /tmp/s
 cargo run --offline -p imglab-cli -- generate --library /tmp/imglab-library --provider fake --prompt "test image" --dry-run --json
 ```
 
+## 模块地图
+
+当前代码按 runtime boundary 和业务责任分层:
+
+```text
+crates/imglab-core/src/
+  dto.rs
+  library/
+    mod.rs              # module hub and public service exports
+    service.rs          # library lifecycle, layout, manifest orchestration
+    registry.rs         # registry database lifecycle and registered libraries
+    generation.rs       # generation service and shared request planning
+    maintenance.rs      # repair and integrity orchestration
+    diagnostics.rs      # studio overview, diagnostics, provider health
+    *.rs                # focused domain modules for assets, gallery, albums, metadata, tasks
+
+crates/imglab-daemon/src/
+  lib.rs                # module hub and public daemon entrypoint
+  runtime.rs            # daemon runtime state, listener, runtime metadata
+  runtime_io.rs         # runtime and token file persistence
+  transport.rs          # local HTTP parsing, auth, response serialization
+  routes.rs             # API route dispatch and request parsing
+  scheduler.rs          # recovery, runnable checks, scheduler ticks
+  executors.rs          # image generation and metadata task execution
+  logs.rs               # task attempt logs and log tail reads
+  task_dto.rs           # daemon task request DTOs
+  views.rs              # daemon response DTOs and conversions
+
+apps/desktop/src-tauri/src/
+  lib.rs                # Tauri plugin setup, managed state, command registration, startup
+  errors.rs             # command error mapping
+  paths.rs              # registry paths, daemon paths, library path normalization, reveal helpers
+  services.rs           # desktop service and provider construction
+  views.rs              # command input and output DTOs
+  view_mappers.rs       # domain-to-command-view conversion
+  commands/             # Tauri commands split by workflow
+
+apps/desktop/src/
+  main.tsx              # React bootstrap only
+  app/App.tsx           # desktop application state and workflow orchestration
+  app/types.ts          # frontend DTOs and app-level types
+  app/mock-data.ts      # browser preview fixtures
+  app/tauri-adapter.ts  # invoke, dialog, runtime and image path adapter
+  app/utils.ts          # focused formatting, prompt, path and thumbnail helpers
+  app/screens/          # screen/workflow components
+  app/components/       # small shared UI components
+  app/hooks/            # workflow hook entrypoints
+  workbench-state.ts    # pure state transitions with Node tests
+```
+
+`imglab-core` remains the business source of truth. CLI, daemon, and Tauri command layers should call core services or the shared generation planner instead of re-implementing provider normalization, model defaults, operation inference, or library mutation semantics.
+
 ## 桌面端
 
-桌面端前端位于 `apps/desktop/src`. Tauri command 层位于 `apps/desktop/src-tauri/src/lib.rs`.
+桌面端前端位于 `apps/desktop/src`. Tauri command 层位于 `apps/desktop/src-tauri/src`. `lib.rs` 只负责 Tauri plugin setup, managed state, command registration 和 app startup, 具体 command 按 workflow 放在 `commands/` 下.
 
 前端通过 `@tauri-apps/api/core` 的 `invoke` 调用 Rust command. 浏览器预览环境没有 Tauri runtime, 当前 UI 保留 mock state 以便快速验证布局和状态切换.
 
