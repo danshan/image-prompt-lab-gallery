@@ -485,14 +485,14 @@ fn task_summary_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TaskSummar
     Ok(TaskSummary {
         id: TaskId(row.get(0)?),
         library_id: crate::LibraryId(row.get(1)?),
-        task_type: TaskType::from_str(&task_type_value).ok_or_else(|| {
+        task_type: TaskType::parse(&task_type_value).ok_or_else(|| {
             rusqlite::Error::InvalidColumnType(
                 2,
                 "task_type".to_string(),
                 rusqlite::types::Type::Text,
             )
         })?,
-        status: TaskStatus::from_str(&status_value).ok_or_else(|| {
+        status: TaskStatus::parse(&status_value).ok_or_else(|| {
             rusqlite::Error::InvalidColumnType(3, "status".to_string(), rusqlite::types::Type::Text)
         })?,
         queue_position: row.get(4)?,
@@ -664,7 +664,7 @@ fn task_output_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TaskOutput>
     Ok(TaskOutput {
         id: TaskOutputId(row.get(0)?),
         task_id: TaskId(row.get(1)?),
-        output_type: TaskOutputType::from_str(&output_type_value).ok_or_else(|| {
+        output_type: TaskOutputType::parse(&output_type_value).ok_or_else(|| {
             rusqlite::Error::InvalidColumnType(
                 2,
                 "output_type".to_string(),
@@ -743,7 +743,7 @@ fn optional_error_classification(
     value
         .as_deref()
         .map(|classification| {
-            TaskErrorClassification::from_str(classification).ok_or_else(|| {
+            TaskErrorClassification::parse(classification).ok_or_else(|| {
                 rusqlite::Error::InvalidColumnType(
                     index,
                     "error_classification".to_string(),

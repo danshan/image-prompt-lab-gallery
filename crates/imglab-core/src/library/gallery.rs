@@ -247,7 +247,9 @@ impl GalleryReadService for LocalLibraryService {
             albums: load_asset_albums(&connection, asset_id)?,
             review_pending_count: pending_review_count(&connection, asset_id)?,
             current_version_id: current_version.as_ref().map(|version| version.id.clone()),
-            current_version_number: current_version.as_ref().map(|version| version.version_number),
+            current_version_number: current_version
+                .as_ref()
+                .map(|version| version.version_number),
             current_version_name: current_version
                 .as_ref()
                 .map(|version| version.version_name.clone()),
@@ -463,14 +465,14 @@ fn load_task_origins(connection: &Connection) -> DomainResult<TaskOrigins> {
             let task_type_value: String = row.get(3)?;
             let status_value: String = row.get(4)?;
             let operation_value: Option<String> = row.get(6)?;
-            let task_type = TaskType::from_str(&task_type_value).ok_or_else(|| {
+            let task_type = TaskType::parse(&task_type_value).ok_or_else(|| {
                 rusqlite::Error::InvalidColumnType(
                     3,
                     "task_type".to_string(),
                     rusqlite::types::Type::Text,
                 )
             })?;
-            let status = TaskStatus::from_str(&status_value).ok_or_else(|| {
+            let status = TaskStatus::parse(&status_value).ok_or_else(|| {
                 rusqlite::Error::InvalidColumnType(
                     4,
                     "status".to_string(),

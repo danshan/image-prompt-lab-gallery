@@ -2,9 +2,9 @@ use imglab_core::{
     classify_task_error, evaluate_scheduler, AssetId, BatchCreateTasksRequest,
     CreateMetadataSuggestionRequest, CreateTaskInput, DomainError, DomainResult,
     GalleryReadService, GenerateImageRequest, GenerationOperation, GenerationParameters,
-    GenerationService, ImageProvider, LibraryId, LibraryService, LibrarySummary, LocalGenerationService,
-    LocalLibraryService, MetadataReviewService, ReorderQueuedTasksRequest, RetryPolicy,
-    TaskAttempt, TaskDetail, TaskErrorClassification, TaskEvent, TaskId, TaskOutput,
+    GenerationService, ImageProvider, LibraryId, LibraryService, LibrarySummary,
+    LocalGenerationService, LocalLibraryService, MetadataReviewService, ReorderQueuedTasksRequest,
+    RetryPolicy, TaskAttempt, TaskDetail, TaskErrorClassification, TaskEvent, TaskId, TaskOutput,
     TaskOutputType, TaskSchedulerConfig, TaskService, TaskStatus, TaskSummary, TaskType,
     UpdateTaskStatusRequest, CURRENT_SCHEMA_VERSION,
 };
@@ -309,21 +309,24 @@ pub fn health_view() -> HealthView {
 fn provider_capabilities_view() -> Vec<ProviderCapabilityView> {
     let codex = CodexCliImageProvider::default();
     let fake = imglab_core::FakeImageProvider::success("fake");
-    [(&codex as &dyn ImageProvider), (&fake as &dyn ImageProvider)]
+    [
+        (&codex as &dyn ImageProvider),
+        (&fake as &dyn ImageProvider),
+    ]
+    .into_iter()
+    .map(|provider| ProviderCapabilityView {
+        provider: provider.name().to_string(),
+        supported_operations: [
+            GenerationOperation::TextToImage,
+            GenerationOperation::ImageToImage,
+        ]
         .into_iter()
-        .map(|provider| ProviderCapabilityView {
-            provider: provider.name().to_string(),
-            supported_operations: [
-                GenerationOperation::TextToImage,
-                GenerationOperation::ImageToImage,
-            ]
-            .into_iter()
-            .filter(|operation| provider.supports_operation(*operation))
-            .map(generation_operation_as_str)
-            .map(str::to_string)
-            .collect(),
-        })
-        .collect()
+        .filter(|operation| provider.supports_operation(*operation))
+        .map(generation_operation_as_str)
+        .map(str::to_string)
+        .collect(),
+    })
+    .collect()
 }
 
 pub fn capabilities_view() -> CapabilitiesView {
@@ -1708,7 +1711,7 @@ impl TryFrom<CreateTaskInputView> for CreateTaskInput {
     type Error = DomainError;
 
     fn try_from(value: CreateTaskInputView) -> Result<Self, Self::Error> {
-        let task_type = TaskType::from_str(&value.task_type).ok_or_else(|| {
+        let task_type = TaskType::parse(&value.task_type).ok_or_else(|| {
             DomainError::InvalidGenerationParameters {
                 message: format!("unsupported task type: {}", value.task_type),
             }

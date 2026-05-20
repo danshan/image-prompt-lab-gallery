@@ -258,7 +258,7 @@ impl TaskType {
         }
     }
 
-    pub fn from_str(value: &str) -> Option<Self> {
+    pub fn parse(value: &str) -> Option<Self> {
         match value {
             "image_generation" => Some(Self::ImageGeneration),
             "metadata_field_generation" => Some(Self::MetadataFieldGeneration),
@@ -298,7 +298,7 @@ impl TaskStatus {
         }
     }
 
-    pub fn from_str(value: &str) -> Option<Self> {
+    pub fn parse(value: &str) -> Option<Self> {
         match value {
             "queued" => Some(Self::Queued),
             "running" => Some(Self::Running),
@@ -335,7 +335,7 @@ impl TaskErrorClassification {
         }
     }
 
-    pub fn from_str(value: &str) -> Option<Self> {
+    pub fn parse(value: &str) -> Option<Self> {
         match value {
             "transient" => Some(Self::Transient),
             "retryable_manual" => Some(Self::RetryableManual),
@@ -367,7 +367,7 @@ impl TaskOutputType {
         }
     }
 
-    pub fn from_str(value: &str) -> Option<Self> {
+    pub fn parse(value: &str) -> Option<Self> {
         match value {
             "asset" => Some(Self::Asset),
             "asset_version" => Some(Self::AssetVersion),

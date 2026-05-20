@@ -282,14 +282,14 @@ fn load_related_review_tasks(
             let task_type_value: String = row.get(1)?;
             let status_value: String = row.get(2)?;
             let operation_value: Option<String> = row.get(4)?;
-            let task_type = TaskType::from_str(&task_type_value).ok_or_else(|| {
+            let task_type = TaskType::parse(&task_type_value).ok_or_else(|| {
                 rusqlite::Error::InvalidColumnType(
                     1,
                     "task_type".to_string(),
                     rusqlite::types::Type::Text,
                 )
             })?;
-            let status = TaskStatus::from_str(&status_value).ok_or_else(|| {
+            let status = TaskStatus::parse(&status_value).ok_or_else(|| {
                 rusqlite::Error::InvalidColumnType(
                     2,
                     "status".to_string(),

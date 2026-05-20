@@ -219,7 +219,9 @@ impl DaemonClient {
             Some(SCHEMA_VERSION) => ensure_required_provider_capabilities(&health),
             Some(found) => Err(CommandError {
                 code: "DaemonSchemaVersionMismatch".to_string(),
-                message: format!("daemon schema version mismatch: expected {SCHEMA_VERSION}, found {found}"),
+                message: format!(
+                    "daemon schema version mismatch: expected {SCHEMA_VERSION}, found {found}"
+                ),
                 recoverable: true,
             }),
             None => Err(CommandError {

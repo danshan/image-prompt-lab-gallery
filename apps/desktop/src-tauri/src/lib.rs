@@ -1591,7 +1591,8 @@ fn daemon_binary_path() -> Result<PathBuf, CommandError> {
 
 fn should_start_managed_daemon() -> bool {
     std::env::var_os("IMGLAB_DAEMON_REUSE_RUNTIME").is_none()
-        && (std::env::var_os("IMGLAB_DAEMON_BIN").is_some() || workspace_debug_daemon_binary().is_some())
+        && (std::env::var_os("IMGLAB_DAEMON_BIN").is_some()
+            || workspace_debug_daemon_binary().is_some())
 }
 
 fn workspace_debug_daemon_binary() -> Option<PathBuf> {
@@ -1605,7 +1606,10 @@ fn workspace_debug_daemon_binary() -> Option<PathBuf> {
     } else {
         "imglab-daemon"
     };
-    let path = workspace_root.join("target").join("debug").join(binary_name);
+    let path = workspace_root
+        .join("target")
+        .join("debug")
+        .join(binary_name);
     path.exists().then_some(path)
 }
 
@@ -1902,7 +1906,10 @@ fn album_membership_view(album: imglab_core::AlbumMembershipView) -> AlbumView {
     }
 }
 
-fn asset_detail_view(summary: imglab_core::AssetDetailView, library_path: &Path) -> AssetDetailView {
+fn asset_detail_view(
+    summary: imglab_core::AssetDetailView,
+    library_path: &Path,
+) -> AssetDetailView {
     AssetDetailView {
         id: summary.id.0,
         title: summary.title,

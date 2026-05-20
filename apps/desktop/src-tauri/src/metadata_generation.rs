@@ -298,7 +298,7 @@ fn extract_final_text(output: &str) -> String {
             .lines()
             .map(|line| line.trim().strip_prefix("[stdout] ").unwrap_or(line.trim()))
             .filter(|line| !line.is_empty())
-            .last()
+            .next_back()
             .unwrap_or(output)
             .to_string()
     })

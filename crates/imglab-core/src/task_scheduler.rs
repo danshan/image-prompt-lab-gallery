@@ -250,8 +250,10 @@ mod tests {
 
     #[test]
     fn scheduler_reports_global_and_provider_wait_reasons() {
-        let mut config = TaskSchedulerConfig::default();
-        config.global_concurrency_limit = 1;
+        let mut config = TaskSchedulerConfig {
+            global_concurrency_limit: 1,
+            ..Default::default()
+        };
         let global_full = vec![
             task("running", TaskStatus::Running, Some("fake"), 0, 1),
             task("queued", TaskStatus::Queued, Some("fake"), 0, 2),
