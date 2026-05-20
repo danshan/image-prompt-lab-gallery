@@ -38,7 +38,12 @@ export function taskActionKey(command: "cancel_daemon_task" | "retry_daemon_task
 }
 
 export function isRetryableTaskStatus(status: string) {
-  return status === "failed_retryable" || status === "interrupted_retryable";
+  return (
+    status === "failed_retryable" ||
+    status === "failed_final" ||
+    status === "interrupted_retryable" ||
+    status === "interrupted_final"
+  );
 }
 
 export function isTerminalFailureStatus(status: string) {

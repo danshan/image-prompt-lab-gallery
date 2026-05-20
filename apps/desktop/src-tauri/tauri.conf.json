@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "identifier": "dev.honghao.image-prompt-lab",
   "build": {
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "cargo build -p imglab-daemon && npm run dev",
+    "beforeBuildCommand": "cargo build -p imglab-daemon && npm run build",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },

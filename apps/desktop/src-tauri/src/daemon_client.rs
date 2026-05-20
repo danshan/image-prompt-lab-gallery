@@ -2,7 +2,7 @@ use super::CommandError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -10,6 +10,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 const API_VERSION: &str = "v1";
+const SCHEMA_VERSION: u32 = imglab_core::CURRENT_SCHEMA_VERSION;
 const HEALTH_PATH: &str = "/v1/health";
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
@@ -25,6 +26,21 @@ pub struct DaemonRuntimeFile {
     pub pid: u32,
     pub port: u16,
     pub token_path: PathBuf,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DaemonHealthView {
+    api_version: String,
+    schema_version: Option<u32>,
+    provider_capabilities: Option<Vec<DaemonProviderCapabilityView>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DaemonProviderCapabilityView {
+    provider: String,
+    supported_operations: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -186,7 +202,32 @@ impl DaemonClient {
     }
 
     pub fn health(&self) -> Result<(), CommandError> {
-        self.request("GET", HEALTH_PATH, None).map(|_| ())
+        let response = self.request("GET", HEALTH_PATH, None)?;
+        let health: DaemonHealthView =
+            serde_json::from_str(&response).map_err(daemon_parse_error)?;
+        if health.api_version != API_VERSION {
+            return Err(CommandError {
+                code: "DaemonVersionMismatch".to_string(),
+                message: format!(
+                    "daemon API version mismatch: expected {API_VERSION}, found {}",
+                    health.api_version
+                ),
+                recoverable: true,
+            });
+        }
+        match health.schema_version {
+            Some(SCHEMA_VERSION) => ensure_required_provider_capabilities(&health),
+            Some(found) => Err(CommandError {
+                code: "DaemonSchemaVersionMismatch".to_string(),
+                message: format!("daemon schema version mismatch: expected {SCHEMA_VERSION}, found {found}"),
+                recoverable: true,
+            }),
+            None => Err(CommandError {
+                code: "DaemonSchemaVersionUnavailable".to_string(),
+                message: format!("daemon schema version missing: expected {SCHEMA_VERSION}"),
+                recoverable: true,
+            }),
+        }
     }
 
     pub fn open_library(&self, library_path: &Path) -> Result<String, CommandError> {
@@ -313,6 +354,7 @@ pub fn start_daemon_sidecar(
 ) -> Result<DaemonSidecar, CommandError> {
     fs::create_dir_all(runtime_dir).map_err(daemon_io_error)?;
     let runtime_path = runtime_dir.join("runtime.json");
+    remove_stale_runtime_file(&runtime_path)?;
     let mut child = Command::new(daemon_bin)
         .env("IMGLAB_DAEMON_RUNTIME_DIR", runtime_dir)
         .stdin(Stdio::null())
@@ -338,6 +380,39 @@ pub fn start_daemon_sidecar(
     Err(CommandError {
         code: "DaemonStartTimeout".to_string(),
         message: "daemon sidecar did not become healthy before timeout".to_string(),
+        recoverable: true,
+    })
+}
+
+fn remove_stale_runtime_file(runtime_path: &Path) -> Result<(), CommandError> {
+    match fs::remove_file(runtime_path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(daemon_io_error(error)),
+    }
+}
+
+fn ensure_required_provider_capabilities(health: &DaemonHealthView) -> Result<(), CommandError> {
+    let Some(capabilities) = health.provider_capabilities.as_ref() else {
+        return Err(CommandError {
+            code: "DaemonProviderCapabilitiesUnavailable".to_string(),
+            message: "daemon provider capabilities missing".to_string(),
+            recoverable: true,
+        });
+    };
+    let supports_codex_image_to_image = capabilities.iter().any(|capability| {
+        capability.provider == "codex-cli"
+            && capability
+                .supported_operations
+                .iter()
+                .any(|operation| operation == "image_to_image")
+    });
+    if supports_codex_image_to_image {
+        return Ok(());
+    }
+    Err(CommandError {
+        code: "DaemonProviderCapabilityMismatch".to_string(),
+        message: "daemon provider capabilities do not include codex-cli image_to_image".to_string(),
         recoverable: true,
     })
 }

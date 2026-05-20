@@ -6,8 +6,8 @@ use imglab_core::{
     ReviewMetadataSuggestionRequest, SearchQuery,
 };
 use imglab_core::{
-    AlbumService, AssetService, GenerationService, LibraryService, MetadataReviewService,
-    SearchService,
+    AlbumService, AssetService, GalleryReadService, GenerationService, LibraryService,
+    MetadataReviewService, SearchService,
 };
 use imglab_provider_codex::CodexCliImageProvider;
 use serde_json::json;
@@ -163,6 +163,8 @@ fn import(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainEr
     print_json(json!({
         "asset_id": asset.id.0,
         "version_id": version.id.0,
+        "version_number": version.version_number,
+        "version_name": version.version_name,
         "file_path": version.file_path,
         "checksum_algorithm": version.checksum_algorithm,
         "checksum": version.checksum
@@ -261,18 +263,38 @@ where
     P: ImageProvider,
 {
     let service = LocalGenerationService::new(provider);
+    let library_path = request.library_path.clone();
     let versions = service.generate(request)?;
+    let library = LocalLibraryService::new(default_registry_path());
     print_json(json!({
         "versions": versions.into_iter().map(|version| {
+            let source_reference = library
+                .get_asset_detail(&library_path, &version.asset_id, Some(&version.id))
+                .ok()
+                .and_then(|detail| detail.source_reference)
+                .map(|reference| {
+                    json!({
+                        "asset_id": reference.asset_id.0,
+                        "asset_title": reference.asset_title,
+                        "asset_status": reference.asset_status,
+                        "version_id": reference.version_id.0,
+                        "version_number": reference.version_number,
+                        "version_name": reference.version_name,
+                        "file_path": reference.file_path
+                    })
+                });
             json!({
                 "id": version.id.0,
                 "asset_id": version.asset_id.0,
                 "parent_version_id": version.parent_version_id.map(|id| id.0),
                 "generation_event_id": version.generation_event_id.map(|id| id.0),
+                "version_number": version.version_number,
+                "version_name": version.version_name,
                 "file_path": version.file_path,
                 "checksum_algorithm": version.checksum_algorithm,
                 "checksum": version.checksum,
-                "mime_type": version.mime_type
+                "mime_type": version.mime_type,
+                "source_reference": source_reference
             })
         }).collect::<Vec<_>>()
     }));

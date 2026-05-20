@@ -148,6 +148,7 @@ pub struct GenerationParameters {
 pub struct GenerateImageRequest {
     pub library_path: PathBuf,
     pub parameters: GenerationParameters,
+    pub input_file: Option<PathBuf>,
     pub input_bytes: Option<Vec<u8>>,
 }
 
@@ -197,10 +198,16 @@ pub struct VersionSummary {
     pub asset_id: AssetId,
     pub parent_version_id: Option<AssetVersionId>,
     pub generation_event_id: Option<GenerationEventId>,
+    pub version_number: u32,
+    pub version_name: String,
     pub file_path: PathBuf,
     pub checksum_algorithm: String,
     pub checksum: String,
     pub mime_type: String,
+}
+
+pub fn version_name(version_number: u32) -> String {
+    format!("v{version_number}")
 }
 
 #[derive(Debug, Clone)]
@@ -602,6 +609,8 @@ pub struct GalleryAssetView {
     pub tags: Vec<String>,
     pub review_pending_count: u32,
     pub current_version_id: Option<AssetVersionId>,
+    pub current_version_number: Option<u32>,
+    pub current_version_name: Option<String>,
     pub image_path: Option<PathBuf>,
     pub width: Option<u32>,
     pub height: Option<u32>,
@@ -699,9 +708,24 @@ pub struct AssetDetailView {
     pub tags: Vec<String>,
     pub albums: Vec<AlbumMembershipView>,
     pub review_pending_count: u32,
+    pub current_version_id: Option<AssetVersionId>,
+    pub current_version_number: Option<u32>,
+    pub current_version_name: Option<String>,
     pub versions: Vec<VersionSummary>,
     pub lineage: Vec<LineageEntry>,
+    pub source_reference: Option<ReferenceSourceView>,
     pub file: Option<FileContextView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReferenceSourceView {
+    pub asset_id: AssetId,
+    pub asset_title: Option<String>,
+    pub asset_status: String,
+    pub version_id: AssetVersionId,
+    pub version_number: u32,
+    pub version_name: String,
+    pub file_path: PathBuf,
 }
 
 #[derive(Debug, Clone)]

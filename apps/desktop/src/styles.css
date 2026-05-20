@@ -525,6 +525,18 @@ textarea {
   gap: 6px;
 }
 
+.reference-file-control {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.reference-file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .task-draft-card span,
 .detail-section h4 {
   color: var(--color-text-muted);
@@ -1747,6 +1759,96 @@ textarea {
   color: var(--color-text-muted);
   font-size: 11px;
   padding: 3px 7px;
+}
+
+.version-browser {
+  display: grid;
+  gap: 8px;
+}
+
+.version-browser-row {
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 6px;
+}
+
+.version-browser-row.selected {
+  border-color: var(--color-generate);
+  box-shadow: 0 0 0 3px rgba(216, 74, 43, 0.1);
+}
+
+.version-browser-main {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 44px minmax(0, 1fr);
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.version-thumb {
+  aspect-ratio: 1;
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  display: block;
+  overflow: hidden;
+}
+
+.version-thumb img {
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.version-browser-main strong,
+.version-browser-main small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.version-browser-main small {
+  color: var(--color-text-subtle);
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.reference-source-content {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+
+.reference-source-preview {
+  aspect-ratio: 1;
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  cursor: zoom-in;
+  display: block;
+  overflow: hidden;
+  padding: 0;
+}
+
+.reference-source-preview img {
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.reference-source-content .mini-button {
+  margin-top: 8px;
 }
 
 .lineage-timeline {

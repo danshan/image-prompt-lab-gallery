@@ -172,6 +172,8 @@ struct GalleryAssetView {
     tags: Vec<String>,
     review_pending_count: u32,
     current_version_id: Option<String>,
+    current_version_number: Option<u32>,
+    current_version_name: Option<String>,
     image_path: Option<PathBuf>,
     width: Option<u32>,
     height: Option<u32>,
@@ -201,10 +203,24 @@ struct VersionView {
     asset_id: String,
     parent_version_id: Option<String>,
     generation_event_id: Option<String>,
+    version_number: u32,
+    version_name: String,
     file_path: PathBuf,
     checksum_algorithm: String,
     checksum: String,
     mime_type: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReferenceSourceView {
+    asset_id: String,
+    asset_title: Option<String>,
+    asset_status: String,
+    version_id: String,
+    version_number: u32,
+    version_name: String,
+    file_path: PathBuf,
 }
 
 #[derive(Debug, Serialize)]
@@ -280,8 +296,12 @@ struct AssetDetailView {
     tags: Vec<String>,
     albums: Vec<AlbumView>,
     review_pending_count: u32,
+    current_version_id: Option<String>,
+    current_version_number: Option<u32>,
+    current_version_name: Option<String>,
     versions: Vec<VersionView>,
     lineage: Vec<LineageEntryView>,
+    source_reference: Option<ReferenceSourceView>,
     file: Option<FileContextView>,
 }
 
@@ -516,6 +536,7 @@ struct GenerationTaskDraftInput {
     prompt: String,
     negative_prompt: Option<String>,
     operation: Option<String>,
+    input_file: Option<PathBuf>,
     input_version_id: Option<String>,
     parameters_json: Option<String>,
     priority: Option<i64>,
@@ -939,7 +960,7 @@ fn get_asset_detail(input: AssetDetailInput) -> Result<AssetDetailView, CommandE
             &AssetId(input.asset_id),
             current_version_id.as_ref(),
         )
-        .map(asset_detail_view)
+        .map(|detail| asset_detail_view(detail, &input.library_path))
         .map_err(Into::into)
 }
 
@@ -957,7 +978,7 @@ fn get_asset_inspector_detail(
             &AssetId(input.asset_id),
             current_version_id.as_ref(),
         )
-        .map(asset_inspector_detail_view)
+        .map(|detail| asset_inspector_detail_view(detail, &input.library_path))
         .map_err(Into::into)
 }
 
@@ -1091,6 +1112,7 @@ fn generation_draft_to_daemon_task(
             serde_json::json!({
                 "prompt": input.prompt,
                 "negativePrompt": input.negative_prompt,
+                "inputFile": input.input_file,
                 "inputVersionId": input.input_version_id,
                 "parametersJson": parameters,
             })
@@ -1282,7 +1304,7 @@ fn get_review_draft_detail(
 ) -> Result<ReviewDraftDetailView, CommandError> {
     service()
         .get_review_draft_detail(&library_path, &MetadataSuggestionId(suggestion_id))
-        .map(review_draft_detail_view)
+        .map(|detail| review_draft_detail_view(detail, &library_path))
         .map_err(Into::into)
 }
 
@@ -1470,7 +1492,7 @@ fn ensure_daemon_client(
     let runtime_dir = daemon_runtime_dir();
     let runtime_path = runtime_dir.join("runtime.json");
     {
-        let guard = state.daemon_sidecar.lock().map_err(|_| CommandError {
+        let mut guard = state.daemon_sidecar.lock().map_err(|_| CommandError {
             code: "ConcurrentWriteConflict".to_string(),
             message: "daemon sidecar state lock poisoned".to_string(),
             recoverable: false,
@@ -1480,13 +1502,19 @@ fn ensure_daemon_client(
                 return Ok(sidecar.client.clone());
             }
         }
+        if let Some(mut sidecar) = guard.take() {
+            let _ = sidecar.child.kill();
+            let _ = sidecar.child.wait();
+        }
     }
 
-    match daemon_client::discover_daemon(&runtime_path) {
-        Ok(Some(client)) => return Ok(client),
-        Ok(None) => {}
-        Err(error) if error.recoverable => {}
-        Err(error) => return Err(error),
+    if !should_start_managed_daemon() {
+        match daemon_client::discover_daemon(&runtime_path) {
+            Ok(Some(client)) => return Ok(client),
+            Ok(None) => {}
+            Err(error) if error.recoverable => {}
+            Err(error) => return Err(error),
+        }
     }
 
     let daemon_bin = daemon_binary_path()?;
@@ -1511,6 +1539,9 @@ fn daemon_binary_path() -> Result<PathBuf, CommandError> {
     if let Some(path) = std::env::var_os("IMGLAB_DAEMON_BIN").map(PathBuf::from) {
         return Ok(path);
     }
+    if let Some(path) = workspace_debug_daemon_binary() {
+        return Ok(path);
+    }
     let exe = std::env::current_exe().map_err(|error| CommandError {
         code: "DaemonStartFailed".to_string(),
         message: format!("failed to locate current executable: {error}"),
@@ -1524,6 +1555,26 @@ fn daemon_binary_path() -> Result<PathBuf, CommandError> {
         });
     };
     Ok(dir.join("imglab-daemon"))
+}
+
+fn should_start_managed_daemon() -> bool {
+    std::env::var_os("IMGLAB_DAEMON_REUSE_RUNTIME").is_none()
+        && (std::env::var_os("IMGLAB_DAEMON_BIN").is_some() || workspace_debug_daemon_binary().is_some())
+}
+
+fn workspace_debug_daemon_binary() -> Option<PathBuf> {
+    if !cfg!(debug_assertions) {
+        return None;
+    }
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir.parent()?.parent()?.parent()?;
+    let binary_name = if cfg!(target_os = "windows") {
+        "imglab-daemon.exe"
+    } else {
+        "imglab-daemon"
+    };
+    let path = workspace_root.join("target").join("debug").join(binary_name);
+    path.exists().then_some(path)
 }
 
 fn normalize_library_root_path(path: PathBuf) -> Result<PathBuf, CommandError> {
@@ -1673,6 +1724,8 @@ fn gallery_asset_view(
         tags: summary.tags,
         review_pending_count: summary.review_pending_count,
         current_version_id: summary.current_version_id.map(|id| id.0),
+        current_version_number: summary.current_version_number,
+        current_version_name: summary.current_version_name,
         image_path: summary
             .image_path
             .map(|path| absolutize_library_path(library_path, path)),
@@ -1724,6 +1777,8 @@ fn version_view(summary: imglab_core::VersionSummary) -> VersionView {
         asset_id: summary.asset_id.0,
         parent_version_id: summary.parent_version_id.map(|id| id.0),
         generation_event_id: summary.generation_event_id.map(|id| id.0),
+        version_number: summary.version_number,
+        version_name: summary.version_name,
         file_path: summary.file_path,
         checksum_algorithm: summary.checksum_algorithm,
         checksum: summary.checksum,
@@ -1815,7 +1870,7 @@ fn album_membership_view(album: imglab_core::AlbumMembershipView) -> AlbumView {
     }
 }
 
-fn asset_detail_view(summary: imglab_core::AssetDetailView) -> AssetDetailView {
+fn asset_detail_view(summary: imglab_core::AssetDetailView, library_path: &Path) -> AssetDetailView {
     AssetDetailView {
         id: summary.id.0,
         title: summary.title,
@@ -1846,15 +1901,25 @@ fn asset_detail_view(summary: imglab_core::AssetDetailView) -> AssetDetailView {
             })
             .collect(),
         review_pending_count: summary.review_pending_count,
-        versions: summary.versions.into_iter().map(version_view).collect(),
+        current_version_id: summary.current_version_id.map(|id| id.0),
+        current_version_number: summary.current_version_number,
+        current_version_name: summary.current_version_name,
+        versions: summary
+            .versions
+            .into_iter()
+            .map(|version| version_view_with_library_path(library_path, version))
+            .collect(),
         lineage: summary
             .lineage
             .into_iter()
             .map(|entry| LineageEntryView {
-                version: version_view(entry.version),
+                version: version_view_with_library_path(library_path, entry.version),
                 generation_event: entry.generation_event.map(generation_event_view),
             })
             .collect(),
+        source_reference: summary
+            .source_reference
+            .map(|source| reference_source_view(source, library_path)),
         file: summary.file.map(|file| FileContextView {
             filename: file.filename,
             relative_location: file.relative_location,
@@ -1869,11 +1934,27 @@ fn asset_detail_view(summary: imglab_core::AssetDetailView) -> AssetDetailView {
     }
 }
 
+fn reference_source_view(
+    summary: imglab_core::ReferenceSourceView,
+    library_path: &Path,
+) -> ReferenceSourceView {
+    ReferenceSourceView {
+        asset_id: summary.asset_id.0,
+        asset_title: summary.asset_title,
+        asset_status: summary.asset_status,
+        version_id: summary.version_id.0,
+        version_number: summary.version_number,
+        version_name: summary.version_name,
+        file_path: absolutize_library_path(library_path, summary.file_path),
+    }
+}
+
 fn asset_inspector_detail_view(
     summary: imglab_core::AssetInspectorDetailView,
+    library_path: &Path,
 ) -> AssetInspectorDetailView {
     AssetInspectorDetailView {
-        asset: asset_detail_view(summary.asset),
+        asset: asset_detail_view(summary.asset, library_path),
         canonical_metadata: CanonicalMetadataView {
             title: summary.canonical_metadata.title,
             description: summary.canonical_metadata.description,
@@ -1990,7 +2071,10 @@ fn suggestion_view(summary: imglab_core::MetadataSuggestion) -> SuggestionView {
     }
 }
 
-fn review_draft_detail_view(summary: imglab_core::ReviewDraftDetailView) -> ReviewDraftDetailView {
+fn review_draft_detail_view(
+    summary: imglab_core::ReviewDraftDetailView,
+    library_path: &Path,
+) -> ReviewDraftDetailView {
     ReviewDraftDetailView {
         suggestion: suggestion_view(summary.suggestion),
         draft_seed: ReviewDraftSeedView {
@@ -2024,7 +2108,7 @@ fn review_draft_detail_view(summary: imglab_core::ReviewDraftDetailView) -> Revi
                 operation: task.operation.map(operation_value),
             })
             .collect(),
-        asset: asset_detail_view(summary.asset),
+        asset: asset_detail_view(summary.asset, library_path),
     }
 }
 

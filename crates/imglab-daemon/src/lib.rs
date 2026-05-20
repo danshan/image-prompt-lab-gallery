@@ -1,11 +1,12 @@
 use imglab_core::{
     classify_task_error, evaluate_scheduler, AssetId, BatchCreateTasksRequest,
     CreateMetadataSuggestionRequest, CreateTaskInput, DomainError, DomainResult,
-    GenerateImageRequest, GenerationOperation, GenerationParameters, GenerationService, LibraryId,
-    LibraryService, LibrarySummary, LocalGenerationService, LocalLibraryService,
-    MetadataReviewService, ReorderQueuedTasksRequest, RetryPolicy, TaskAttempt, TaskDetail,
-    TaskErrorClassification, TaskEvent, TaskId, TaskOutput, TaskOutputType, TaskSchedulerConfig,
-    TaskService, TaskStatus, TaskSummary, TaskType, UpdateTaskStatusRequest,
+    GalleryReadService, GenerateImageRequest, GenerationOperation, GenerationParameters,
+    GenerationService, ImageProvider, LibraryId, LibraryService, LibrarySummary, LocalGenerationService,
+    LocalLibraryService, MetadataReviewService, ReorderQueuedTasksRequest, RetryPolicy,
+    TaskAttempt, TaskDetail, TaskErrorClassification, TaskEvent, TaskId, TaskOutput,
+    TaskOutputType, TaskSchedulerConfig, TaskService, TaskStatus, TaskSummary, TaskType,
+    UpdateTaskStatusRequest, CURRENT_SCHEMA_VERSION,
 };
 use imglab_provider_codex::CodexCliImageProvider;
 use serde::{Deserialize, Serialize};
@@ -51,6 +52,15 @@ pub struct DaemonConfig {
 pub struct HealthView {
     pub status: String,
     pub api_version: String,
+    pub schema_version: u32,
+    pub provider_capabilities: Vec<ProviderCapabilityView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderCapabilityView {
+    pub provider: String,
+    pub supported_operations: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -116,6 +126,7 @@ pub struct ImageGenerationTaskInput {
     pub model: Option<String>,
     pub parameters: Option<Value>,
     pub parameters_json: Option<Value>,
+    pub input_file: Option<PathBuf>,
     pub input_version_id: Option<String>,
     pub fake_mode: Option<String>,
 }
@@ -290,7 +301,29 @@ pub fn health_view() -> HealthView {
     HealthView {
         status: "ok".to_string(),
         api_version: API_VERSION.to_string(),
+        schema_version: CURRENT_SCHEMA_VERSION,
+        provider_capabilities: provider_capabilities_view(),
     }
+}
+
+fn provider_capabilities_view() -> Vec<ProviderCapabilityView> {
+    let codex = CodexCliImageProvider::default();
+    let fake = imglab_core::FakeImageProvider::success("fake");
+    [(&codex as &dyn ImageProvider), (&fake as &dyn ImageProvider)]
+        .into_iter()
+        .map(|provider| ProviderCapabilityView {
+            provider: provider.name().to_string(),
+            supported_operations: [
+                GenerationOperation::TextToImage,
+                GenerationOperation::ImageToImage,
+            ]
+            .into_iter()
+            .filter(|operation| provider.supports_operation(*operation))
+            .map(generation_operation_as_str)
+            .map(str::to_string)
+            .collect(),
+        })
+        .collect()
 }
 
 pub fn capabilities_view() -> CapabilitiesView {
@@ -853,6 +886,7 @@ fn execute_image_generation_task(
                 .map(|value| value.to_string())
                 .unwrap_or_else(|| "{}".to_string()),
         },
+        input_file: input.input_file,
         input_bytes: None,
     };
 
@@ -888,6 +922,11 @@ fn execute_image_generation_task(
     };
 
     for version in versions {
+        let source_reference = state
+            .service
+            .get_asset_detail(library_path, &version.asset_id, Some(&version.id))
+            .ok()
+            .and_then(|detail| detail.source_reference);
         state
             .service
             .append_task_output(imglab_core::AppendTaskOutputRequest {
@@ -895,7 +934,14 @@ fn execute_image_generation_task(
                 task_id: task_id.clone(),
                 output_type: TaskOutputType::Asset,
                 target_id: version.asset_id.0.clone(),
-                payload_json: None,
+                payload_json: Some(
+                    serde_json::json!({
+                        "role": "output",
+                        "versionNumber": version.version_number,
+                        "versionName": version.version_name
+                    })
+                    .to_string(),
+                ),
             })?;
         state
             .service
@@ -904,7 +950,14 @@ fn execute_image_generation_task(
                 task_id: task_id.clone(),
                 output_type: TaskOutputType::AssetVersion,
                 target_id: version.id.0.clone(),
-                payload_json: None,
+                payload_json: Some(
+                    serde_json::json!({
+                        "role": "output",
+                        "versionNumber": version.version_number,
+                        "versionName": version.version_name
+                    })
+                    .to_string(),
+                ),
             })?;
         if let Some(event_id) = version.generation_event_id {
             state
@@ -915,6 +968,42 @@ fn execute_image_generation_task(
                     output_type: TaskOutputType::GenerationEvent,
                     target_id: event_id.0,
                     payload_json: None,
+                })?;
+        }
+        if let Some(reference) = source_reference {
+            state
+                .service
+                .append_task_output(imglab_core::AppendTaskOutputRequest {
+                    library_path: library_path.to_path_buf(),
+                    task_id: task_id.clone(),
+                    output_type: TaskOutputType::Asset,
+                    target_id: reference.asset_id.0.clone(),
+                    payload_json: Some(
+                        serde_json::json!({
+                            "role": "reference",
+                            "versionId": reference.version_id.0,
+                            "versionNumber": reference.version_number,
+                            "versionName": reference.version_name
+                        })
+                        .to_string(),
+                    ),
+                })?;
+            state
+                .service
+                .append_task_output(imglab_core::AppendTaskOutputRequest {
+                    library_path: library_path.to_path_buf(),
+                    task_id: task_id.clone(),
+                    output_type: TaskOutputType::AssetVersion,
+                    target_id: reference.version_id.0,
+                    payload_json: Some(
+                        serde_json::json!({
+                            "role": "reference",
+                            "assetId": reference.asset_id.0,
+                            "versionNumber": reference.version_number,
+                            "versionName": reference.version_name
+                        })
+                        .to_string(),
+                    ),
                 })?;
         }
     }
@@ -1858,6 +1947,9 @@ mod tests {
         );
         assert_eq!(health.status_code, 200);
         assert!(health.body.contains("\"apiVersion\":\"v1\""));
+        assert!(health.body.contains("\"schemaVersion\":6"));
+        assert!(health.body.contains("\"provider\":\"codex-cli\""));
+        assert!(health.body.contains("\"image_to_image\""));
 
         let capabilities = handle_http_request(
             "GET /v1/capabilities HTTP/1.1\r\nX-ImgLab-Token: secret\r\n\r\n",

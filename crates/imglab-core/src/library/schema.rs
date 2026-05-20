@@ -2,7 +2,7 @@ use super::database_error;
 use crate::{DomainError, DomainResult};
 use rusqlite::Connection;
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 5;
+pub const CURRENT_SCHEMA_VERSION: u32 = 6;
 
 pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
     let user_version: u32 = connection
@@ -46,6 +46,7 @@ pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
                 width INTEGER,
                 height INTEGER,
                 mime_type TEXT NOT NULL,
+                version_number INTEGER NOT NULL,
                 version_label TEXT,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(asset_id) REFERENCES assets(id)
@@ -235,6 +236,14 @@ pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
             .execute("ALTER TABLE asset_versions ADD COLUMN checksum TEXT", [])
             .map_err(database_error)?;
     }
+    if !column_exists(connection, "asset_versions", "version_number")? {
+        connection
+            .execute(
+                "ALTER TABLE asset_versions ADD COLUMN version_number INTEGER",
+                [],
+            )
+            .map_err(database_error)?;
+    }
     if !column_exists(connection, "assets", "schema_prompt")? {
         connection
             .execute("ALTER TABLE assets ADD COLUMN schema_prompt TEXT", [])
@@ -267,9 +276,80 @@ pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
             [],
         )
         .map_err(database_error)?;
+    backfill_asset_version_numbers(connection)?;
+    connection
+        .execute(
+            "
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_versions_asset_version_number
+                ON asset_versions(asset_id, version_number)
+            ",
+            [],
+        )
+        .map_err(database_error)?;
     connection
         .pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
         .map_err(database_error)?;
+
+    Ok(())
+}
+
+fn backfill_asset_version_numbers(connection: &Connection) -> DomainResult<()> {
+    let asset_ids = {
+        let mut statement = connection
+            .prepare("SELECT DISTINCT asset_id FROM asset_versions ORDER BY asset_id")
+            .map_err(database_error)?;
+        let rows = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(database_error)?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(database_error)?
+    };
+
+    for asset_id in asset_ids {
+        let version_ids = {
+            let mut statement = connection
+                .prepare(
+                    "
+                    SELECT id
+                    FROM asset_versions
+                    WHERE asset_id = ?1
+                    ORDER BY created_at ASC, id ASC
+                    ",
+                )
+                .map_err(database_error)?;
+            let rows = statement
+                .query_map([asset_id.as_str()], |row| row.get::<_, String>(0))
+                .map_err(database_error)?;
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(database_error)?
+        };
+
+        for (index, version_id) in version_ids.iter().enumerate() {
+            connection
+                .execute(
+                    "
+                    UPDATE asset_versions
+                    SET version_number = COALESCE(version_number, ?1)
+                    WHERE id = ?2
+                    ",
+                    rusqlite::params![index as i64 + 1, version_id],
+                )
+                .map_err(database_error)?;
+        }
+    }
+
+    let missing_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM asset_versions WHERE version_number IS NULL",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(database_error)?;
+    if missing_count > 0 {
+        return Err(DomainError::Database {
+            message: format!("failed to backfill version_number for {missing_count} versions"),
+        });
+    }
 
     Ok(())
 }

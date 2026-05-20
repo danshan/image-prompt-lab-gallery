@@ -151,6 +151,8 @@ fn fake_generate_tag_album_and_suggestion_flow_work() {
         .assert_success();
     let version = &generated["versions"].as_array().expect("versions")[0];
     let asset_id = version["asset_id"].as_str().expect("asset id");
+    assert_eq!(version["version_number"], 1);
+    assert_eq!(version["version_name"], "v1");
     let generated_pending = workspace
         .run(&["suggestion", "list", "--library", path(&library)])
         .assert_success();
@@ -220,6 +222,79 @@ fn fake_generate_tag_album_and_suggestion_flow_work() {
         ])
         .assert_success();
     assert_eq!(accepted["title"], "Suggested");
+}
+
+#[test]
+fn fake_generate_with_uploaded_reference_outputs_reference_summary() {
+    let workspace = TestWorkspace::new("uploaded-reference");
+    let library = workspace.library_path();
+    let source = workspace.source_image();
+
+    workspace
+        .run(&["init", path(&library), "--name", "Reference"])
+        .assert_success();
+
+    let generated = workspace
+        .run(&[
+            "generate",
+            "--library",
+            path(&library),
+            "--provider",
+            "fake",
+            "--prompt",
+            "make from reference",
+            "--input-file",
+            path(&source),
+            "--json",
+        ])
+        .assert_success();
+    let version = &generated["versions"].as_array().expect("versions")[0];
+    assert_eq!(version["version_number"], 1);
+    assert_eq!(version["version_name"], "v1");
+    let reference = &version["source_reference"];
+    assert_eq!(reference["asset_status"], "reference");
+    assert_eq!(reference["version_number"], 1);
+    assert_eq!(reference["version_name"], "v1");
+}
+
+#[test]
+fn fake_generate_with_input_version_outputs_next_version() {
+    let workspace = TestWorkspace::new("input-version");
+    let library = workspace.library_path();
+    let source = workspace.source_image();
+
+    workspace
+        .run(&["init", path(&library), "--name", "Input Version"])
+        .assert_success();
+    let imported = workspace
+        .run(&[
+            "import",
+            "--library",
+            path(&library),
+            path(&source),
+            "--json",
+        ])
+        .assert_success();
+    let version_id = imported["version_id"].as_str().expect("version id");
+
+    let generated = workspace
+        .run(&[
+            "generate",
+            "--library",
+            path(&library),
+            "--provider",
+            "fake",
+            "--prompt",
+            "make next version",
+            "--input-version",
+            version_id,
+            "--json",
+        ])
+        .assert_success();
+    let version = &generated["versions"].as_array().expect("versions")[0];
+    assert_eq!(version["parent_version_id"], version_id);
+    assert_eq!(version["version_number"], 2);
+    assert_eq!(version["version_name"], "v2");
 }
 
 #[test]

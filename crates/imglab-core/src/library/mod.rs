@@ -1,14 +1,14 @@
 use crate::{
-    AssetId, AssetService, AssetVersionId, CreateChildVersionRequest, CreateGenerationEventRequest,
-    CreateLibraryRequest, CreateMetadataSuggestionRequest, DaemonStatusView,
-    DiagnosticsOverviewView, DomainError, DomainResult, ExportLibraryBackupRequest,
-    ExportLibraryRequest, ExportSummary, GenerateImageRequest, GenerationOperation,
-    GenerationParameters, GenerationRequestInput, ImageProvider, ImportAssetRequest,
-    ImportLibraryBackupRequest, IntegrityIssue, IntegrityIssueKind, LibraryBackupSummary,
-    LibraryId, LibraryService, LibraryStatusView, LibrarySummary, MetadataReviewService,
-    PreparedGenerationRequest, ProviderHealthSummaryView, RenameLibraryAliasRequest, RepairIssue,
-    RepairLibraryRequest, RepairSummary, StudioOverviewView, StudioTaskSummaryView, TaskService,
-    TaskStatus, VersionSummary,
+    AssetId, AssetService, AssetSummary, AssetVersionId, CreateChildVersionRequest,
+    CreateGenerationEventRequest, CreateLibraryRequest, CreateMetadataSuggestionRequest,
+    DaemonStatusView, DiagnosticsOverviewView, DomainError, DomainResult,
+    ExportLibraryBackupRequest, ExportLibraryRequest, ExportSummary, GenerateImageRequest,
+    GenerationOperation, GenerationParameters, GenerationRequestInput, ImageProvider,
+    ImportAssetRequest, ImportLibraryBackupRequest, IntegrityIssue, IntegrityIssueKind,
+    LibraryBackupSummary, LibraryId, LibraryService, LibraryStatusView, LibrarySummary,
+    MetadataReviewService, PreparedGenerationRequest, ProviderHealthSummaryView,
+    RenameLibraryAliasRequest, RepairIssue, RepairLibraryRequest, RepairSummary,
+    StudioOverviewView, StudioTaskSummaryView, TaskService, TaskStatus, VersionSummary,
 };
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -26,7 +26,7 @@ mod backup;
 #[cfg(test)]
 use assets::load_asset_summary;
 use assets::{
-    default_title_from_prompt, ensure_asset_exists, load_version,
+    default_title_from_prompt, ensure_asset_exists, import_asset_with_status, load_version,
     mark_imported_version_as_generated,
 };
 mod export;
@@ -259,6 +259,8 @@ where
     P: ImageProvider,
 {
     fn generate(&self, request: GenerateImageRequest) -> DomainResult<Vec<VersionSummary>> {
+        let library_service =
+            LocalLibraryService::new(std::env::temp_dir().join("imglab-unused-registry.sqlite"));
         if !self
             .provider
             .supports_operation(request.parameters.operation)
@@ -269,26 +271,83 @@ where
             });
         }
         self.provider.validate_parameters(&request.parameters)?;
-        let result = match request.parameters.operation {
-            GenerationOperation::TextToImage => {
-                self.provider.generate_from_text(&request.parameters)?
+
+        let mut parameters = request.parameters.clone();
+        let mut input_bytes = request.input_bytes.clone();
+        let mut uploaded_reference: Option<(AssetSummary, VersionSummary)> = None;
+        if matches!(parameters.operation, GenerationOperation::ImageToImage)
+            && parameters.input_version_id.is_none()
+        {
+            if let Some(input_file) = &request.input_file {
+                let reference = import_asset_with_status(
+                    &library_service,
+                    ImportAssetRequest {
+                        library_path: request.library_path.clone(),
+                        source_path: input_file.clone(),
+                    },
+                    "reference",
+                    "reference",
+                )?;
+                let reference_path = request.library_path.join(&reference.1.file_path);
+                input_bytes = Some(fs::read(&reference_path).map_err(|error| DomainError::Io {
+                    path: reference_path.display().to_string(),
+                    message: error.to_string(),
+                })?);
+                parameters.input_version_id = Some(reference.1.id.clone());
+                uploaded_reference = Some(reference);
             }
+        }
+        if matches!(parameters.operation, GenerationOperation::ImageToImage)
+            && input_bytes.is_none()
+        {
+            if let Some(input_version_id) = &parameters.input_version_id {
+                let connection = LocalLibraryService::open_library_database(&request.library_path)?;
+                let input_version = load_version(&connection, input_version_id)?;
+                let input_path = request.library_path.join(input_version.file_path);
+                input_bytes = Some(fs::read(&input_path).map_err(|error| DomainError::Io {
+                    path: input_path.display().to_string(),
+                    message: error.to_string(),
+                })?);
+            }
+        }
+
+        let result = match parameters.operation {
+            GenerationOperation::TextToImage => self.provider.generate_from_text(&parameters),
             GenerationOperation::ImageToImage => {
-                let input = request.input_bytes.as_deref().ok_or_else(|| {
+                let input = input_bytes.as_deref().ok_or_else(|| {
                     DomainError::InvalidGenerationParameters {
                         message: "image-to-image generation requires input bytes".to_string(),
                     }
                 })?;
-                self.provider
-                    .generate_from_image(&request.parameters, input)?
+                self.provider.generate_from_image(&parameters, input)
             }
-        };
+        }
+        .inspect_err(|error| {
+            if let Some((reference_asset, reference_version)) = &uploaded_reference {
+                let _ = library_service.record_generation_event(CreateGenerationEventRequest {
+                    library_path: request.library_path.clone(),
+                    asset_id: Some(reference_asset.id.clone()),
+                    output_version_id: None,
+                    provider: parameters.provider.clone(),
+                    provider_model: parameters.model.clone(),
+                    operation_type: parameters.operation,
+                    prompt: parameters.prompt.clone(),
+                    negative_prompt: parameters.negative_prompt.clone(),
+                    input_asset_version_id: Some(reference_version.id.clone()),
+                    parameters_json: parameters.parameters_json.clone(),
+                    raw_request_json: None,
+                    raw_response_json: None,
+                    status: "failed".to_string(),
+                    error_code: Some(error.code().to_string()),
+                    error_message: Some(error.to_string()),
+                });
+            }
+        })?;
 
-        let library_service =
-            LocalLibraryService::new(std::env::temp_dir().join("imglab-unused-registry.sqlite"));
         let mut versions = Vec::new();
         let mut asset_id = None;
         let parent_version_id = request.parameters.input_version_id.clone();
+        let input_asset_version_id = parameters.input_version_id.clone();
 
         if let Some(parent_id) = &parent_version_id {
             let connection = LocalLibraryService::open_library_database(&request.library_path)?;
@@ -312,13 +371,13 @@ where
                         library_path: request.library_path.clone(),
                         asset_id: Some(asset_id.clone()),
                         output_version_id: None,
-                        provider: request.parameters.provider.clone(),
-                        provider_model: request.parameters.model.clone(),
-                        operation_type: request.parameters.operation,
-                        prompt: request.parameters.prompt.clone(),
-                        negative_prompt: request.parameters.negative_prompt.clone(),
+                        provider: parameters.provider.clone(),
+                        provider_model: parameters.model.clone(),
+                        operation_type: parameters.operation,
+                        prompt: parameters.prompt.clone(),
+                        negative_prompt: parameters.negative_prompt.clone(),
                         input_asset_version_id: Some(parent_version_id.clone()),
-                        parameters_json: request.parameters.parameters_json.clone(),
+                        parameters_json: parameters.parameters_json.clone(),
                         raw_request_json: Some(result.raw_request_json.clone()),
                         raw_response_json: Some(result.raw_response_json.clone()),
                         status: "completed".to_string(),
@@ -344,13 +403,13 @@ where
                         library_path: request.library_path.clone(),
                         asset_id: Some(asset.id.clone()),
                         output_version_id: Some(version.id.clone()),
-                        provider: request.parameters.provider.clone(),
-                        provider_model: request.parameters.model.clone(),
-                        operation_type: request.parameters.operation,
-                        prompt: request.parameters.prompt.clone(),
-                        negative_prompt: request.parameters.negative_prompt.clone(),
-                        input_asset_version_id: None,
-                        parameters_json: request.parameters.parameters_json.clone(),
+                        provider: parameters.provider.clone(),
+                        provider_model: parameters.model.clone(),
+                        operation_type: parameters.operation,
+                        prompt: parameters.prompt.clone(),
+                        negative_prompt: parameters.negative_prompt.clone(),
+                        input_asset_version_id: input_asset_version_id.clone(),
+                        parameters_json: parameters.parameters_json.clone(),
                         raw_request_json: Some(result.raw_request_json.clone()),
                         raw_response_json: Some(result.raw_response_json.clone()),
                         status: "completed".to_string(),
@@ -474,6 +533,7 @@ pub fn prepare_generation_request(
         request: GenerateImageRequest {
             library_path: input.library_path,
             parameters,
+            input_file: input.input_file,
             input_bytes,
         },
     })
@@ -1341,6 +1401,81 @@ mod tests {
     }
 
     #[test]
+    fn migrates_legacy_asset_versions_to_numeric_versions() {
+        let root = test_root("legacy-version-number");
+        let registry = test_root("legacy-version-number-registry").join("registry.sqlite");
+        let source_dir = test_root("legacy-version-number-source");
+        fs::create_dir_all(&source_dir).expect("create source dir");
+        let source = source_dir.join("input.png");
+        let generated = source_dir.join("generated.png");
+        fs::write(&source, b"input bytes").expect("write source");
+        fs::write(&generated, b"generated bytes").expect("write generated");
+
+        let service = LocalLibraryService::new(registry);
+        service
+            .create_library(CreateLibraryRequest {
+                root_path: root.clone(),
+                name: "Legacy Version Number".to_string(),
+            })
+            .expect("create library");
+        let (asset, parent) = service
+            .import_asset(ImportAssetRequest {
+                library_path: root.clone(),
+                source_path: source,
+            })
+            .expect("import parent");
+        let child = service
+            .create_child_version(CreateChildVersionRequest {
+                library_path: root.clone(),
+                asset_id: asset.id.clone(),
+                parent_version_id: parent.id.clone(),
+                generation_event_id: None,
+                source_path: generated,
+                mime_type: "image/png".to_string(),
+                version_label: Some("variant".to_string()),
+            })
+            .expect("create child");
+
+        {
+            let connection =
+                Connection::open(LocalLibraryService::database_path(&root)).expect("open db");
+            connection
+                .execute(
+                    "DROP INDEX IF EXISTS idx_asset_versions_asset_version_number",
+                    [],
+                )
+                .expect("drop version index");
+            connection
+                .execute("ALTER TABLE asset_versions DROP COLUMN version_number", [])
+                .expect("drop version number column");
+            connection
+                .pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION - 1)
+                .expect("downgrade user version");
+        }
+
+        service.open_library(&root).expect("migrate library");
+        let migrated_parent = service
+            .get_asset_detail(&root, &asset.id, Some(&parent.id))
+            .expect("parent detail");
+        let migrated_child = migrated_parent
+            .versions
+            .iter()
+            .find(|version| version.id == child.id)
+            .expect("child version");
+        let migrated_parent_version = migrated_parent
+            .versions
+            .iter()
+            .find(|version| version.id == parent.id)
+            .expect("parent version");
+
+        assert_eq!(migrated_parent_version.version_number, 1);
+        assert_eq!(migrated_parent_version.version_name, "v1");
+        assert_eq!(migrated_child.version_number, 2);
+        assert_eq!(migrated_child.version_name, "v2");
+        assert_eq!(migrated_child.parent_version_id.as_ref(), Some(&parent.id));
+    }
+
+    #[test]
     fn imports_asset_into_managed_originals() {
         let root = test_root("import-asset");
         let registry = test_root("import-registry").join("registry.sqlite");
@@ -1367,6 +1502,8 @@ mod tests {
         assert_eq!(asset.status, "imported");
         assert_eq!(version.mime_type, "image/png");
         assert!(version.generation_event_id.is_none());
+        assert_eq!(version.version_number, 1);
+        assert_eq!(version.version_name, "v1");
         assert!(root.join(&version.file_path).is_file());
         assert_eq!(version.checksum_algorithm, CHECKSUM_SHA256);
         assert_eq!(
@@ -2072,6 +2209,10 @@ mod tests {
                 version_label: Some("variant".to_string()),
             })
             .expect("create child");
+        assert_eq!(parent.version_number, 1);
+        assert_eq!(parent.version_name, "v1");
+        assert_eq!(child.version_number, 2);
+        assert_eq!(child.version_name, "v2");
 
         let lineage = service.get_lineage(&root, &child.id).expect("lineage");
         assert_eq!(lineage.len(), 2);
@@ -2090,6 +2231,7 @@ mod tests {
             Some(&child.id)
         );
         assert_eq!(lineage[1].version.id, parent.id);
+        assert_eq!(lineage[1].version.version_number, 1);
         assert!(lineage[1].generation_event.is_none());
     }
 
@@ -2109,6 +2251,7 @@ mod tests {
         let versions = generation
             .generate(GenerateImageRequest {
                 library_path: root.clone(),
+                input_file: None,
                 input_bytes: None,
                 parameters: crate::GenerationParameters {
                     library_path: Some(root.clone()),
@@ -2126,6 +2269,8 @@ mod tests {
         assert_eq!(versions.len(), 1);
         assert!(root.join(&versions[0].file_path).is_file());
         assert!(versions[0].generation_event_id.is_some());
+        assert_eq!(versions[0].version_number, 1);
+        assert_eq!(versions[0].version_name, "v1");
 
         let gallery = library
             .query_gallery(
@@ -2173,6 +2318,214 @@ mod tests {
         assert_eq!(detail.prompt.as_deref(), Some("make a test image"));
         assert_eq!(detail.parameters_json.as_deref(), Some("{}"));
         assert_eq!(detail.review_pending_count, 1);
+    }
+
+    #[test]
+    fn generation_service_imports_uploaded_reference_as_separate_asset() {
+        let root = test_root("uploaded-reference-generation");
+        let registry = test_root("uploaded-reference-generation-registry").join("registry.sqlite");
+        let source_dir = test_root("uploaded-reference-generation-source");
+        fs::create_dir_all(&source_dir).expect("create source dir");
+        let reference_file = source_dir.join("reference.png");
+        fs::write(&reference_file, png_bytes(32, 24)).expect("write reference");
+
+        let library = LocalLibraryService::new(registry);
+        library
+            .create_library(CreateLibraryRequest {
+                root_path: root.clone(),
+                name: "Uploaded Reference".to_string(),
+            })
+            .expect("create library");
+
+        let generation = LocalGenerationService::new(crate::FakeImageProvider::success("fake"));
+        let versions = generation
+            .generate(GenerateImageRequest {
+                library_path: root.clone(),
+                input_file: Some(reference_file),
+                input_bytes: Some(png_bytes(32, 24)),
+                parameters: crate::GenerationParameters {
+                    library_path: Some(root.clone()),
+                    provider: "fake".to_string(),
+                    model: "fake-image".to_string(),
+                    prompt: "make a reference variant".to_string(),
+                    negative_prompt: None,
+                    operation: GenerationOperation::ImageToImage,
+                    input_version_id: None,
+                    parameters_json: "{}".to_string(),
+                },
+            })
+            .expect("generate");
+
+        assert_eq!(versions.len(), 1);
+        let output = &versions[0];
+        assert_eq!(output.version_number, 1);
+        assert_eq!(output.version_name, "v1");
+        assert!(output.parent_version_id.is_none());
+
+        let connection =
+            Connection::open(LocalLibraryService::database_path(&root)).expect("open db");
+        let reference_version_id: String = connection
+            .query_row(
+                "
+                SELECT av.id
+                FROM asset_versions av
+                INNER JOIN assets a ON a.id = av.asset_id
+                WHERE a.status = 'reference'
+                ",
+                [],
+                |row| row.get(0),
+            )
+            .expect("reference version");
+        let output_event_input_id: String = connection
+            .query_row(
+                "
+                SELECT input_asset_version_id
+                FROM generation_events
+                WHERE output_version_id = ?1
+                ",
+                params![output.id.0],
+                |row| row.get(0),
+            )
+            .expect("event input");
+        assert_eq!(output_event_input_id, reference_version_id);
+
+        let gallery = library
+            .query_gallery(&root, GalleryQuery::default())
+            .expect("gallery");
+        assert_eq!(gallery.len(), 1);
+        assert_eq!(gallery[0].id, output.asset_id);
+        assert_eq!(gallery[0].current_version_number, Some(1));
+        assert_eq!(gallery[0].current_version_name.as_deref(), Some("v1"));
+
+        let detail = library
+            .get_asset_detail(&root, &output.asset_id, Some(&output.id))
+            .expect("output detail");
+        let source_reference = detail.source_reference.expect("source reference");
+        assert_eq!(source_reference.version_id.0, reference_version_id);
+        assert_eq!(source_reference.version_number, 1);
+        assert_eq!(source_reference.version_name, "v1");
+    }
+
+    #[test]
+    fn generation_service_creates_existing_version_variation() {
+        let root = test_root("existing-version-generation");
+        let registry = test_root("existing-version-generation-registry").join("registry.sqlite");
+        let source_dir = test_root("existing-version-generation-source");
+        fs::create_dir_all(&source_dir).expect("create source dir");
+        let source = source_dir.join("input.png");
+        fs::write(&source, png_bytes(16, 16)).expect("write source");
+
+        let library = LocalLibraryService::new(registry);
+        library
+            .create_library(CreateLibraryRequest {
+                root_path: root.clone(),
+                name: "Existing Version".to_string(),
+            })
+            .expect("create library");
+        let (asset, parent) = library
+            .import_asset(ImportAssetRequest {
+                library_path: root.clone(),
+                source_path: source,
+            })
+            .expect("import parent");
+
+        let generation = LocalGenerationService::new(crate::FakeImageProvider::success("fake"));
+        let versions = generation
+            .generate(GenerateImageRequest {
+                library_path: root.clone(),
+                input_file: None,
+                input_bytes: Some(png_bytes(16, 16)),
+                parameters: crate::GenerationParameters {
+                    library_path: Some(root.clone()),
+                    provider: "fake".to_string(),
+                    model: "fake-image".to_string(),
+                    prompt: "make a variation".to_string(),
+                    negative_prompt: None,
+                    operation: GenerationOperation::ImageToImage,
+                    input_version_id: Some(parent.id.clone()),
+                    parameters_json: "{}".to_string(),
+                },
+            })
+            .expect("generate");
+
+        assert_eq!(versions.len(), 1);
+        let child = &versions[0];
+        assert_eq!(child.asset_id, asset.id);
+        assert_eq!(child.parent_version_id.as_ref(), Some(&parent.id));
+        assert_eq!(child.version_number, 2);
+        assert_eq!(child.version_name, "v2");
+    }
+
+    #[test]
+    fn uploaded_reference_provider_failure_keeps_reference_without_output() {
+        let root = test_root("uploaded-reference-failure");
+        let registry = test_root("uploaded-reference-failure-registry").join("registry.sqlite");
+        let source_dir = test_root("uploaded-reference-failure-source");
+        fs::create_dir_all(&source_dir).expect("create source dir");
+        let reference_file = source_dir.join("reference.png");
+        fs::write(&reference_file, png_bytes(32, 24)).expect("write reference");
+
+        let library = LocalLibraryService::new(registry);
+        library
+            .create_library(CreateLibraryRequest {
+                root_path: root.clone(),
+                name: "Uploaded Reference Failure".to_string(),
+            })
+            .expect("create library");
+
+        let generation =
+            LocalGenerationService::new(crate::FakeImageProvider::failure("fake", "boom"));
+        let error = generation
+            .generate(GenerateImageRequest {
+                library_path: root.clone(),
+                input_file: Some(reference_file),
+                input_bytes: Some(png_bytes(32, 24)),
+                parameters: crate::GenerationParameters {
+                    library_path: Some(root.clone()),
+                    provider: "fake".to_string(),
+                    model: "fake-image".to_string(),
+                    prompt: "make a reference variant".to_string(),
+                    negative_prompt: None,
+                    operation: GenerationOperation::ImageToImage,
+                    input_version_id: None,
+                    parameters_json: "{}".to_string(),
+                },
+            })
+            .expect_err("provider should fail");
+        assert!(matches!(error, DomainError::GenerationFailed { .. }));
+
+        let connection =
+            Connection::open(LocalLibraryService::database_path(&root)).expect("open db");
+        let reference_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM assets WHERE status = 'reference'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("reference count");
+        let output_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM assets WHERE status = 'generated'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("output count");
+        let failed_event_count: i64 = connection
+            .query_row(
+                "
+                SELECT COUNT(*)
+                FROM generation_events
+                WHERE status = 'failed'
+                  AND input_asset_version_id IS NOT NULL
+                  AND output_version_id IS NULL
+                ",
+                [],
+                |row| row.get(0),
+            )
+            .expect("failed event count");
+        assert_eq!(reference_count, 1);
+        assert_eq!(output_count, 0);
+        assert_eq!(failed_event_count, 1);
     }
 
     #[derive(Debug, Clone)]
@@ -2230,6 +2583,7 @@ mod tests {
         let versions = generation
             .generate(GenerateImageRequest {
                 library_path: root.clone(),
+                input_file: None,
                 input_bytes: None,
                 parameters: crate::GenerationParameters {
                     library_path: Some(root.clone()),
@@ -2805,8 +3159,8 @@ mod tests {
                 .execute(
                     "INSERT INTO asset_versions (
                         id, asset_id, parent_version_id, generation_event_id, file_path, sha256,
-                        checksum_algorithm, checksum, width, height, mime_type, version_label, created_at
-                     ) VALUES (?1, ?2, NULL, ?3, ?4, 'sha', 'SHA-256', 'sha', 1024, 1024, 'image/png', 'v1', ?5)",
+                        checksum_algorithm, checksum, width, height, mime_type, version_number, version_label, created_at
+                     ) VALUES (?1, ?2, NULL, ?3, ?4, 'sha', 'SHA-256', 'sha', 1024, 1024, 'image/png', 1, 'v1', ?5)",
                     params![
                         version_id,
                         asset_id,
@@ -3049,6 +3403,7 @@ mod tests {
         let error = generation
             .generate(GenerateImageRequest {
                 library_path: root.clone(),
+                input_file: None,
                 input_bytes: Some(b"input bytes".to_vec()),
                 parameters: crate::GenerationParameters {
                     library_path: Some(root),
@@ -3067,6 +3422,59 @@ mod tests {
             error,
             DomainError::UnsupportedProviderCapability { .. }
         ));
+    }
+
+    #[test]
+    fn uploaded_reference_capability_failure_does_not_import_reference() {
+        let root = test_root("unsupported-uploaded-reference");
+        let registry = test_root("unsupported-uploaded-reference-registry").join("registry.sqlite");
+        let source_dir = test_root("unsupported-uploaded-reference-source");
+        fs::create_dir_all(&source_dir).expect("create source dir");
+        let reference_file = source_dir.join("reference.png");
+        fs::write(&reference_file, png_bytes(16, 16)).expect("write reference");
+
+        let library = LocalLibraryService::new(registry);
+        library
+            .create_library(CreateLibraryRequest {
+                root_path: root.clone(),
+                name: "Unsupported Reference".to_string(),
+            })
+            .expect("create library");
+
+        let generation = LocalGenerationService::new(TextOnlyProvider);
+        let error = generation
+            .generate(GenerateImageRequest {
+                library_path: root.clone(),
+                input_file: Some(reference_file),
+                input_bytes: Some(png_bytes(16, 16)),
+                parameters: crate::GenerationParameters {
+                    library_path: Some(root.clone()),
+                    provider: "text-only".to_string(),
+                    model: "text-only-image".to_string(),
+                    prompt: "make a variant".to_string(),
+                    negative_prompt: None,
+                    operation: GenerationOperation::ImageToImage,
+                    input_version_id: None,
+                    parameters_json: "{}".to_string(),
+                },
+            })
+            .expect_err("unsupported capability");
+
+        assert!(matches!(
+            error,
+            DomainError::UnsupportedProviderCapability { .. }
+        ));
+
+        let connection =
+            Connection::open(LocalLibraryService::database_path(&root)).expect("open db");
+        let reference_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM assets WHERE status = 'reference'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("reference count");
+        assert_eq!(reference_count, 0);
     }
 
     #[test]

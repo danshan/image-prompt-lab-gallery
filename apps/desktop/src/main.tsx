@@ -124,6 +124,8 @@ type GalleryAsset = {
   tags: string[];
   reviewPendingCount: number;
   currentVersionId: string | null;
+  currentVersionNumber?: number | null;
+  currentVersionName?: string | null;
   imagePath: string | null;
   width: number | null;
   height: number | null;
@@ -151,6 +153,8 @@ type Version = {
   assetId: string;
   parentVersionId: string | null;
   generationEventId: string | null;
+  versionNumber?: number;
+  versionName?: string;
   filePath: string;
   checksumAlgorithm: string;
   checksum: string;
@@ -172,6 +176,16 @@ type GenerationEvent = {
 type LineageEntry = {
   version: Version;
   generationEvent: GenerationEvent | null;
+};
+
+type ReferenceSource = {
+  assetId: string;
+  assetTitle: string | null;
+  assetStatus: string;
+  versionId: string;
+  versionNumber: number;
+  versionName: string;
+  filePath: string;
 };
 
 type Album = {
@@ -228,8 +242,12 @@ type AssetDetail = {
   tags: string[];
   albums: Album[];
   reviewPendingCount: number;
+  currentVersionId: string | null;
+  currentVersionNumber: number | null;
+  currentVersionName: string | null;
   versions: Version[];
   lineage: LineageEntry[];
+  sourceReference?: ReferenceSource | null;
   file: FileContext | null;
 };
 
@@ -266,6 +284,7 @@ type TaskDraft = {
   provider: string;
   operation: "text_to_image" | "image_to_image";
   negativePrompt: string;
+  inputFile: string;
   inputVersionId: string | null;
   parametersJson: string;
   priority: number;
@@ -589,12 +608,17 @@ const mockDetail: AssetDetail = {
     { id: "album-neon", name: "Neon & Glow", kind: "manual" },
   ],
   reviewPendingCount: 1,
+  currentVersionId: "version-botanical-3",
+  currentVersionNumber: 3,
+  currentVersionName: "v3",
   versions: [
     {
       id: "version-botanical-3",
       assetId: "asset-botanical",
       parentVersionId: "version-botanical-2",
       generationEventId: "event-botanical-3",
+      versionNumber: 3,
+      versionName: "v3",
       filePath: "originals/2026/05/0f18b4ef-8d2d-49bc-a2ef-8d8582386a20.png",
       checksumAlgorithm: "SHA-256",
       checksum: "4f72bd81d8c5f1a7f4e4d5e9c4a1b2584f72bd81d8c5f1a7f4e4d5e9c4a1b258",
@@ -605,6 +629,8 @@ const mockDetail: AssetDetail = {
       assetId: "asset-botanical",
       parentVersionId: "version-botanical-1",
       generationEventId: "event-botanical-2",
+      versionNumber: 2,
+      versionName: "v2",
       filePath: "originals/2026/05/3f2f8444-8cc2-4e35-91a7-806d24213b10.png",
       checksumAlgorithm: "SHA-256",
       checksum: "97290b8d8c5f1a7f4e4d5e9c4a1b25897290b8d8c5f1a7f4e4d5e9c4a1b258",
@@ -618,6 +644,8 @@ const mockDetail: AssetDetail = {
         assetId: "asset-botanical",
         parentVersionId: "version-botanical-2",
         generationEventId: "event-botanical-3",
+        versionNumber: 3,
+        versionName: "v3",
         filePath: "originals/2026/05/0f18b4ef-8d2d-49bc-a2ef-8d8582386a20.png",
         checksumAlgorithm: "SHA-256",
         checksum: "4f72bd81d8c5f1a7f4e4d5e9c4a1b2584f72bd81d8c5f1a7f4e4d5e9c4a1b258",
@@ -675,6 +703,7 @@ function createTaskDraft(patch: Partial<TaskDraft> = {}): TaskDraft {
     provider: "codex-cli",
     operation: "text_to_image",
     negativePrompt: "",
+    inputFile: "",
     inputVersionId: null,
     parametersJson: "{}",
     priority: 0,
@@ -752,6 +781,10 @@ function App() {
   const [prompt, setPrompt] = useState("");
   const [provider, setProvider] = useState("codex-cli");
   const [composerOpen, setComposerOpen] = useState(false);
+  const [composerInputVersionId, setComposerInputVersionId] = useState<string | null>(null);
+  const [composerInputFile, setComposerInputFile] = useState<string>("");
+  const [composerInputFileName, setComposerInputFileName] = useState<string | null>(null);
+  const [generationSubmitting, setGenerationSubmitting] = useState(false);
   const [status, setStatus] = useState(runningInTauri ? "Open or create a library" : "Preview mode");
   const [recoverableError, setRecoverableError] = useState<string | null>(null);
   const [libraryFolderNameInput, setLibraryFolderNameInput] = useState("image-prompt-lab");
@@ -794,6 +827,13 @@ function App() {
   const selectGalleryAsset = (assetId: string) => {
     setSelectedAssetId(assetId);
     setInspectorOpen(true);
+  };
+  const selectAssetVersion = (versionId: string) => {
+    const detail = detailState.detail;
+    if (!detail) {
+      return;
+    }
+    void loadAssetDetail(detail.id, versionId);
   };
   const selectTask = (taskId: string) => {
     setSelectedTaskId(taskId);
@@ -1481,33 +1521,82 @@ function App() {
     throw new Error("Metadata suggestion generation timed out");
   }
 
-  async function startGeneration(inputVersionId: string | null = null) {
+  async function startGeneration(inputVersionId: string | null = null, inputFile = "") {
+    if (generationSubmitting) {
+      return;
+    }
     if (!library || prompt.trim().length === 0) {
       setRecoverableError("Open a real library and enter a prompt before generation.");
       return;
     }
-    await enqueueTaskDrafts([
-      createTaskDraft({
-        provider,
-        prompt,
-        operation: inputVersionId ? "image_to_image" : "text_to_image",
-        inputVersionId,
-      }),
-    ]);
-    setPrompt("");
-    setComposerOpen(false);
-    setActiveView("queue");
+    setGenerationSubmitting(true);
+    try {
+      const created = await enqueueTaskDrafts([
+        createTaskDraft({
+          provider,
+          prompt,
+          operation: inputVersionId || inputFile ? "image_to_image" : "text_to_image",
+          inputFile,
+          inputVersionId,
+        }),
+      ]);
+      if (created.length === 0) {
+        setRecoverableError((current) => current ?? "No generation task was created. Check daemon status and try again.");
+        return;
+      }
+      setPrompt("");
+      setComposerOpen(false);
+      setComposerInputVersionId(null);
+      setComposerInputFile("");
+      setComposerInputFileName(null);
+      setActiveView("queue");
+      setActiveTaskPanel("queue");
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    } finally {
+      setGenerationSubmitting(false);
+    }
   }
 
-  async function enqueueTaskDrafts(drafts: TaskDraft[] = taskDrafts) {
+  function openComposerForTextGeneration(open: boolean) {
+    if (open) {
+      setComposerInputVersionId(null);
+      setComposerInputFile("");
+      setComposerInputFileName(null);
+      setRecoverableError(null);
+    }
+    setComposerOpen(open);
+  }
+
+  function openComposerForVersionGeneration(versionId: string | null) {
+    if (!versionId) {
+      setRecoverableError("Select an asset version before generating a new version.");
+      return;
+    }
+    setComposerInputVersionId(versionId);
+    setComposerInputFile("");
+    setComposerInputFileName(null);
+    setRecoverableError(null);
+    setComposerOpen(true);
+  }
+
+  function openComposerForReferenceGeneration(reference: ReferenceSource) {
+    setComposerInputVersionId(null);
+    setComposerInputFile(reference.filePath);
+    setComposerInputFileName(reference.assetTitle ?? reference.versionName);
+    setRecoverableError(null);
+    setComposerOpen(true);
+  }
+
+  async function enqueueTaskDrafts(drafts: TaskDraft[] = taskDrafts): Promise<DaemonTask[]> {
     if (!library) {
       setRecoverableError("Open a real library before enqueueing tasks.");
-      return;
+      return [];
     }
     const readyDrafts = drafts.filter((draft) => draft.prompt.trim().length > 0);
     if (readyDrafts.length === 0) {
       setRecoverableError("Add at least one task prompt before enqueueing.");
-      return;
+      return [];
     }
     setStatus(`Enqueueing ${readyDrafts.length} task${readyDrafts.length === 1 ? "" : "s"}`);
     try {
@@ -1519,6 +1608,7 @@ function App() {
             prompt: draft.prompt,
             negativePrompt: draft.negativePrompt.trim() || null,
             operation: draft.operation,
+            inputFile: draft.inputFile.trim() || null,
             inputVersionId: draft.inputVersionId,
             parametersJson: draft.parametersJson,
             priority: draft.priority,
@@ -1536,8 +1626,10 @@ function App() {
       setStatus(`${created.length} task${created.length === 1 ? "" : "s"} enqueued`);
       setRecoverableError(null);
       void refreshTasks();
+      return created;
     } catch (error) {
       setRecoverableError(errorMessage(error));
+      return [];
     }
   }
 
@@ -2345,6 +2437,17 @@ function App() {
   }
 
   const detail = detailState.detail;
+  const composerInputVersion =
+    composerInputVersionId && detail
+      ? (detail.versions.find((version) => version.id === composerInputVersionId) ??
+        detail.lineage.find((entry) => entry.version.id === composerInputVersionId)?.version ??
+        null)
+      : null;
+  const composerInputVersionName =
+    composerInputVersion?.versionName ??
+    (composerInputVersionId === selectedAsset?.currentVersionId ? (selectedAsset.currentVersionName ?? null) : null) ??
+    (composerInputVersionId ? shortIdentifier(composerInputVersionId) : null);
+  const composerInputSourceName = composerInputVersionName ?? composerInputFileName;
 
   const sidebarSlot = (
     <Sidebar
@@ -2368,7 +2471,7 @@ function App() {
           itemCount={displayedGallery.length}
           status={status}
           composerOpen={composerOpen}
-          onComposerOpenChange={setComposerOpen}
+          onComposerOpenChange={openComposerForTextGeneration}
           onQueryChange={setQuery}
         />
 
@@ -2384,9 +2487,11 @@ function App() {
           <GenerationComposer
             prompt={prompt}
             provider={provider}
+            inputSourceName={composerInputSourceName}
+            submitting={generationSubmitting}
             onPromptChange={setPrompt}
             onProviderChange={setProvider}
-            onGenerate={() => void startGeneration(null)}
+            onGenerate={() => void startGeneration(composerInputVersionId, composerInputFile)}
           />
         )}
 
@@ -2541,17 +2646,12 @@ function App() {
           onAddTag={(tag) => void addTagToSelectedAsset(tag)}
           albums={albums}
           onAddToAlbum={(albumId) => void addSelectedAssetToAlbum(albumId)}
-          onPreviewImage={(asset) => {
-            if (asset.imagePath) {
-              setLightboxImage({
-                path: asset.imagePath,
-                label: asset.title ?? "Generated image",
-              });
-            }
-          }}
-          onGenerateVariation={() => {
-            const versionId = detail?.lineage[0]?.version.id ?? detail?.versions[0]?.id ?? selectedAsset?.currentVersionId ?? null;
-            void startGeneration(versionId);
+          onSelectVersion={selectAssetVersion}
+          onPreviewImage={setLightboxImage}
+          onGenerateFromReference={openComposerForReferenceGeneration}
+          onGenerateVariation={(versionId) => {
+            versionId = versionId ?? detail?.currentVersionId ?? detail?.lineage[0]?.version.id ?? detail?.versions[0]?.id ?? selectedAsset?.currentVersionId ?? null;
+            openComposerForVersionGeneration(versionId);
           }}
         />
       </>
@@ -2758,25 +2858,35 @@ function SegmentedButton({
 function GenerationComposer({
   prompt,
   provider,
+  inputSourceName,
+  submitting,
   onPromptChange,
   onProviderChange,
   onGenerate,
 }: {
   prompt: string;
   provider: string;
+  inputSourceName: string | null;
+  submitting: boolean;
   onPromptChange: (value: string) => void;
   onProviderChange: (value: string) => void;
   onGenerate: () => void;
 }) {
+  const hasInputSource = inputSourceName !== null;
+
   return (
     <section className="composer">
       <select className="select-control" value={provider} onChange={(event) => onProviderChange(event.target.value)}>
         <option value="codex-cli">codex-cli</option>
         <option value="fake">fake</option>
       </select>
-      <input value={prompt} onChange={(event) => onPromptChange(event.target.value)} placeholder="Prompt" />
-      <button disabled={prompt.trim().length === 0} onClick={onGenerate}>
-        Run
+      <input
+        value={prompt}
+        onChange={(event) => onPromptChange(event.target.value)}
+        placeholder={hasInputSource ? `Prompt for image-to-image from ${inputSourceName}` : "Prompt"}
+      />
+      <button disabled={submitting || prompt.trim().length === 0} onClick={onGenerate}>
+        {submitting ? "Enqueueing..." : hasInputSource ? "Generate image" : "Run"}
       </button>
     </section>
   );
@@ -2829,7 +2939,7 @@ function GalleryWorkspace({
               <Thumbnail asset={asset} index={index} />
               <span className="asset-title-row">
                 <span className="asset-title">{asset.title ?? "Untitled"}</span>
-                <span>{asset.versionLabel ?? "v1"}</span>
+                <span>{asset.currentVersionName ?? asset.versionLabel ?? "v1"}</span>
               </span>
             </button>
             <span className="asset-card-meta">
@@ -3766,6 +3876,18 @@ function BatchComposer({
     const next = drafts.filter((draft) => draft.id !== id);
     onDraftsChange(next.length > 0 ? next : [createTaskDraft()]);
   }
+  async function chooseReferenceFile(draft: TaskDraft) {
+    const selected = await pickImageFile("Choose Reference Image", draft.inputFile);
+    if (selected) {
+      updateDraft(draft.id, { inputFile: selected, operation: "image_to_image" });
+    }
+  }
+  function clearReferenceFile(draft: TaskDraft) {
+    updateDraft(draft.id, {
+      inputFile: "",
+      operation: draft.operation === "image_to_image" ? "text_to_image" : draft.operation,
+    });
+  }
   function importDrafts() {
     let imported: TaskDraft[];
     try {
@@ -3827,6 +3949,16 @@ function BatchComposer({
               <span>Max attempts</span>
               <input type="number" min={1} max={10} value={draft.maxAttempts} onChange={(event) => updateDraft(draft.id, { maxAttempts: Number(event.target.value) })} />
             </label>
+            <label>
+              <span>Reference file</span>
+              <div className="reference-file-control">
+                <input value={draft.inputFile} onChange={(event) => updateDraft(draft.id, { inputFile: event.target.value, operation: event.target.value.trim() ? "image_to_image" : draft.operation })} />
+                <div className="reference-file-actions">
+                  <button type="button" onClick={() => chooseReferenceFile(draft)}>Choose image</button>
+                  {draft.inputFile.trim() && <button type="button" onClick={() => clearReferenceFile(draft)}>Clear</button>}
+                </div>
+              </div>
+            </label>
           </div>
           <label>
             <span>Parameters JSON</span>
@@ -3872,7 +4004,7 @@ function TasksQueue({
   onDuplicate: (taskId: string) => void;
 }) {
   const queuedIds = [...tasks].filter((task) => task.status === "queued").sort(compareTaskOrder).map((task) => task.id);
-  const orderedTasks = [...tasks].sort(compareTaskOrder);
+  const orderedTasks = [...tasks].sort(compareTaskNewestFirst);
   return (
     <section className="task-panel tasks-queue-panel">
       <div className="panel-header">
@@ -3914,6 +4046,14 @@ function TasksQueue({
         )}
       </div>
     </section>
+  );
+}
+
+function compareTaskNewestFirst(left: DaemonTask, right: DaemonTask) {
+  return (
+    right.createdAt.localeCompare(left.createdAt) ||
+    right.updatedAt.localeCompare(left.updatedAt) ||
+    right.queuePosition - left.queuePosition
   );
 }
 
@@ -4450,7 +4590,9 @@ function Inspector({
   onAddTag,
   albums,
   onAddToAlbum,
+  onSelectVersion,
   onPreviewImage,
+  onGenerateFromReference,
   onGenerateVariation,
 }: {
   asset: GalleryAsset | null;
@@ -4461,8 +4603,10 @@ function Inspector({
   onAddTag: (tag: string) => void;
   albums: AlbumListItem[];
   onAddToAlbum: (albumId: string) => void;
-  onPreviewImage: (asset: GalleryAsset) => void;
-  onGenerateVariation: () => void;
+  onSelectVersion: (versionId: string) => void;
+  onPreviewImage: (image: LightboxImage) => void;
+  onGenerateFromReference: (reference: ReferenceSource) => void;
+  onGenerateVariation: (versionId?: string | null) => void;
 }) {
   const detail = detailState.detail;
   const [tagInput, setTagInput] = useState("");
@@ -4525,7 +4669,11 @@ function Inspector({
       <button className="inspector-close" onClick={onClose}>Close</button>
       <section className="inspector-hero">
         {asset.imagePath ? (
-          <button className="inspector-thumbnail-button" aria-label="Open full image preview" onClick={() => onPreviewImage(asset)}>
+          <button
+            className="inspector-thumbnail-button"
+            aria-label="Open full image preview"
+            onClick={() => onPreviewImage({ path: asset.imagePath!, label: asset.title ?? "Generated image" })}
+          >
             <Thumbnail asset={asset} index={0} />
           </button>
         ) : (
@@ -4647,7 +4795,13 @@ function Inspector({
         </div>
       </InspectorSection>
       <InspectorSection title="Versions & Lineage">
-        <VersionLineagePanel detail={detail} onGenerateVariation={onGenerateVariation} />
+        <VersionLineagePanel
+          detail={detail}
+          onSelectVersion={onSelectVersion}
+          onPreviewImage={onPreviewImage}
+          onGenerateFromReference={onGenerateFromReference}
+          onGenerateVariation={onGenerateVariation}
+        />
       </InspectorSection>
       <InspectorSection title="File">
         {detail.file ? (
@@ -4670,23 +4824,97 @@ function Inspector({
 
 function VersionLineagePanel({
   detail,
+  onSelectVersion,
+  onPreviewImage,
+  onGenerateFromReference,
   onGenerateVariation,
 }: {
   detail: AssetDetail;
-  onGenerateVariation: () => void;
+  onSelectVersion: (versionId: string) => void;
+  onPreviewImage: (image: LightboxImage) => void;
+  onGenerateFromReference: (reference: ReferenceSource) => void;
+  onGenerateVariation: (versionId?: string | null) => void;
 }) {
-  const current = detail.lineage[0]?.version ?? detail.versions[0] ?? null;
+  const current =
+    detail.versions.find((version) => version.id === detail.currentVersionId) ??
+    detail.lineage[0]?.version ??
+    detail.versions[0] ??
+    null;
   const lineage = detail.lineage.length > 0 ? detail.lineage : detail.versions.map((version) => ({ version, generationEvent: null }));
+  const eventByVersionId = new Map(lineage.map((entry) => [entry.version.id, entry.generationEvent]));
   return (
     <div className="version-lineage-panel">
       <div className="version-current-card">
         <span className="version-current-kicker">Current version</span>
-        <strong>{formatVersionName(current?.id ?? detail.id)}</strong>
+        <strong>{current?.versionName ?? formatVersionName(current?.id ?? detail.id)}</strong>
         <div className="version-current-meta">
           <span>{detail.versions.length} version{detail.versions.length === 1 ? "" : "s"}</span>
           <span>{lineage[0]?.generationEvent?.operationType ? formatOperation(lineage[0].generationEvent.operationType) : "Asset lineage"}</span>
         </div>
       </div>
+
+      <div className="version-browser" aria-label="Asset versions">
+        {detail.versions.map((version) => {
+          const selected = version.id === detail.currentVersionId;
+          const event = eventByVersionId.get(version.id) ?? null;
+          return (
+            <article className={selected ? "version-browser-row selected" : "version-browser-row"} key={version.id}>
+              <button className="version-browser-main" onClick={() => onSelectVersion(version.id)}>
+                <span className="version-thumb">
+                  <img
+                    alt={version.versionName ?? formatVersionName(version.id)}
+                    src={convertImagePath(version.filePath)}
+                    loading="lazy"
+                    decoding="async"
+                  />
+                </span>
+                <span>
+                  <strong>{version.versionName ?? formatVersionName(version.id)}</strong>
+                  <small>{event?.prompt ?? "Imported or metadata-only version"}</small>
+                </span>
+              </button>
+              <button className="mini-button" onClick={() => onGenerateVariation(version.id)}>
+                Generate
+              </button>
+            </article>
+          );
+        })}
+      </div>
+
+      {detail.sourceReference ? (
+        <div className="version-current-card reference-source-card">
+          <span className="version-current-kicker">Reference source</span>
+          <div className="reference-source-content">
+            <button
+              className="reference-source-preview"
+              aria-label="Open reference source image preview"
+              onClick={() =>
+                onPreviewImage({
+                  path: detail.sourceReference!.filePath,
+                  label: detail.sourceReference!.assetTitle ?? "Reference image",
+                })
+              }
+            >
+              <img
+                alt={detail.sourceReference.assetTitle ?? "Reference image"}
+                src={convertImagePath(detail.sourceReference.filePath)}
+                loading="lazy"
+                decoding="async"
+              />
+            </button>
+            <div>
+              <strong>{detail.sourceReference.assetTitle ?? shortIdentifier(detail.sourceReference.assetId)}</strong>
+              <div className="version-current-meta">
+                <span>{detail.sourceReference.versionName}</span>
+                <span>{detail.sourceReference.assetStatus}</span>
+              </div>
+              <button className="mini-button" onClick={() => onGenerateFromReference(detail.sourceReference!)}>
+                Regenerate
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="lineage-timeline" aria-label="Version lineage">
         {lineage.length === 0 ? (
@@ -4699,7 +4927,7 @@ function VersionLineagePanel({
                 <span className="lineage-marker" aria-hidden="true" />
                 <div className="lineage-node-main">
                   <strong>{isCurrent ? "Current" : "Parent"}</strong>
-                  <span>{formatVersionName(entry.version.id)}</span>
+                  <span>{entry.version.versionName ?? formatVersionName(entry.version.id)}</span>
                   <small>{entry.generationEvent ? `${entry.generationEvent.provider} · ${entry.generationEvent.providerModel}` : "Imported version"}</small>
                 </div>
                 <code title={entry.version.id}>{shortIdentifier(entry.version.id)}</code>
@@ -4709,7 +4937,7 @@ function VersionLineagePanel({
         )}
       </div>
 
-      <button className="variation-button" onClick={onGenerateVariation}>
+      <button className="variation-button" onClick={() => onGenerateVariation(current?.id ?? detail.currentVersionId)}>
         <Icon name="plus" />
         <span>Generate variation</span>
       </button>
@@ -4784,6 +5012,27 @@ async function pickZipFile(title: string) {
   return typeof selected === "string" ? selected : null;
 }
 
+async function pickImageFile(title: string, defaultPath = "") {
+  if (!hasTauriRuntime()) {
+    return window.prompt(title, defaultPath);
+  }
+  const selected = await openDialog({
+    title,
+    multiple: false,
+    defaultPath: defaultPath || undefined,
+    filters: [
+      {
+        name: "Images",
+        extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp", "tiff", "tif"],
+      },
+    ],
+  });
+  if (Array.isArray(selected)) {
+    return selected[0] ?? null;
+  }
+  return typeof selected === "string" ? selected : null;
+}
+
 async function pickSaveZipPath(title: string, defaultPath: string) {
   if (!hasTauriRuntime()) {
     return window.prompt(title, defaultPath);
@@ -4826,6 +5075,9 @@ function mockDetailFor(asset: GalleryAsset): AssetDetail {
     modelLabel: asset.modelLabel,
     tags: asset.tags,
     reviewPendingCount: asset.reviewPendingCount,
+    currentVersionId: asset.currentVersionId,
+    currentVersionNumber: asset.currentVersionNumber ?? null,
+    currentVersionName: asset.currentVersionName ?? asset.versionLabel,
     file: mockDetail.file
       ? {
           ...mockDetail.file,

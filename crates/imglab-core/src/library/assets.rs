@@ -5,7 +5,7 @@ use super::{
     CURRENT_CHECKSUM_ALGORITHM,
 };
 use crate::{
-    AssetId, AssetService, AssetSummary, AssetVersionId, CreateChildVersionRequest,
+    version_name, AssetId, AssetService, AssetSummary, AssetVersionId, CreateChildVersionRequest,
     CreateGenerationEventRequest, DomainError, DomainResult, GenerationEventId,
     GenerationEventSummary, ImportAssetRequest, LineageEntry, VersionSummary,
 };
@@ -19,94 +19,7 @@ impl AssetService for LocalLibraryService {
         &self,
         request: ImportAssetRequest,
     ) -> DomainResult<(AssetSummary, VersionSummary)> {
-        let manifest = Self::read_manifest(&request.library_path)?;
-        let connection = Self::open_library_database(&request.library_path)?;
-
-        if !request.source_path.is_file() {
-            return Err(DomainError::Io {
-                path: request.source_path.display().to_string(),
-                message: "source file does not exist".to_string(),
-            });
-        }
-
-        let asset_id = AssetId(Uuid::new_v4().to_string());
-        let version_id = AssetVersionId(Uuid::new_v4().to_string());
-        let extension = normalized_extension(&request.source_path);
-        let now = timestamp_string();
-        let relative_path = managed_original_path(&version_id, &extension, &now);
-        let destination_path = request.library_path.join(&relative_path);
-
-        if let Some(parent) = destination_path.parent() {
-            fs::create_dir_all(parent).map_err(|error| io_error(parent, error))?;
-        }
-
-        let temporary_path = destination_path.with_extension(format!("{extension}.tmp"));
-        fs::copy(&request.source_path, &temporary_path)
-            .map_err(|error| io_error(&temporary_path, error))?;
-        fs::rename(&temporary_path, &destination_path)
-            .map_err(|error| io_error(&destination_path, error))?;
-
-        let checksum = file_digest(&destination_path, CURRENT_CHECKSUM_ALGORITHM)?;
-        let (width, height) = image_dimensions(&destination_path)?;
-        let mime_type = mime_type_for_extension(&extension).to_string();
-
-        let transaction = connection.unchecked_transaction().map_err(database_error)?;
-        transaction
-            .execute(
-                "
-                INSERT INTO assets (
-                    id, library_id, media_type, title, description, schema_prompt, category,
-                    rating, status, created_at, updated_at, captured_at
-                )
-                VALUES (?1, ?2, ?3, NULL, NULL, NULL, NULL, NULL, ?4, ?5, ?5, NULL)
-                ",
-                params![asset_id.0, manifest.id, mime_type, "imported", now],
-            )
-            .map_err(database_error)?;
-        transaction
-            .execute(
-                "
-                INSERT INTO asset_versions (
-                    id, asset_id, parent_version_id, generation_event_id,
-                    file_path, sha256, checksum_algorithm, checksum, width, height, mime_type, version_label, created_at
-                )
-                VALUES (?1, ?2, NULL, NULL, ?3, ?4, ?5, ?4, ?6, ?7, ?8, ?9, ?10)
-                ",
-                params![
-                    version_id.0,
-                    asset_id.0,
-                    relative_path.to_string_lossy(),
-                    checksum,
-                    CURRENT_CHECKSUM_ALGORITHM,
-                    width,
-                    height,
-                    mime_type,
-                    "import",
-                    now
-                ],
-            )
-            .map_err(database_error)?;
-        transaction.commit().map_err(database_error)?;
-
-        Ok((
-            AssetSummary {
-                id: asset_id.clone(),
-                title: None,
-                category: None,
-                rating: None,
-                status: "imported".to_string(),
-            },
-            VersionSummary {
-                id: version_id,
-                asset_id,
-                parent_version_id: None,
-                generation_event_id: None,
-                file_path: relative_path,
-                checksum_algorithm: CURRENT_CHECKSUM_ALGORITHM.to_string(),
-                checksum,
-                mime_type,
-            },
-        ))
+        import_asset_with_status(self, request, "imported", "import")
     }
 
     fn create_child_version(
@@ -143,14 +56,16 @@ impl AssetService for LocalLibraryService {
         let checksum = file_digest(&destination_path, CURRENT_CHECKSUM_ALGORITHM)?;
         let (width, height) = image_dimensions(&destination_path)?;
 
-        connection
+        let transaction = connection.unchecked_transaction().map_err(database_error)?;
+        let version_number = next_version_number(&transaction, &request.asset_id)?;
+        transaction
             .execute(
                 "
                 INSERT INTO asset_versions (
                     id, asset_id, parent_version_id, generation_event_id,
-                    file_path, sha256, checksum_algorithm, checksum, width, height, mime_type, version_label, created_at
+                    file_path, sha256, checksum_algorithm, checksum, width, height, mime_type, version_number, version_label, created_at
                 )
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?6, ?8, ?9, ?10, ?11, ?12)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?6, ?8, ?9, ?10, ?11, ?12, ?13)
                 ",
                 params![
                     version_id.0,
@@ -163,11 +78,13 @@ impl AssetService for LocalLibraryService {
                     width,
                     height,
                     request.mime_type,
+                    version_number,
                     request.version_label.as_deref(),
                     now
                 ],
             )
             .map_err(database_error)?;
+        transaction.commit().map_err(database_error)?;
 
         if let Some(event_id) = &request.generation_event_id {
             update_generation_event_output_version(&request.library_path, event_id, &version_id)?;
@@ -178,6 +95,8 @@ impl AssetService for LocalLibraryService {
             asset_id: request.asset_id,
             parent_version_id: Some(request.parent_version_id),
             generation_event_id: request.generation_event_id,
+            version_number,
+            version_name: version_name(version_number),
             file_path: relative_path,
             checksum_algorithm: CURRENT_CHECKSUM_ALGORITHM.to_string(),
             checksum,
@@ -268,6 +187,104 @@ impl AssetService for LocalLibraryService {
     }
 }
 
+pub(super) fn import_asset_with_status(
+    _service: &LocalLibraryService,
+    request: ImportAssetRequest,
+    status: &str,
+    version_label: &str,
+) -> DomainResult<(AssetSummary, VersionSummary)> {
+    let manifest = LocalLibraryService::read_manifest(&request.library_path)?;
+    let connection = LocalLibraryService::open_library_database(&request.library_path)?;
+
+    if !request.source_path.is_file() {
+        return Err(DomainError::Io {
+            path: request.source_path.display().to_string(),
+            message: "source file does not exist".to_string(),
+        });
+    }
+
+    let asset_id = AssetId(Uuid::new_v4().to_string());
+    let version_id = AssetVersionId(Uuid::new_v4().to_string());
+    let extension = normalized_extension(&request.source_path);
+    let now = timestamp_string();
+    let relative_path = managed_original_path(&version_id, &extension, &now);
+    let destination_path = request.library_path.join(&relative_path);
+
+    if let Some(parent) = destination_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| io_error(parent, error))?;
+    }
+
+    let temporary_path = destination_path.with_extension(format!("{extension}.tmp"));
+    fs::copy(&request.source_path, &temporary_path)
+        .map_err(|error| io_error(&temporary_path, error))?;
+    fs::rename(&temporary_path, &destination_path)
+        .map_err(|error| io_error(&destination_path, error))?;
+
+    let checksum = file_digest(&destination_path, CURRENT_CHECKSUM_ALGORITHM)?;
+    let (width, height) = image_dimensions(&destination_path)?;
+    let mime_type = mime_type_for_extension(&extension).to_string();
+
+    let transaction = connection.unchecked_transaction().map_err(database_error)?;
+    transaction
+        .execute(
+            "
+            INSERT INTO assets (
+                id, library_id, media_type, title, description, schema_prompt, category,
+                rating, status, created_at, updated_at, captured_at
+            )
+            VALUES (?1, ?2, ?3, NULL, NULL, NULL, NULL, NULL, ?4, ?5, ?5, NULL)
+            ",
+            params![asset_id.0, manifest.id, mime_type, status, now],
+        )
+        .map_err(database_error)?;
+    transaction
+        .execute(
+            "
+            INSERT INTO asset_versions (
+                id, asset_id, parent_version_id, generation_event_id,
+                file_path, sha256, checksum_algorithm, checksum, width, height, mime_type, version_number, version_label, created_at
+            )
+            VALUES (?1, ?2, NULL, NULL, ?3, ?4, ?5, ?4, ?6, ?7, ?8, 1, ?9, ?10)
+            ",
+            params![
+                version_id.0,
+                asset_id.0,
+                relative_path.to_string_lossy(),
+                checksum,
+                CURRENT_CHECKSUM_ALGORITHM,
+                width,
+                height,
+                mime_type,
+                version_label,
+                now
+            ],
+        )
+        .map_err(database_error)?;
+    transaction.commit().map_err(database_error)?;
+
+    Ok((
+        AssetSummary {
+            id: asset_id.clone(),
+            title: None,
+            category: None,
+            rating: None,
+            status: status.to_string(),
+        },
+        VersionSummary {
+            id: version_id,
+            asset_id,
+            parent_version_id: None,
+            generation_event_id: None,
+            version_number: 1,
+            version_name: version_name(1),
+            file_path: relative_path,
+            checksum_algorithm: CURRENT_CHECKSUM_ALGORITHM.to_string(),
+            checksum,
+            mime_type,
+        },
+    ))
+}
+
 pub(super) fn ensure_asset_exists(connection: &Connection, asset_id: &AssetId) -> DomainResult<()> {
     let count: i64 = connection
         .query_row(
@@ -292,7 +309,8 @@ pub(super) fn load_version(
         .query_row(
             "
             SELECT id, asset_id, parent_version_id, generation_event_id, file_path,
-                   sha256, checksum_algorithm, COALESCE(checksum, sha256), mime_type
+                   sha256, checksum_algorithm, COALESCE(checksum, sha256), mime_type,
+                   version_number
             FROM asset_versions
             WHERE id = ?1
             ",
@@ -310,6 +328,7 @@ pub(super) fn load_version(
 pub(super) fn version_summary_from_row(
     row: &rusqlite::Row<'_>,
 ) -> rusqlite::Result<VersionSummary> {
+    let version_number: u32 = row.get(9)?;
     Ok(VersionSummary {
         id: AssetVersionId(row.get(0)?),
         asset_id: AssetId(row.get(1)?),
@@ -319,7 +338,24 @@ pub(super) fn version_summary_from_row(
         checksum_algorithm: row.get(6)?,
         checksum: row.get(7)?,
         mime_type: row.get(8)?,
+        version_number,
+        version_name: version_name(version_number),
     })
+}
+
+fn next_version_number(connection: &Connection, asset_id: &AssetId) -> DomainResult<u32> {
+    let next: i64 = connection
+        .query_row(
+            "
+            SELECT COALESCE(MAX(version_number), 0) + 1
+            FROM asset_versions
+            WHERE asset_id = ?1
+            ",
+            params![asset_id.0],
+            |row| row.get(0),
+        )
+        .map_err(database_error)?;
+    Ok(next.max(1) as u32)
 }
 
 pub(super) fn load_generation_event(

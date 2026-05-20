@@ -263,6 +263,14 @@ impl ImageProvider for CodexCliImageProvider {
         "codex-cli"
     }
 
+    fn supports_operation(&self, operation: imglab_core::GenerationOperation) -> bool {
+        matches!(
+            operation,
+            imglab_core::GenerationOperation::TextToImage
+                | imglab_core::GenerationOperation::ImageToImage
+        )
+    }
+
     fn validate_parameters(&self, parameters: &GenerationParameters) -> DomainResult<()> {
         if parameters.prompt.trim().is_empty() {
             return Err(DomainError::InvalidGenerationParameters {
@@ -512,6 +520,14 @@ mod tests {
         assert!(!command.args.contains(&"--model".to_string()));
         assert!(!command.args.contains(&"--output-last-message".to_string()));
         assert!(command.prompt.contains("Use the imagegen skill"));
+    }
+
+    #[test]
+    fn advertises_text_and_image_generation_support() {
+        let provider = CodexCliImageProvider::new("codex", "/tmp/work");
+
+        assert!(provider.supports_operation(GenerationOperation::TextToImage));
+        assert!(provider.supports_operation(GenerationOperation::ImageToImage));
     }
 
     #[test]

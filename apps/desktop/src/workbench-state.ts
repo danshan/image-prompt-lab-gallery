@@ -29,6 +29,7 @@ export type TaskDraftImport = {
   prompt: string;
   provider: string;
   operation: "text_to_image" | "image_to_image";
+  inputFile: string;
   parametersJson: string;
   priority: number;
   maxAttempts: number;
@@ -202,6 +203,7 @@ export function parseTaskDraftImport(input: string): TaskDraftImport[] {
         prompt: value.prompt,
         provider: typeof value.provider === "string" ? value.provider : "codex-cli",
         operation: value.operation === "image_to_image" ? "image_to_image" : "text_to_image",
+        inputFile: typeof value.inputFile === "string" ? value.inputFile : "",
         parametersJson:
           typeof value.parametersJson === "string"
             ? value.parametersJson

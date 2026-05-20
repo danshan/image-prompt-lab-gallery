@@ -6,11 +6,12 @@ use super::{
     LocalLibraryService,
 };
 use crate::{
-    AlbumId, AlbumKind, AlbumMembershipView, AssetId, AssetInspectorDetailView, AssetService,
-    AssetSummary, AssetVersionId, CanonicalMetadataView, DomainError, DomainResult,
+    version_name, AlbumId, AlbumKind, AlbumMembershipView, AssetId, AssetInspectorDetailView,
+    AssetService, AssetSummary, AssetVersionId, CanonicalMetadataView, DomainError, DomainResult,
     FileContextView, GalleryAssetView, GalleryQuery, GalleryReadService, GallerySort,
-    GenerationEventId, LibraryService, PendingSuggestionSummaryView, ReviewStatusFilter,
-    SearchQuery, SearchService, TaskId, TaskOriginView, TaskStatus, TaskType, VersionSummary,
+    GenerationEventId, LibraryService, PendingSuggestionSummaryView, ReferenceSourceView,
+    ReviewStatusFilter, SearchQuery, SearchService, TaskId, TaskOriginView, TaskStatus, TaskType,
+    VersionSummary,
 };
 use rusqlite::{params, Connection};
 use std::collections::{HashMap, HashSet};
@@ -209,6 +210,12 @@ impl GalleryReadService for LocalLibraryService {
                     .ok()
                     .flatten()
             });
+        let source_reference = event
+            .as_ref()
+            .and_then(|event| event.input_asset_version_id.as_ref())
+            .map(|version_id| load_reference_source(&connection, version_id, asset_id))
+            .transpose()?
+            .flatten();
         let lineage = current_version
             .as_ref()
             .map(|version| self.get_lineage(library_path, &version.id))
@@ -239,8 +246,14 @@ impl GalleryReadService for LocalLibraryService {
             tags: load_asset_tags(&connection, asset_id)?,
             albums: load_asset_albums(&connection, asset_id)?,
             review_pending_count: pending_review_count(&connection, asset_id)?,
+            current_version_id: current_version.as_ref().map(|version| version.id.clone()),
+            current_version_number: current_version.as_ref().map(|version| version.version_number),
+            current_version_name: current_version
+                .as_ref()
+                .map(|version| version.version_name.clone()),
             versions,
             lineage,
+            source_reference,
             file,
         })
     }
@@ -360,6 +373,7 @@ fn load_gallery_asset_views(connection: &Connection) -> DomainResult<Vec<Gallery
             "
             SELECT id, title, category, rating, status, created_at, updated_at
             FROM assets
+            WHERE status <> 'reference'
             ORDER BY updated_at DESC, created_at DESC
             ",
         )
@@ -404,6 +418,8 @@ fn load_gallery_asset_views(connection: &Connection) -> DomainResult<Vec<Gallery
             tags: tags.get(&id.0).cloned().unwrap_or_default(),
             review_pending_count: review_counts.get(&id.0).copied().unwrap_or_default(),
             current_version_id: current_version.as_ref().map(|version| version.id.clone()),
+            current_version_number: current_version.map(|version| version.version_number),
+            current_version_name: current_version.map(|version| version.version_name.clone()),
             image_path: current_version
                 .as_ref()
                 .map(|version| version.file_path.clone()),
@@ -522,6 +538,8 @@ struct LatestVersionView {
     file_path: PathBuf,
     width: Option<u32>,
     height: Option<u32>,
+    version_number: u32,
+    version_name: String,
     version_label: Option<String>,
 }
 
@@ -545,7 +563,7 @@ fn load_latest_asset_versions(
         .prepare(
             "
             SELECT av.id, av.asset_id, av.generation_event_id, av.file_path,
-                   av.width, av.height, av.version_label
+                   av.width, av.height, av.version_number, av.version_label
             FROM asset_versions av
             WHERE NOT EXISTS (
                 SELECT 1
@@ -561,6 +579,7 @@ fn load_latest_asset_versions(
         .map_err(database_error)?;
     let rows = statement
         .query_map([], |row| {
+            let version_number: u32 = row.get(6)?;
             Ok((
                 row.get::<_, String>(1)?,
                 LatestVersionView {
@@ -569,7 +588,9 @@ fn load_latest_asset_versions(
                     file_path: PathBuf::from(row.get::<_, String>(3)?),
                     width: row.get(4)?,
                     height: row.get(5)?,
-                    version_label: row.get(6)?,
+                    version_number,
+                    version_name: version_name(version_number),
+                    version_label: row.get(7)?,
                 },
             ))
         })
@@ -719,6 +740,7 @@ struct GenerationEventDetail {
     prompt: String,
     negative_prompt: Option<String>,
     parameters_json: String,
+    input_asset_version_id: Option<AssetVersionId>,
 }
 
 fn load_asset_detail_base(
@@ -757,7 +779,8 @@ fn load_generation_event_detail(
     connection
         .query_row(
             "
-            SELECT provider, provider_model, prompt, negative_prompt, parameters_json
+            SELECT provider, provider_model, prompt, negative_prompt, parameters_json,
+                   input_asset_version_id
             FROM generation_events
             WHERE id = ?1
             ",
@@ -769,10 +792,48 @@ fn load_generation_event_detail(
                     prompt: row.get(2)?,
                     negative_prompt: row.get(3)?,
                     parameters_json: row.get(4)?,
+                    input_asset_version_id: row.get::<_, Option<String>>(5)?.map(AssetVersionId),
                 })
             },
         )
         .map_err(database_error)
+}
+
+fn load_reference_source(
+    connection: &Connection,
+    version_id: &AssetVersionId,
+    current_asset_id: &AssetId,
+) -> DomainResult<Option<ReferenceSourceView>> {
+    connection
+        .query_row(
+            "
+            SELECT a.id, a.title, a.status, av.id, av.version_number, av.file_path
+            FROM asset_versions av
+            INNER JOIN assets a ON a.id = av.asset_id
+            WHERE av.id = ?1
+            ",
+            params![version_id.0],
+            |row| {
+                let asset_id = AssetId(row.get(0)?);
+                if asset_id == *current_asset_id {
+                    return Ok(None);
+                }
+                let version_number: u32 = row.get(4)?;
+                Ok(Some(ReferenceSourceView {
+                    asset_id,
+                    asset_title: row.get(1)?,
+                    asset_status: row.get(2)?,
+                    version_id: AssetVersionId(row.get(3)?),
+                    version_number,
+                    version_name: version_name(version_number),
+                    file_path: PathBuf::from(row.get::<_, String>(5)?),
+                }))
+            },
+        )
+        .or_else(|error| match error {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(database_error(other)),
+        })
 }
 
 fn load_latest_generation_event_detail(
@@ -815,10 +876,11 @@ fn load_asset_versions(
         .prepare(
             "
             SELECT id, asset_id, parent_version_id, generation_event_id, file_path,
-                   sha256, checksum_algorithm, COALESCE(checksum, sha256), mime_type
+                   sha256, checksum_algorithm, COALESCE(checksum, sha256), mime_type,
+                   version_number
             FROM asset_versions
             WHERE asset_id = ?1
-            ORDER BY created_at DESC
+            ORDER BY version_number DESC, created_at DESC
             ",
         )
         .map_err(database_error)?;
