@@ -297,8 +297,7 @@ fn extract_final_text(output: &str) -> String {
         output
             .lines()
             .map(|line| line.trim().strip_prefix("[stdout] ").unwrap_or(line.trim()))
-            .filter(|line| !line.is_empty())
-            .next_back()
+            .rfind(|line| !line.is_empty())
             .unwrap_or(output)
             .to_string()
     })
@@ -358,13 +357,11 @@ fn extract_first_json_object(output: &str) -> Option<String> {
                 }
                 depth += 1;
             }
-            b'}' => {
-                if depth > 0 {
-                    depth -= 1;
-                    if depth == 0 {
-                        let start = start?;
-                        return output.get(start..=index).map(ToString::to_string);
-                    }
+            b'}' if depth > 0 => {
+                depth -= 1;
+                if depth == 0 {
+                    let start = start?;
+                    return output.get(start..=index).map(ToString::to_string);
                 }
             }
             _ => {}
