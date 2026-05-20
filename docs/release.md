@@ -25,7 +25,7 @@ Enter a strong password when prompted. The generated files have different purpos
 - `~/.tauri/image-prompt-lab.key.pub`: public key. Copy its content into `apps/desktop/src-tauri/tauri.conf.json` under `plugins.updater.pubkey`.
 - The password: store it in a password manager and GitHub secrets.
 
-The repository currently contains a bootstrap updater public key so local configuration is valid. Replace it with the real release public key before publishing a production update stream.
+The repository contains the updater public key used by release builds. Replace it only when rotating the updater signing key pair.
 
 ## GitHub Secrets
 
