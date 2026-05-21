@@ -1,9 +1,9 @@
 import React, { useEffect } from "react";
-import { toggleGalleryTag, type GalleryQueryState } from "../../../workbench-state";
 import { Icon } from "../../../studio-icons";
 import { convertImagePath } from "../../tauri-adapter";
 import { StarRatingDisplay } from "../../components/rating";
 import { thumbnailImageStyle, thumbnailStyle } from "../../utils";
+import { toggleGalleryTag, type GalleryQueryState } from "../../workflows/gallery";
 import type { GalleryAsset, LightboxImage } from "../../types";
 
 export function GalleryWorkspace({

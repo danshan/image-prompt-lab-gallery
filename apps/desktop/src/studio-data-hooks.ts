@@ -1,15 +1,19 @@
 import { useMemo } from "react";
 import {
   applyGalleryQuery,
-  countActiveTasks,
-  pendingReviewItems,
-  sortedNonEmptyProviders,
   type GalleryFilterAsset,
   type GalleryQueryState,
-  type ProviderState,
+} from "./app/workflows/gallery/state.js";
+import {
+  countActiveTasks,
   type QueueTaskState,
+} from "./app/workflows/tasks/state.js";
+import {
+  pendingReviewItems,
+  sortedNonEmptyProviders,
+  type ProviderState,
   type ReviewStatusState,
-} from "./workbench-state";
+} from "./app/workflows/shared/state.js";
 import { isRetryableTaskStatus, isTerminalFailureStatus } from "./studio-orchestration";
 
 export function useGalleryDerivedState<TAsset extends GalleryFilterAsset & ProviderState & { id: string }>({

@@ -1,16 +1,15 @@
 use super::{
-    database_error, io_error, operation_from_str, operation_to_str, storage::file_digest,
-    storage::image_dimensions, storage::managed_original_path, storage::mime_type_for_extension,
-    storage::normalized_extension, storage::timestamp_string, LocalLibraryService,
-    CURRENT_CHECKSUM_ALGORITHM,
+    database_error, operation_from_str, operation_to_str, storage::timestamp_string,
+    LocalLibraryService,
 };
+use crate::application::use_cases::assets::{CreateChildVersionUseCase, ImportAssetUseCase};
 use crate::{
     version_name, AssetId, AssetService, AssetSummary, AssetVersionId, CreateChildVersionRequest,
     CreateGenerationEventRequest, DomainError, DomainResult, GenerationEventId,
-    GenerationEventSummary, ImportAssetRequest, LineageEntry, VersionSummary,
+    GenerationEventSummary, ImportAssetRequest, LineageEntry, PersistAssetVersionRequest,
+    PersistImportedAssetRequest, VersionSummary,
 };
 use rusqlite::{params, Connection};
-use std::fs;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
@@ -19,89 +18,14 @@ impl AssetService for LocalLibraryService {
         &self,
         request: ImportAssetRequest,
     ) -> DomainResult<(AssetSummary, VersionSummary)> {
-        import_asset_with_status(self, request, "imported", "import")
+        ImportAssetUseCase::new(self.clone(), self.clone()).execute(request)
     }
 
     fn create_child_version(
         &self,
         request: CreateChildVersionRequest,
     ) -> DomainResult<VersionSummary> {
-        let connection = Self::open_library_database(&request.library_path)?;
-        ensure_asset_exists(&connection, &request.asset_id)?;
-        load_version(&connection, &request.parent_version_id)?;
-
-        if !request.source_path.is_file() {
-            return Err(DomainError::Io {
-                path: request.source_path.display().to_string(),
-                message: "source file does not exist".to_string(),
-            });
-        }
-
-        let version_id = AssetVersionId(Uuid::new_v4().to_string());
-        let extension = normalized_extension(&request.source_path);
-        let now = timestamp_string();
-        let relative_path = managed_original_path(&version_id, &extension, &now);
-        let destination_path = request.library_path.join(&relative_path);
-
-        if let Some(parent) = destination_path.parent() {
-            fs::create_dir_all(parent).map_err(|error| io_error(parent, error))?;
-        }
-
-        let temporary_path = destination_path.with_extension(format!("{extension}.tmp"));
-        fs::copy(&request.source_path, &temporary_path)
-            .map_err(|error| io_error(&temporary_path, error))?;
-        fs::rename(&temporary_path, &destination_path)
-            .map_err(|error| io_error(&destination_path, error))?;
-
-        let checksum = file_digest(&destination_path, CURRENT_CHECKSUM_ALGORITHM)?;
-        let (width, height) = image_dimensions(&destination_path)?;
-
-        let transaction = connection.unchecked_transaction().map_err(database_error)?;
-        let version_number = next_version_number(&transaction, &request.asset_id)?;
-        transaction
-            .execute(
-                "
-                INSERT INTO asset_versions (
-                    id, asset_id, parent_version_id, generation_event_id,
-                    file_path, sha256, checksum_algorithm, checksum, width, height, mime_type, version_number, version_label, created_at
-                )
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?6, ?8, ?9, ?10, ?11, ?12, ?13)
-                ",
-                params![
-                    version_id.0,
-                    request.asset_id.0,
-                    request.parent_version_id.0,
-                    request.generation_event_id.as_ref().map(|id| id.0.as_str()),
-                    relative_path.to_string_lossy(),
-                    checksum,
-                    CURRENT_CHECKSUM_ALGORITHM,
-                    width,
-                    height,
-                    request.mime_type,
-                    version_number,
-                    request.version_label.as_deref(),
-                    now
-                ],
-            )
-            .map_err(database_error)?;
-        transaction.commit().map_err(database_error)?;
-
-        if let Some(event_id) = &request.generation_event_id {
-            update_generation_event_output_version(&request.library_path, event_id, &version_id)?;
-        }
-
-        Ok(VersionSummary {
-            id: version_id,
-            asset_id: request.asset_id,
-            parent_version_id: Some(request.parent_version_id),
-            generation_event_id: request.generation_event_id,
-            version_number,
-            version_name: version_name(version_number),
-            file_path: relative_path,
-            checksum_algorithm: CURRENT_CHECKSUM_ALGORITHM.to_string(),
-            checksum,
-            mime_type: request.mime_type,
-        })
+        CreateChildVersionUseCase::new(self.clone(), self.clone()).execute(request)
     }
 
     fn record_generation_event(
@@ -187,42 +111,16 @@ impl AssetService for LocalLibraryService {
     }
 }
 
-pub(super) fn import_asset_with_status(
+pub(crate) fn import_asset_with_status(
     _service: &LocalLibraryService,
-    request: ImportAssetRequest,
-    status: &str,
-    version_label: &str,
+    request: PersistImportedAssetRequest,
 ) -> DomainResult<(AssetSummary, VersionSummary)> {
     let manifest = LocalLibraryService::read_manifest(&request.library_path)?;
     let connection = LocalLibraryService::open_library_database(&request.library_path)?;
 
-    if !request.source_path.is_file() {
-        return Err(DomainError::Io {
-            path: request.source_path.display().to_string(),
-            message: "source file does not exist".to_string(),
-        });
-    }
-
     let asset_id = AssetId(Uuid::new_v4().to_string());
-    let version_id = AssetVersionId(Uuid::new_v4().to_string());
-    let extension = normalized_extension(&request.source_path);
     let now = timestamp_string();
-    let relative_path = managed_original_path(&version_id, &extension, &now);
-    let destination_path = request.library_path.join(&relative_path);
-
-    if let Some(parent) = destination_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| io_error(parent, error))?;
-    }
-
-    let temporary_path = destination_path.with_extension(format!("{extension}.tmp"));
-    fs::copy(&request.source_path, &temporary_path)
-        .map_err(|error| io_error(&temporary_path, error))?;
-    fs::rename(&temporary_path, &destination_path)
-        .map_err(|error| io_error(&destination_path, error))?;
-
-    let checksum = file_digest(&destination_path, CURRENT_CHECKSUM_ALGORITHM)?;
-    let (width, height) = image_dimensions(&destination_path)?;
-    let mime_type = mime_type_for_extension(&extension).to_string();
+    let file = request.file;
 
     let transaction = connection.unchecked_transaction().map_err(database_error)?;
     transaction
@@ -234,7 +132,7 @@ pub(super) fn import_asset_with_status(
             )
             VALUES (?1, ?2, ?3, NULL, NULL, NULL, NULL, NULL, ?4, ?5, ?5, NULL)
             ",
-            params![asset_id.0, manifest.id, mime_type, status, now],
+            params![asset_id.0, manifest.id, file.mime_type, request.status, now],
         )
         .map_err(database_error)?;
     transaction
@@ -244,18 +142,19 @@ pub(super) fn import_asset_with_status(
                 id, asset_id, parent_version_id, generation_event_id,
                 file_path, sha256, checksum_algorithm, checksum, width, height, mime_type, version_number, version_label, created_at
             )
-            VALUES (?1, ?2, NULL, NULL, ?3, ?4, ?5, ?4, ?6, ?7, ?8, 1, ?9, ?10)
+            VALUES (?1, ?2, NULL, NULL, ?3, ?4, ?5, ?4, ?6, ?7, ?8, ?9, ?10, ?11)
             ",
             params![
-                version_id.0,
+                request.version_id.0,
                 asset_id.0,
-                relative_path.to_string_lossy(),
-                checksum,
-                CURRENT_CHECKSUM_ALGORITHM,
-                width,
-                height,
-                mime_type,
-                version_label,
+                file.file_path.to_string_lossy(),
+                file.checksum,
+                file.checksum_algorithm,
+                file.width,
+                file.height,
+                file.mime_type,
+                request.version_number,
+                request.version_label,
                 now
             ],
         )
@@ -268,19 +167,19 @@ pub(super) fn import_asset_with_status(
             title: None,
             category: None,
             rating: None,
-            status: status.to_string(),
+            status: request.status,
         },
         VersionSummary {
-            id: version_id,
+            id: request.version_id,
             asset_id,
             parent_version_id: None,
             generation_event_id: None,
-            version_number: 1,
-            version_name: version_name(1),
-            file_path: relative_path,
-            checksum_algorithm: CURRENT_CHECKSUM_ALGORITHM.to_string(),
-            checksum,
-            mime_type,
+            version_number: request.version_number,
+            version_name: version_name(request.version_number),
+            file_path: file.file_path,
+            checksum_algorithm: file.checksum_algorithm,
+            checksum: file.checksum,
+            mime_type: file.mime_type,
         },
     ))
 }
@@ -301,7 +200,7 @@ pub(super) fn ensure_asset_exists(connection: &Connection, asset_id: &AssetId) -
     Ok(())
 }
 
-pub(super) fn load_version(
+pub(crate) fn load_version(
     connection: &Connection,
     version_id: &AssetVersionId,
 ) -> DomainResult<VersionSummary> {
@@ -325,6 +224,91 @@ pub(super) fn load_version(
         })
 }
 
+pub(crate) fn list_versions_for_asset(
+    connection: &Connection,
+    asset_id: &AssetId,
+) -> DomainResult<Vec<VersionSummary>> {
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT id, asset_id, parent_version_id, generation_event_id, file_path,
+                   sha256, checksum_algorithm, COALESCE(checksum, sha256), mime_type,
+                   version_number
+            FROM asset_versions
+            WHERE asset_id = ?1
+            ORDER BY version_number ASC, created_at ASC, id ASC
+            ",
+        )
+        .map_err(database_error)?;
+    let rows = statement
+        .query_map(params![asset_id.0], version_summary_from_row)
+        .map_err(database_error)?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(database_error)
+}
+
+pub(crate) fn persist_asset_version(
+    request: PersistAssetVersionRequest,
+) -> DomainResult<VersionSummary> {
+    let connection = LocalLibraryService::open_library_database(&request.library_path)?;
+    ensure_asset_exists(&connection, &request.asset_id)?;
+    if let Some(parent_version_id) = &request.parent_version_id {
+        load_version(&connection, parent_version_id)?;
+    }
+
+    let now = timestamp_string();
+    let file = request.file;
+
+    let transaction = connection.unchecked_transaction().map_err(database_error)?;
+    transaction
+        .execute(
+            "
+            INSERT INTO asset_versions (
+                id, asset_id, parent_version_id, generation_event_id,
+                file_path, sha256, checksum_algorithm, checksum, width, height, mime_type, version_number, version_label, created_at
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?6, ?8, ?9, ?10, ?11, ?12, ?13)
+            ",
+            params![
+                request.version_id.0,
+                request.asset_id.0,
+                request.parent_version_id.as_ref().map(|id| id.0.as_str()),
+                request.generation_event_id.as_ref().map(|id| id.0.as_str()),
+                file.file_path.to_string_lossy(),
+                file.checksum,
+                file.checksum_algorithm,
+                file.width,
+                file.height,
+                file.mime_type,
+                request.version_number,
+                request.version_label.as_deref(),
+                now
+            ],
+        )
+        .map_err(database_error)?;
+    transaction.commit().map_err(database_error)?;
+
+    if let Some(event_id) = &request.generation_event_id {
+        update_generation_event_output_version(
+            &request.library_path,
+            event_id,
+            &request.version_id,
+        )?;
+    }
+
+    Ok(VersionSummary {
+        id: request.version_id,
+        asset_id: request.asset_id,
+        parent_version_id: request.parent_version_id,
+        generation_event_id: request.generation_event_id,
+        version_number: request.version_number,
+        version_name: version_name(request.version_number),
+        file_path: file.file_path,
+        checksum_algorithm: file.checksum_algorithm,
+        checksum: file.checksum,
+        mime_type: file.mime_type,
+    })
+}
+
 pub(super) fn version_summary_from_row(
     row: &rusqlite::Row<'_>,
 ) -> rusqlite::Result<VersionSummary> {
@@ -341,21 +325,6 @@ pub(super) fn version_summary_from_row(
         version_number,
         version_name: version_name(version_number),
     })
-}
-
-fn next_version_number(connection: &Connection, asset_id: &AssetId) -> DomainResult<u32> {
-    let next: i64 = connection
-        .query_row(
-            "
-            SELECT COALESCE(MAX(version_number), 0) + 1
-            FROM asset_versions
-            WHERE asset_id = ?1
-            ",
-            params![asset_id.0],
-            |row| row.get(0),
-        )
-        .map_err(database_error)?;
-    Ok(next.max(1) as u32)
 }
 
 pub(super) fn load_generation_event(
@@ -417,7 +386,7 @@ pub(super) fn load_asset_summary(
         .map_err(database_error)
 }
 
-pub(super) fn mark_imported_version_as_generated(
+pub(crate) fn mark_imported_version_as_generated(
     library_path: &Path,
     asset_id: &AssetId,
     version_id: &AssetVersionId,

@@ -25,6 +25,10 @@ mod schema;
 pub use schema::{migrate_library_database, CURRENT_SCHEMA_VERSION};
 mod albums;
 mod assets;
+pub(crate) use assets::{
+    import_asset_with_status, list_versions_for_asset, load_version,
+    mark_imported_version_as_generated, persist_asset_version,
+};
 mod backup;
 use assets::ensure_asset_exists;
 #[cfg(test)]
@@ -33,8 +37,8 @@ mod export;
 use export::{load_export_versions, ExportVersionRow};
 mod diagnostics;
 mod generation;
+pub(super) use crate::domain::generation::{operation_from_str, operation_to_str};
 pub use generation::{normalize_provider_name, prepare_generation_request, LocalGenerationService};
-pub(super) use generation::{operation_from_str, operation_to_str};
 mod gallery;
 mod maintenance;
 mod metadata;
@@ -42,16 +46,18 @@ use metadata::attach_tag;
 mod registry;
 mod repair;
 mod service;
-pub use service::{LibraryManifest, LocalLibraryService};
+pub use crate::domain::library::LibraryManifest;
+pub use service::LocalLibraryService;
 mod storage;
-#[cfg(test)]
-use storage::file_digest;
-use storage::{normalized_extension, timestamp_string};
+pub(crate) use storage::{
+    extension_for_mime_type, file_digest, image_dimensions, managed_original_path,
+    mime_type_for_extension, normalized_extension, timestamp_string,
+};
 mod tasks;
 
 const CHECKSUM_MD5: &str = "MD5";
 const CHECKSUM_SHA256: &str = "SHA-256";
-const CURRENT_CHECKSUM_ALGORITHM: &str = CHECKSUM_SHA256;
+pub(crate) const CURRENT_CHECKSUM_ALGORITHM: &str = CHECKSUM_SHA256;
 
 pub(super) const MANIFEST_FILE: &str = "manifest.json";
 pub(super) const DATABASE_FILE: &str = "library.sqlite";

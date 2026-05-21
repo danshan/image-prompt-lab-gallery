@@ -1,0 +1,16 @@
+export type SettingsSection = "libraries" | "providers" | "updates" | "logs";
+
+export const defaultSettingsSection: SettingsSection = "libraries";
+
+export function libraryPathExists(rootPath: string, missingPaths: string[]): boolean {
+  return !missingPaths.includes(rootPath);
+}
+
+export function libraryMaintenanceActions(rootPath: string, missingPaths: string[]) {
+  const exists = libraryPathExists(rootPath, missingPaths);
+  return {
+    canClose: true,
+    canExport: exists,
+    canReveal: exists,
+  };
+}

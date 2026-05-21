@@ -1,5 +1,8 @@
 use super::*;
-use imglab_core::{AppendTaskAttemptRequest, CreateLibraryRequest, CreateTaskInput, TaskService};
+use imglab_core::interface_contracts::dto::{
+    AppendTaskAttemptRequest, CreateLibraryRequest, CreateTaskInput,
+};
+use imglab_core::services::TaskService;
 use std::net::{Ipv4Addr, SocketAddrV4};
 
 fn test_root(name: &str) -> PathBuf {
@@ -35,7 +38,7 @@ fn json_value(response: &HttpResponse) -> Value {
 fn create_open_library(state: &mut DaemonState, name: &str) -> String {
     let library_root = test_root(name).join("library");
     let library = state
-        .service
+        .service()
         .create_library(CreateLibraryRequest {
             root_path: library_root.clone(),
             name: name.to_string(),

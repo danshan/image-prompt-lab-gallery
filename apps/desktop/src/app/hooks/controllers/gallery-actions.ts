@@ -1,96 +1,23 @@
-import { useState, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import {
-  clearAlbumQuery,
-  clearLibraryWorkspaceState,
-  acceptSuggestionState,
-  addReviewFormTag,
-  applySuggestionFieldToReviewForm,
   beginDetailLoad,
-  beginReviewFieldGeneration,
-  buildBatchReviewPayloads,
   completeDetailLoad,
-  completeReviewFieldGeneration,
-  defaultGalleryQuery,
-  defaultSettingsSection,
   failDetailLoad,
-  failReviewFieldGeneration,
-  isReviewFieldGenerating,
-  markAssetReviewPending,
-  moveQueuedTaskOrder,
-  reorderByIds,
-  reviewFormTags,
-  selectedOrCurrentIds,
-  toggleSelection,
   type DetailLoadState,
   type GalleryQueryState,
-  type ReviewFieldName,
-  type ReviewFormState,
-  type SettingsSection,
-} from "../../../workbench-state";
+} from "../../workflows/gallery";
 import {
-  createTaskDraft,
-  mockAlbumList,
-  mockDetail,
-  mockGallery,
-  mockLibraries,
-  mockLibrary,
-  mockLibraryStatus,
-  mockProviderHealth,
-  mockSuggestions,
-  mockTasks,
-} from "../../mock-data";
-import { createReviewFormState } from "../../../workbench-state";
-import {
-  METADATA_POLL_INTERVAL_MS,
-  initialUpdateState,
-} from "../../types";
-import {
-  buildChildPath,
   mockDetailFor,
-  nextAnimationFrame,
-  previewGeneratedReviewField,
-  reviewFieldContext,
-  schemaPromptFromAsset,
-  suggestionFromAsset,
-  validLibraryFolderName,
 } from "../../utils";
-import {
-  compareTaskOrder,
-  completedTaskKey,
-  galleryQueryInput,
-  isRetryableTaskStatus,
-  isTerminalFailureStatus,
-  mergeTasks,
-  taskActionKey,
-} from "../../../studio-orchestration";
+import { galleryQueryInput } from "../../workflows/gallery/query";
 import {
   errorMessage,
   invokeCommand,
-  pickDirectory,
-  pickSaveZipPath,
-  pickZipFile,
 } from "../../tauri-adapter";
 import type {
-  AlbumListItem,
-  AppLog,
-  AppLogContent,
   AssetDetail,
-  AssetView,
-  DaemonTask,
-  DaemonTaskDetail,
   GalleryAsset,
   Library,
-  LibraryBackup,
-  LibraryStatus,
-  LightboxImage,
-  ProviderHealth,
-  ReferenceSource,
-  Suggestion,
-  TaskDraft,
-  TaskPanel,
-  UpdateCheck,
-  UpdateState,
-  View,
 } from "../../types";
 
 export function useGallerySelectionActions({

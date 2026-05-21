@@ -7,6 +7,10 @@ use super::{
     storage::extension_for_mime_type,
     LocalLibraryService,
 };
+pub use crate::domain::generation::normalize_provider_name;
+use crate::domain::generation::{
+    default_generation_model_label, infer_generation_operation, operation_to_str,
+};
 use crate::{
     AssetId, AssetService, AssetSummary, AssetVersionId, CreateChildVersionRequest,
     CreateGenerationEventRequest, CreateMetadataSuggestionRequest, DomainError, DomainResult,
@@ -56,14 +60,22 @@ where
             && parameters.input_version_id.is_none()
         {
             if let Some(input_file) = &request.input_file {
+                let imported_file = crate::application::ports::ManagedFileStore::import_original(
+                    &library_service,
+                    &request.library_path,
+                    input_file,
+                    None,
+                )?;
                 let reference = import_asset_with_status(
                     &library_service,
-                    ImportAssetRequest {
+                    crate::PersistImportedAssetRequest {
                         library_path: request.library_path.clone(),
-                        source_path: input_file.clone(),
+                        version_id: imported_file.version_id,
+                        file: imported_file.metadata,
+                        status: "reference".to_string(),
+                        version_number: 1,
+                        version_label: "reference".to_string(),
                     },
-                    "reference",
-                    "reference",
                 )?;
                 let reference_path = request.library_path.join(&reference.1.file_path);
                 input_bytes = Some(fs::read(&reference_path).map_err(|error| DomainError::Io {
@@ -319,34 +331,6 @@ pub fn prepare_generation_request(
     })
 }
 
-pub fn normalize_provider_name(provider: &str) -> DomainResult<String> {
-    match provider {
-        "codex" | "codex-cli" => Ok("codex-cli".to_string()),
-        "fake" => Ok("fake".to_string()),
-        other => Err(DomainError::InvalidGenerationParameters {
-            message: format!("unsupported provider: {other}"),
-        }),
-    }
-}
-
-fn default_generation_model_label(provider: &str) -> &'static str {
-    match provider {
-        "fake" => "fake-image",
-        _ => "imagegen-skill",
-    }
-}
-
-fn infer_generation_operation(
-    input_file: Option<&PathBuf>,
-    input_version_id: Option<&AssetVersionId>,
-) -> GenerationOperation {
-    if input_file.is_some() || input_version_id.is_some() {
-        GenerationOperation::ImageToImage
-    } else {
-        GenerationOperation::TextToImage
-    }
-}
-
 fn load_generation_input_bytes(
     library_path: &Path,
     input_file: Option<&PathBuf>,
@@ -370,21 +354,4 @@ fn load_generation_input_bytes(
     }
 
     Ok(None)
-}
-
-pub(crate) fn operation_to_str(operation: GenerationOperation) -> &'static str {
-    match operation {
-        GenerationOperation::TextToImage => "text_to_image",
-        GenerationOperation::ImageToImage => "image_to_image",
-    }
-}
-
-pub(crate) fn operation_from_str(value: &str) -> DomainResult<GenerationOperation> {
-    match value {
-        "text_to_image" => Ok(GenerationOperation::TextToImage),
-        "image_to_image" => Ok(GenerationOperation::ImageToImage),
-        _ => Err(DomainError::Database {
-            message: format!("unknown generation operation: {value}"),
-        }),
-    }
 }

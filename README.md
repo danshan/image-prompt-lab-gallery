@@ -11,7 +11,7 @@ The current MVP is built around a Tauri + React desktop shell, a Rust core busin
 This project is under active MVP development. The stable baseline is:
 
 - Cross-platform desktop shell with Tauri, React, and TypeScript.
-- Rust workspace as the shared core for desktop and CLI write operations.
+- Rust workspace with `imglab-core` as the shared DDD business core for desktop, CLI, and daemon write operations.
 - Local managed resource libraries backed by SQLite and filesystem storage.
 - GUI-first workflow with CLI support for automation.
 - Text-to-image and image-to-image service boundaries.
@@ -24,7 +24,7 @@ This project is under active MVP development. The stable baseline is:
 
 ```text
 apps/desktop              Tauri and React desktop application
-crates/imglab-core        Core domain model, services, storage, and provider traits
+crates/imglab-core        DDD core: domain, application ports/use cases, infrastructure adapters
 crates/imglab-cli         CLI for library, asset, search, generation, album, and metadata workflows
 crates/imglab-provider-codex
                           Codex CLI imagegen provider adapter
@@ -35,6 +35,15 @@ docs/providers.md         Provider behavior and configuration notes
 openspec/specs            Current product and architecture specifications
 openspec/changes          Proposed and archived spec-driven changes
 ```
+
+`imglab-core` is organized around explicit boundaries:
+
+- `domain`: business invariants and reusable policies.
+- `application`: ports, use cases, read models, and the `ImgLabApplication` facade.
+- `infrastructure`: SQLite, filesystem, registry, and provider composition adapters.
+- `interface_contracts`: runtime-facing DTO compatibility surface.
+
+Runtime layers should call the application facade or explicit interface contracts instead of duplicating generation planning, asset version allocation, task transitions, or library mutation semantics.
 
 ## Prerequisites
 
@@ -51,8 +60,11 @@ Run core checks from the repository root:
 
 ```bash
 cargo fmt --all --check
-cargo check --offline -p imglab-core -p imglab-cli -p imglab-provider-codex -p imglab-provider-grok
-cargo test --offline -p imglab-core -p imglab-provider-codex -p imglab-cli
+cargo test -p imglab-core
+cargo test -p imglab-cli
+cargo test -p imglab-daemon
+cargo test -p imglab-provider-codex -p imglab-provider-grok
+scripts/check-architecture.sh
 ```
 
 Build and run the desktop frontend:

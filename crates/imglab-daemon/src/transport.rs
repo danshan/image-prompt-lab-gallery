@@ -40,7 +40,7 @@ pub fn run_scheduler_loop_iteration(
 pub(crate) fn daemon_has_runnable_work(state: &DaemonState) -> DomainResult<bool> {
     let now = unix_timestamp_string(0);
     for library_path in state.opened_libraries.values() {
-        for task in state.service.list_tasks(library_path)? {
+        for task in state.tasks().list_tasks(library_path)? {
             match task.status {
                 TaskStatus::Queued => return Ok(true),
                 TaskStatus::RetryWaiting
@@ -65,7 +65,7 @@ pub fn recover_open_libraries(
     let mut recovered = Vec::new();
     let now = unix_timestamp_string(0);
     for library_path in state.opened_libraries.values().cloned().collect::<Vec<_>>() {
-        for task in state.service.list_tasks(&library_path)? {
+        for task in state.tasks().list_tasks(&library_path)? {
             match task.status {
                 TaskStatus::Queued => {}
                 TaskStatus::RetryWaiting => {
@@ -75,7 +75,7 @@ pub fn recover_open_libraries(
                         .is_none_or(|next_retry_at| next_retry_at <= now.as_str())
                     {
                         state
-                            .service
+                            .service()
                             .append_task_event(imglab_core::AppendTaskEventRequest {
                                 library_path: library_path.clone(),
                                 task_id: task.id.clone(),
@@ -85,7 +85,7 @@ pub fn recover_open_libraries(
                                 ),
                                 payload_json: None,
                             })?;
-                        recovered.push(state.service.update_task_status(
+                        recovered.push(state.tasks().update_task_status(
                             UpdateTaskStatusRequest {
                                 library_path: library_path.clone(),
                                 task_id: task.id.clone(),
@@ -100,10 +100,10 @@ pub fn recover_open_libraries(
                     }
                 }
                 TaskStatus::Running | TaskStatus::CancelRequested => {
-                    let detail = state.service.get_task_detail(&library_path, &task.id)?;
+                    let detail = state.tasks().get_task_detail(&library_path, &task.id)?;
                     if !detail.outputs.is_empty() {
                         state
-                            .service
+                            .service()
                             .append_task_event(imglab_core::AppendTaskEventRequest {
                                 library_path: library_path.clone(),
                                 task_id: task.id.clone(),
@@ -114,7 +114,7 @@ pub fn recover_open_libraries(
                                 ),
                                 payload_json: None,
                             })?;
-                        recovered.push(state.service.update_task_status(
+                        recovered.push(state.tasks().update_task_status(
                             UpdateTaskStatusRequest {
                                 library_path: library_path.clone(),
                                 task_id: task.id.clone(),
@@ -134,7 +134,7 @@ pub fn recover_open_libraries(
                             TaskStatus::InterruptedFinal
                         };
                         state
-                            .service
+                            .service()
                             .append_task_event(imglab_core::AppendTaskEventRequest {
                                 library_path: library_path.clone(),
                                 task_id: task.id.clone(),
@@ -142,7 +142,7 @@ pub fn recover_open_libraries(
                                 message: Some("Task was running when daemon stopped".to_string()),
                                 payload_json: Some(format!("{{\"retryable\":{retryable}}}")),
                             })?;
-                        recovered.push(state.service.update_task_status(
+                        recovered.push(state.tasks().update_task_status(
                             UpdateTaskStatusRequest {
                                 library_path: library_path.clone(),
                                 task_id: task.id.clone(),
@@ -182,7 +182,7 @@ pub fn run_scheduler_tick(
     let mut all_tasks = Vec::new();
     let mut task_libraries = BTreeMap::new();
     for library_path in state.opened_libraries.values() {
-        for task in state.service.list_tasks(library_path)? {
+        for task in state.tasks().list_tasks(library_path)? {
             task_libraries.insert(task.id.0.clone(), library_path.clone());
             all_tasks.push(task);
         }
@@ -193,18 +193,20 @@ pub fn run_scheduler_tick(
     for wait_reason in decision.wait_reasons {
         if let Some(library_path) = task_libraries.get(&wait_reason.task_id.0) {
             let detail = state
-                .service
+                .service()
                 .get_task_detail(library_path, &wait_reason.task_id)?;
-            state.service.update_task_status(UpdateTaskStatusRequest {
-                library_path: library_path.clone(),
-                task_id: wait_reason.task_id,
-                status: detail.task.status,
-                next_retry_at: detail.task.next_retry_at,
-                last_error_code: detail.task.last_error_code,
-                last_error_message: detail.task.last_error_message,
-                error_classification: detail.task.error_classification,
-                wait_reason: Some(wait_reason.reason),
-            })?;
+            state
+                .service()
+                .update_task_status(UpdateTaskStatusRequest {
+                    library_path: library_path.clone(),
+                    task_id: wait_reason.task_id,
+                    status: detail.task.status,
+                    next_retry_at: detail.task.next_retry_at,
+                    last_error_code: detail.task.last_error_code,
+                    last_error_message: detail.task.last_error_message,
+                    error_classification: detail.task.error_classification,
+                    wait_reason: Some(wait_reason.reason),
+                })?;
         }
     }
 
@@ -235,7 +237,7 @@ pub(crate) fn route_request(
         ("POST", TASKS_PATH) => {
             let input: SingleCreateTaskInput = parse_json_body(body)?;
             let library_path = state.library_path(&input.library_id)?;
-            let tasks = state.service.create_tasks(BatchCreateTasksRequest {
+            let tasks = state.tasks().create_tasks(BatchCreateTasksRequest {
                 library_path,
                 library_id: LibraryId(input.library_id),
                 tasks: vec![input.task.try_into()?],
@@ -250,7 +252,7 @@ pub(crate) fn route_request(
                 .into_iter()
                 .map(CreateTaskInput::try_from)
                 .collect::<DomainResult<Vec<_>>>()?;
-            let created = state.service.create_tasks(BatchCreateTasksRequest {
+            let created = state.tasks().create_tasks(BatchCreateTasksRequest {
                 library_path,
                 library_id: LibraryId(input.library_id),
                 tasks,
@@ -264,14 +266,14 @@ pub(crate) fn route_request(
                     message: "library_id query parameter is required".to_string(),
                 })?;
             let library_path = state.library_path(&library_id)?;
-            let tasks = state.service.list_tasks(&library_path)?;
+            let tasks = state.tasks().list_tasks(&library_path)?;
             Ok(Some(json_response(200, &summary_views(tasks))))
         }
         ("POST", TASKS_REORDER_PATH) => {
             let input: ReorderTasksInput = parse_json_body(body)?;
             let library_path = state.library_path(&input.library_id)?;
             state
-                .service
+                .service()
                 .reorder_queued_tasks(ReorderQueuedTasksRequest {
                     library_path,
                     task_ids: input.task_ids.into_iter().map(TaskId).collect(),
@@ -307,11 +309,11 @@ pub(crate) fn route_task_member(
             Ok(Some(json_response(200, &TaskSummaryView::from(task))))
         }
         ("POST", [_, "retry"]) => {
-            let task = state.service.retry_task(&library_path, &task_id)?;
+            let task = state.tasks().retry_task(&library_path, &task_id)?;
             Ok(Some(json_response(200, &TaskSummaryView::from(task))))
         }
         ("POST", [_, "duplicate"]) => {
-            let task = state.service.duplicate_task(&library_path, &task_id)?;
+            let task = state.tasks().duplicate_task(&library_path, &task_id)?;
             Ok(Some(json_response(200, &TaskSummaryView::from(task))))
         }
         ("GET", [_, "events"]) => Ok(Some(json_response(
@@ -335,7 +337,7 @@ pub(crate) fn find_task_detail(
     task_id: &TaskId,
 ) -> DomainResult<(PathBuf, TaskDetail)> {
     for library_path in state.opened_libraries.values() {
-        match state.service.get_task_detail(library_path, task_id) {
+        match state.tasks().get_task_detail(library_path, task_id) {
             Ok(detail) => return Ok((library_path.clone(), detail)),
             Err(DomainError::InvalidTaskReference { .. }) => {}
             Err(error) => return Err(error),
@@ -369,7 +371,7 @@ pub(crate) fn request_task_cancel(
         }
     }
     state
-        .service
+        .service()
         .append_task_event(imglab_core::AppendTaskEventRequest {
             library_path: library_path.clone(),
             task_id: task_id.clone(),
@@ -377,7 +379,7 @@ pub(crate) fn request_task_cancel(
             message: Some("Cancel requested by client".to_string()),
             payload_json: None,
         })?;
-    state.service.update_task_status(UpdateTaskStatusRequest {
+    state.tasks().update_task_status(UpdateTaskStatusRequest {
         library_path,
         task_id,
         status: next_status,

@@ -47,9 +47,11 @@ pub struct HttpResponse {
     pub body: String,
 }
 
-#[derive(Debug, Clone)]
 pub struct DaemonState {
-    pub(crate) service: LocalLibraryService,
+    pub(crate) registry_path: PathBuf,
+    pub(crate) app: imglab_core::infrastructure::composition::SqliteImgLabApplication<
+        imglab_core::FakeImageProvider,
+    >,
     pub(crate) opened_libraries: BTreeMap<String, PathBuf>,
     pub(crate) recovered_libraries: BTreeSet<String>,
     pub(crate) log_root: PathBuf,
@@ -59,16 +61,48 @@ pub type SharedDaemonState = Arc<Mutex<DaemonState>>;
 
 impl DaemonState {
     pub fn new(registry_path: impl Into<PathBuf>, log_root: impl Into<PathBuf>) -> Self {
+        let registry_path = registry_path.into();
         Self {
-            service: LocalLibraryService::new(registry_path),
+            registry_path: registry_path.clone(),
+            app: imglab_core::infrastructure::composition::sqlite_application(
+                registry_path,
+                imglab_core::FakeImageProvider::success("fake"),
+            ),
             opened_libraries: BTreeMap::new(),
             recovered_libraries: BTreeSet::new(),
             log_root: log_root.into(),
         }
     }
 
+    pub(crate) fn service(&self) -> &LocalLibraryService {
+        self.app.library()
+    }
+
+    pub(crate) fn tasks(
+        &self,
+    ) -> &imglab_core::application::use_cases::tasks::TaskUseCase<LocalLibraryService> {
+        self.app.tasks()
+    }
+
+    pub(crate) fn gallery(
+        &self,
+    ) -> &imglab_core::application::use_cases::albums::QueryGalleryUseCase<LocalLibraryService>
+    {
+        self.app.gallery()
+    }
+
+    pub(crate) fn create_metadata_suggestion(
+        &self,
+        request: CreateMetadataSuggestionRequest,
+    ) -> DomainResult<imglab_core::MetadataSuggestion> {
+        imglab_core::application::use_cases::metadata_review::CreateMetadataSuggestionUseCase::new(
+            self.app.library().clone(),
+        )
+        .execute(request)
+    }
+
     pub(crate) fn open_library(&mut self, root_path: &Path) -> DomainResult<LibrarySummary> {
-        let library = self.service.open_library(root_path)?;
+        let library = self.service().open_library(root_path)?;
         let should_recover = !self.recovered_libraries.contains(&library.id.0);
         self.opened_libraries
             .insert(library.id.0.clone(), library.root_path.clone());
@@ -86,6 +120,21 @@ impl DaemonState {
             .ok_or_else(|| DomainError::InvalidGenerationParameters {
                 message: format!("library is not open: {library_id}"),
             })
+    }
+}
+
+impl Clone for DaemonState {
+    fn clone(&self) -> Self {
+        Self {
+            registry_path: self.registry_path.clone(),
+            app: imglab_core::infrastructure::composition::sqlite_application(
+                self.registry_path.clone(),
+                imglab_core::FakeImageProvider::success("fake"),
+            ),
+            opened_libraries: self.opened_libraries.clone(),
+            recovered_libraries: self.recovered_libraries.clone(),
+            log_root: self.log_root.clone(),
+        }
     }
 }
 

@@ -1,12 +1,21 @@
-use imglab_core::{
-    DomainError, DomainResult, GenerationParameters, GenerationResult, ImageProvider,
+use imglab_core::application::ports::ImageGenerationProvider;
+use imglab_core::domain::generation::{
+    GenerationOperation, GenerationParameters, GenerationResult,
 };
+use imglab_core::{DomainError, DomainResult};
 
 pub struct GrokImageProvider;
 
-impl ImageProvider for GrokImageProvider {
+impl ImageGenerationProvider for GrokImageProvider {
     fn name(&self) -> &'static str {
         "grok"
+    }
+
+    fn supports_operation(&self, operation: GenerationOperation) -> bool {
+        matches!(
+            operation,
+            GenerationOperation::TextToImage | GenerationOperation::ImageToImage
+        )
     }
 
     fn validate_parameters(&self, parameters: &GenerationParameters) -> DomainResult<()> {

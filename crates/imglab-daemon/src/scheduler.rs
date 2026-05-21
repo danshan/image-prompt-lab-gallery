@@ -9,7 +9,7 @@ pub(crate) fn execute_task(
     task_id: &TaskId,
     retry_policy: &RetryPolicy,
 ) -> DomainResult<TaskSummary> {
-    let detail = state.service.get_task_detail(library_path, task_id)?;
+    let detail = state.tasks().get_task_detail(library_path, task_id)?;
     if detail.task.status != TaskStatus::Queued {
         return Ok(detail.task);
     }
@@ -22,7 +22,7 @@ pub(crate) fn execute_task(
     fs::write(&log_path, format!("starting task {}\n", task_id.0))
         .map_err(|error| io_error(&log_path, error))?;
 
-    state.service.update_task_status(UpdateTaskStatusRequest {
+    state.tasks().update_task_status(UpdateTaskStatusRequest {
         library_path: library_path.to_path_buf(),
         task_id: task_id.clone(),
         status: TaskStatus::Running,
@@ -33,7 +33,7 @@ pub(crate) fn execute_task(
         wait_reason: None,
     })?;
     let attempt = state
-        .service
+        .tasks()
         .append_task_attempt(imglab_core::AppendTaskAttemptRequest {
             library_path: library_path.to_path_buf(),
             task_id: task_id.clone(),
@@ -41,7 +41,7 @@ pub(crate) fn execute_task(
             log_path: Some(log_path.clone()),
         })?;
     state
-        .service
+        .tasks()
         .append_task_event(imglab_core::AppendTaskEventRequest {
             library_path: library_path.to_path_buf(),
             task_id: task_id.clone(),
@@ -55,7 +55,7 @@ pub(crate) fn execute_task(
         Err(error) => {
             if cancel_marker_path(&log_path).exists()
                 || state
-                    .service
+                    .tasks()
                     .get_task_detail(library_path, task_id)?
                     .task
                     .status
@@ -140,13 +140,23 @@ pub(crate) fn execute_image_generation_task(
                 ),
                 _ => imglab_core::FakeImageProvider::success("fake"),
             };
-            LocalGenerationService::new(fake).generate(prepared.request)?
+            imglab_core::infrastructure::composition::sqlite_application(
+                state.registry_path.clone(),
+                fake,
+            )
+            .generation()
+            .execute(prepared.request)?
         }
         "codex" | "codex-cli" => {
             let codex = CodexCliImageProvider::new("codex", library_path)
                 .with_log_path(log_path)
                 .with_cancel_path(cancel_marker_path(log_path));
-            LocalGenerationService::new(codex).generate(prepared.request)?
+            imglab_core::infrastructure::composition::sqlite_application(
+                state.registry_path.clone(),
+                codex,
+            )
+            .generation()
+            .execute(prepared.request)?
         }
         other => {
             return Err(DomainError::UnsupportedProvider {
@@ -157,12 +167,12 @@ pub(crate) fn execute_image_generation_task(
 
     for version in versions {
         let source_reference = state
-            .service
+            .gallery()
             .get_asset_detail(library_path, &version.asset_id, Some(&version.id))
             .ok()
             .and_then(|detail| detail.source_reference);
         state
-            .service
+            .tasks()
             .append_task_output(imglab_core::AppendTaskOutputRequest {
                 library_path: library_path.to_path_buf(),
                 task_id: task_id.clone(),
@@ -178,7 +188,7 @@ pub(crate) fn execute_image_generation_task(
                 ),
             })?;
         state
-            .service
+            .tasks()
             .append_task_output(imglab_core::AppendTaskOutputRequest {
                 library_path: library_path.to_path_buf(),
                 task_id: task_id.clone(),
@@ -195,7 +205,7 @@ pub(crate) fn execute_image_generation_task(
             })?;
         if let Some(event_id) = version.generation_event_id {
             state
-                .service
+                .tasks()
                 .append_task_output(imglab_core::AppendTaskOutputRequest {
                     library_path: library_path.to_path_buf(),
                     task_id: task_id.clone(),
@@ -206,7 +216,7 @@ pub(crate) fn execute_image_generation_task(
         }
         if let Some(reference) = source_reference {
             state
-                .service
+                .tasks()
                 .append_task_output(imglab_core::AppendTaskOutputRequest {
                     library_path: library_path.to_path_buf(),
                     task_id: task_id.clone(),
@@ -223,7 +233,7 @@ pub(crate) fn execute_image_generation_task(
                     ),
                 })?;
             state
-                .service
+                .tasks()
                 .append_task_output(imglab_core::AppendTaskOutputRequest {
                     library_path: library_path.to_path_buf(),
                     task_id: task_id.clone(),
@@ -259,7 +269,7 @@ pub(crate) fn execute_metadata_field_task(
     )?;
     let value = generated_metadata_field_value(&input.field, &input.context)?;
     state
-        .service
+        .tasks()
         .append_task_output(imglab_core::AppendTaskOutputRequest {
             library_path: library_path.to_path_buf(),
             task_id: task_id.clone(),
@@ -291,21 +301,19 @@ pub(crate) fn execute_metadata_suggestion_task(
     let title = generated_metadata_field_value("title", &input.context)?;
     let description = generated_metadata_field_value("description", &input.context)?;
     let schema_prompt = generated_metadata_field_value("schemaPrompt", &input.context)?;
-    let suggestion = state
-        .service
-        .create_suggestion(CreateMetadataSuggestionRequest {
-            library_path: library_path.to_path_buf(),
-            asset_id: AssetId(input.asset_id.clone()),
-            source: "daemon_metadata_task".to_string(),
-            suggested_title: Some(title),
-            suggested_description: Some(description),
-            suggested_schema_prompt: Some(schema_prompt),
-            suggested_tags: input.context.tags,
-            suggested_category: input.context.category,
-            confidence_json: "{}".to_string(),
-        })?;
+    let suggestion = state.create_metadata_suggestion(CreateMetadataSuggestionRequest {
+        library_path: library_path.to_path_buf(),
+        asset_id: AssetId(input.asset_id.clone()),
+        source: "daemon_metadata_task".to_string(),
+        suggested_title: Some(title),
+        suggested_description: Some(description),
+        suggested_schema_prompt: Some(schema_prompt),
+        suggested_tags: input.context.tags,
+        suggested_category: input.context.category,
+        confidence_json: "{}".to_string(),
+    })?;
     state
-        .service
+        .tasks()
         .append_task_output(imglab_core::AppendTaskOutputRequest {
             library_path: library_path.to_path_buf(),
             task_id: task_id.clone(),
@@ -379,7 +387,7 @@ pub(crate) fn wait_for_fake_slow_task(
     for _ in 0..50 {
         if cancel_marker_path(log_path).exists()
             || state
-                .service
+                .tasks()
                 .get_task_detail(library_path, task_id)?
                 .task
                 .status
@@ -403,7 +411,7 @@ pub(crate) fn complete_successful_attempt(
     log_path: &Path,
 ) -> DomainResult<TaskSummary> {
     state
-        .service
+        .tasks()
         .complete_task_attempt(imglab_core::CompleteTaskAttemptRequest {
             library_path: library_path.to_path_buf(),
             attempt_id: attempt_id.clone(),
@@ -413,10 +421,10 @@ pub(crate) fn complete_successful_attempt(
             error_message: None,
             error_classification: None,
         })?;
-    let current = state.service.get_task_detail(library_path, task_id)?.task;
+    let current = state.tasks().get_task_detail(library_path, task_id)?.task;
     let completed_status = if current.status == TaskStatus::CancelRequested {
         state
-            .service
+            .tasks()
             .append_task_event(imglab_core::AppendTaskEventRequest {
                 library_path: library_path.to_path_buf(),
                 task_id: task_id.clone(),
@@ -430,7 +438,7 @@ pub(crate) fn complete_successful_attempt(
     };
     append_log(log_path, "attempt completed\n")?;
     state
-        .service
+        .tasks()
         .append_task_event(imglab_core::AppendTaskEventRequest {
             library_path: library_path.to_path_buf(),
             task_id: task_id.clone(),
@@ -438,7 +446,7 @@ pub(crate) fn complete_successful_attempt(
             message: Some("Attempt completed".to_string()),
             payload_json: None,
         })?;
-    state.service.update_task_status(UpdateTaskStatusRequest {
+    state.tasks().update_task_status(UpdateTaskStatusRequest {
         library_path: library_path.to_path_buf(),
         task_id: task_id.clone(),
         status: completed_status,
@@ -459,7 +467,7 @@ pub(crate) fn complete_canceled_attempt(
 ) -> DomainResult<TaskSummary> {
     append_log(log_path, "attempt canceled\n")?;
     state
-        .service
+        .tasks()
         .complete_task_attempt(imglab_core::CompleteTaskAttemptRequest {
             library_path: library_path.to_path_buf(),
             attempt_id: attempt_id.clone(),
@@ -470,7 +478,7 @@ pub(crate) fn complete_canceled_attempt(
             error_classification: Some(TaskErrorClassification::Cancel),
         })?;
     state
-        .service
+        .tasks()
         .append_task_event(imglab_core::AppendTaskEventRequest {
             library_path: library_path.to_path_buf(),
             task_id: task_id.clone(),
@@ -478,7 +486,7 @@ pub(crate) fn complete_canceled_attempt(
             message: Some("Attempt canceled by user request".to_string()),
             payload_json: None,
         })?;
-    state.service.update_task_status(UpdateTaskStatusRequest {
+    state.tasks().update_task_status(UpdateTaskStatusRequest {
         library_path: library_path.to_path_buf(),
         task_id: task_id.clone(),
         status: TaskStatus::Canceled,
@@ -500,7 +508,7 @@ pub(crate) fn complete_failed_attempt(
     retry_policy: &RetryPolicy,
 ) -> DomainResult<TaskSummary> {
     let classification = classify_task_error(&error);
-    let detail = state.service.get_task_detail(library_path, task_id)?;
+    let detail = state.tasks().get_task_detail(library_path, task_id)?;
     let should_retry = retry_policy.should_auto_retry(classification, detail.task.attempt_count);
     let status = if should_retry {
         TaskStatus::RetryWaiting
@@ -514,7 +522,7 @@ pub(crate) fn complete_failed_attempt(
     });
     append_log(log_path, &format!("attempt failed: {error}\n"))?;
     state
-        .service
+        .tasks()
         .complete_task_attempt(imglab_core::CompleteTaskAttemptRequest {
             library_path: library_path.to_path_buf(),
             attempt_id: attempt_id.clone(),
@@ -525,7 +533,7 @@ pub(crate) fn complete_failed_attempt(
             error_classification: Some(classification),
         })?;
     state
-        .service
+        .tasks()
         .append_task_event(imglab_core::AppendTaskEventRequest {
             library_path: library_path.to_path_buf(),
             task_id: task_id.clone(),
@@ -539,7 +547,7 @@ pub(crate) fn complete_failed_attempt(
                 .as_ref()
                 .map(|value| format!("{{\"next_retry_at\":\"{value}\"}}")),
         })?;
-    state.service.update_task_status(UpdateTaskStatusRequest {
+    state.tasks().update_task_status(UpdateTaskStatusRequest {
         library_path: library_path.to_path_buf(),
         task_id: task_id.clone(),
         status,

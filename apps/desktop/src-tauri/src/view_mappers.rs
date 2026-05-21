@@ -416,7 +416,8 @@ pub(crate) fn album_list_item_view(item: imglab_core::AlbumListItem) -> AlbumLis
 }
 
 pub(crate) fn suggestion_view(summary: imglab_core::MetadataSuggestion) -> SuggestionView {
-    let confidence = service().normalize_confidence(&summary.confidence_json);
+    let confidence =
+        imglab_core::domain::metadata_review::normalize_confidence_json(&summary.confidence_json);
     SuggestionView {
         id: summary.id.0,
         asset_id: summary.asset_id.0,

@@ -2,7 +2,8 @@ use crate::*;
 
 #[tauri::command]
 pub(crate) fn update_asset_metadata(input: UpdateMetadataInput) -> Result<AssetView, CommandError> {
-    service()
+    desktop_app()
+        .albums()
         .update_asset_metadata(UpdateAssetMetadataRequest {
             library_path: input.library_path,
             asset_id: AssetId(input.asset_id),
@@ -19,7 +20,8 @@ pub(crate) fn update_asset_metadata(input: UpdateMetadataInput) -> Result<AssetV
 
 #[tauri::command]
 pub(crate) fn add_tag_to_asset(input: AddTagInput) -> Result<(), CommandError> {
-    service()
+    desktop_app()
+        .library()
         .add_tag_to_asset(&input.library_path, &AssetId(input.asset_id), &input.tag)
         .map_err(Into::into)
 }

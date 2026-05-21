@@ -1,1 +1,1 @@
-export { useTaskActivitySummary } from "../../studio-data-hooks";
+export { useTaskActivitySummary } from "../workflows/tasks";

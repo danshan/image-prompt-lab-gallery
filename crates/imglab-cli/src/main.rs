@@ -1,14 +1,10 @@
 use imglab_core::{
     prepare_generation_request, AssetId, CreateLibraryRequest, CreateMetadataSuggestionRequest,
     DomainError, ExportLibraryRequest, GenerateImageRequest, GenerationOperation,
-    GenerationRequestInput, ImageProvider, ImportAssetRequest, LocalGenerationService,
-    LocalLibraryService, MetadataSuggestionId, RepairLibraryRequest,
-    ReviewMetadataSuggestionRequest, SearchQuery,
+    GenerationRequestInput, ImportAssetRequest, LocalLibraryService, MetadataSuggestionId,
+    RepairLibraryRequest, ReviewMetadataSuggestionRequest, SearchQuery,
 };
-use imglab_core::{
-    AlbumService, AssetService, GalleryReadService, GenerationService, LibraryService,
-    MetadataReviewService, SearchService,
-};
+use imglab_core::{AlbumService, LibraryService, MetadataReviewService, SearchService};
 use imglab_provider_codex::CodexCliImageProvider;
 use serde_json::json;
 use std::path::PathBuf;
@@ -26,22 +22,25 @@ fn run(args: Vec<String>) -> Result<(), DomainError> {
         return Ok(());
     };
 
-    let service = LocalLibraryService::new(default_registry_path());
+    let app = imglab_core::infrastructure::composition::sqlite_application(
+        default_registry_path(),
+        imglab_core::FakeImageProvider::success("fake"),
+    );
     match command {
         "help" | "--help" | "-h" => {
             print_help();
             Ok(())
         }
-        "init" => init(&service, &args[1..]),
-        "library" => library(&service, &args[1..]),
-        "import" => import(&service, &args[1..]),
-        "export" => export(&service, &args[1..]),
-        "search" => search(&service, &args[1..]),
+        "init" => init(app.library(), &args[1..]),
+        "library" => library(app.library(), &args[1..]),
+        "import" => import(app.assets(), &args[1..]),
+        "export" => export(app.library(), &args[1..]),
+        "search" => search(app.library(), &args[1..]),
         "generate" => generate(&args[1..]),
-        "tag" => tag(&service, &args[1..]),
-        "rate" => rate(&service, &args[1..]),
-        "album" => album(&service, &args[1..]),
-        "suggestion" => suggestion(&service, &args[1..]),
+        "tag" => tag(app.library(), &args[1..]),
+        "rate" => rate(app.library(), &args[1..]),
+        "album" => album(app.library(), &args[1..]),
+        "suggestion" => suggestion(app.library(), &args[1..]),
         _ => Err(DomainError::InvalidGenerationParameters {
             message: format!("unsupported command: {command}"),
         }),
@@ -144,7 +143,10 @@ fn library(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainE
     }
 }
 
-fn import(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+fn import(
+    service: &imglab_core::infrastructure::composition::SqliteAssetUseCase,
+    args: &[String],
+) -> Result<(), DomainError> {
     let library_path =
         option_value(args, "--library").ok_or_else(|| DomainError::LibraryNotFound {
             path: "--library".to_string(),
@@ -262,15 +264,17 @@ fn generate(args: &[String]) -> Result<(), DomainError> {
 
 fn generate_with_provider<P>(provider: P, request: GenerateImageRequest) -> Result<(), DomainError>
 where
-    P: ImageProvider,
+    P: imglab_core::application::ports::ImageGenerationProvider,
 {
-    let service = LocalGenerationService::new(provider);
     let library_path = request.library_path.clone();
-    let versions = service.generate(request)?;
-    let library = LocalLibraryService::new(default_registry_path());
+    let app = imglab_core::infrastructure::composition::sqlite_application(
+        default_registry_path(),
+        provider,
+    );
+    let versions = app.generation().execute(request)?;
     print_json(json!({
         "versions": versions.into_iter().map(|version| {
-            let source_reference = library
+            let source_reference = app.gallery()
                 .get_asset_detail(&library_path, &version.asset_id, Some(&version.id))
                 .ok()
                 .and_then(|detail| detail.source_reference)

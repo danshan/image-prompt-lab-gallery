@@ -1,1 +1,1 @@
-export { useReviewDerivedState } from "../../studio-data-hooks";
+export { useReviewDerivedState } from "../workflows/review";

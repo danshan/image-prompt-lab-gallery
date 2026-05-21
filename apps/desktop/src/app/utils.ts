@@ -1,5 +1,6 @@
 import React from "react";
-import { formatAspectRatio, reviewFormTags, type ReviewFieldName, type ReviewFormState } from "../workbench-state";
+import { formatAspectRatio } from "./workflows/gallery";
+import { reviewFormTags, type ReviewFieldName, type ReviewFormState } from "./workflows/review";
 import { mockDetail } from "./mock-data";
 import type { AssetDetail, FileContext, GalleryAsset, Suggestion } from "./types";
 

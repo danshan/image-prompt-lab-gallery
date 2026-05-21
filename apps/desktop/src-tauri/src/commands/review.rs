@@ -4,7 +4,8 @@ use crate::*;
 pub(crate) fn create_suggestion(
     input: CreateSuggestionInput,
 ) -> Result<SuggestionView, CommandError> {
-    service()
+    desktop_app()
+        .library()
         .create_suggestion(CreateMetadataSuggestionRequest {
             library_path: input.library_path,
             asset_id: AssetId(input.asset_id),
@@ -24,9 +25,9 @@ pub(crate) fn create_suggestion(
 pub(crate) fn list_pending_suggestions(
     library_path: PathBuf,
 ) -> Result<Vec<SuggestionView>, CommandError> {
-    let service = service();
-    let library = service.open_library(&library_path)?;
-    service
+    let app = desktop_app();
+    let library = app.library().open_library(&library_path)?;
+    app.library()
         .list_pending(&library_path, &library.id)
         .map(|suggestions| suggestions.into_iter().map(suggestion_view).collect())
         .map_err(Into::into)
@@ -37,7 +38,8 @@ pub(crate) fn get_review_draft_detail(
     library_path: PathBuf,
     suggestion_id: String,
 ) -> Result<ReviewDraftDetailView, CommandError> {
-    service()
+    desktop_app()
+        .metadata_review()
         .get_review_draft_detail(&library_path, &MetadataSuggestionId(suggestion_id))
         .map(|detail| review_draft_detail_view(detail, &library_path))
         .map_err(Into::into)
@@ -45,7 +47,8 @@ pub(crate) fn get_review_draft_detail(
 
 #[tauri::command]
 pub(crate) fn accept_suggestion(input: ReviewSuggestionInput) -> Result<AssetView, CommandError> {
-    service()
+    desktop_app()
+        .metadata_review()
         .accept(ReviewMetadataSuggestionRequest {
             library_path: input.library_path,
             suggestion_id: MetadataSuggestionId(input.suggestion_id),
@@ -64,7 +67,8 @@ pub(crate) fn batch_accept_suggestions(
     input: BatchReviewSuggestionsInput,
 ) -> Result<Vec<AssetView>, CommandError> {
     let library_path = input.library_path;
-    service()
+    desktop_app()
+        .metadata_review()
         .batch_accept(BatchReviewMetadataSuggestionRequest {
             library_path: library_path.clone(),
             suggestions: input
@@ -87,7 +91,8 @@ pub(crate) fn batch_accept_suggestions(
 
 #[tauri::command]
 pub(crate) fn reject_suggestion(input: RejectSuggestionInput) -> Result<(), CommandError> {
-    service()
+    desktop_app()
+        .metadata_review()
         .reject(
             &input.library_path,
             &MetadataSuggestionId(input.suggestion_id),
@@ -104,7 +109,8 @@ pub(crate) fn batch_reject_suggestions(
         .into_iter()
         .map(MetadataSuggestionId)
         .collect::<Vec<_>>();
-    service()
+    desktop_app()
+        .metadata_review()
         .batch_reject(&input.library_path, &suggestion_ids)
         .map_err(Into::into)
 }
@@ -113,7 +119,8 @@ pub(crate) fn batch_reject_suggestions(
 pub(crate) fn list_suggestion_history(
     input: SuggestionHistoryInput,
 ) -> Result<Vec<SuggestionView>, CommandError> {
-    service()
+    desktop_app()
+        .metadata_review()
         .list_history(&input.library_path, &AssetId(input.asset_id))
         .map(|suggestions| suggestions.into_iter().map(suggestion_view).collect())
         .map_err(Into::into)
@@ -146,7 +153,8 @@ pub(crate) async fn regenerate_suggestion(
         let title = generator.generate(&title_input)?.value;
         let description = generator.generate(&description_input)?.value;
         let schema_prompt = generator.generate(&schema_input)?.value;
-        service()
+        desktop_app()
+            .library()
             .create_suggestion(CreateMetadataSuggestionRequest {
                 library_path,
                 asset_id: AssetId(asset_id),

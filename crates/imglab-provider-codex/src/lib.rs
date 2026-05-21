@@ -1,7 +1,8 @@
-use imglab_core::{
-    DomainError, DomainResult, GeneratedImage, GenerationParameters, GenerationResult,
-    ImageProvider,
+use imglab_core::application::ports::ImageGenerationProvider;
+use imglab_core::domain::generation::{
+    GeneratedImage, GenerationOperation, GenerationParameters, GenerationResult,
 };
+use imglab_core::{DomainError, DomainResult};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
@@ -258,16 +259,15 @@ impl Default for CodexCliImageProvider {
     }
 }
 
-impl ImageProvider for CodexCliImageProvider {
+impl ImageGenerationProvider for CodexCliImageProvider {
     fn name(&self) -> &'static str {
         "codex-cli"
     }
 
-    fn supports_operation(&self, operation: imglab_core::GenerationOperation) -> bool {
+    fn supports_operation(&self, operation: GenerationOperation) -> bool {
         matches!(
             operation,
-            imglab_core::GenerationOperation::TextToImage
-                | imglab_core::GenerationOperation::ImageToImage
+            GenerationOperation::TextToImage | GenerationOperation::ImageToImage
         )
     }
 

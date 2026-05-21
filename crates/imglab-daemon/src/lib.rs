@@ -1,12 +1,11 @@
 use imglab_core::{
     classify_task_error, evaluate_scheduler, prepare_generation_request, AssetId,
     BatchCreateTasksRequest, CreateMetadataSuggestionRequest, CreateTaskInput, DomainError,
-    DomainResult, GalleryReadService, GenerationOperation, GenerationRequestInput,
-    GenerationService, ImageProvider, LibraryId, LibraryService, LibrarySummary,
-    LocalGenerationService, LocalLibraryService, MetadataReviewService, ReorderQueuedTasksRequest,
-    RetryPolicy, TaskAttempt, TaskDetail, TaskErrorClassification, TaskEvent, TaskId, TaskOutput,
-    TaskOutputType, TaskSchedulerConfig, TaskService, TaskStatus, TaskSummary, TaskType,
-    UpdateTaskStatusRequest, CURRENT_SCHEMA_VERSION,
+    DomainResult, GenerationOperation, GenerationRequestInput, LibraryId, LibraryService,
+    LibrarySummary, LocalLibraryService, ReorderQueuedTasksRequest, RetryPolicy, TaskAttempt,
+    TaskDetail, TaskErrorClassification, TaskEvent, TaskId, TaskOutput, TaskOutputType,
+    TaskSchedulerConfig, TaskService, TaskStatus, TaskSummary, TaskType, UpdateTaskStatusRequest,
+    CURRENT_SCHEMA_VERSION,
 };
 use imglab_provider_codex::CodexCliImageProvider;
 use serde::{Deserialize, Serialize};

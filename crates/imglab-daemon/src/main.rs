@@ -1,4 +1,4 @@
-use imglab_core::{RetryPolicy, TaskSchedulerConfig};
+use imglab_core::task_scheduler::{RetryPolicy, TaskSchedulerConfig};
 use imglab_daemon::{
     bind_loopback_listener, generate_session_token, recover_open_libraries, serve_forever_shared,
     spawn_scheduler_loop, write_runtime_file, write_token_file, DaemonConfig, DaemonState,

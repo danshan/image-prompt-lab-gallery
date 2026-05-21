@@ -1,15 +1,31 @@
 use crate::*;
 
+pub(crate) fn desktop_app(
+) -> imglab_core::infrastructure::composition::SqliteImgLabApplication<imglab_core::FakeImageProvider>
+{
+    desktop_app_with_provider(imglab_core::FakeImageProvider::success("fake"))
+}
+
+pub(crate) fn desktop_app_with_provider<P>(
+    provider: P,
+) -> imglab_core::infrastructure::composition::SqliteImgLabApplication<P>
+where
+    P: imglab_core::application::ports::ImageGenerationProvider,
+{
+    imglab_core::infrastructure::composition::sqlite_application(default_registry_path(), provider)
+}
+
 pub(crate) fn run_generation<P>(
     provider: P,
     request: GenerateImageRequest,
 ) -> Result<Vec<VersionView>, CommandError>
 where
-    P: ImageProvider,
+    P: imglab_core::application::ports::ImageGenerationProvider,
 {
     let library_root = request.library_path.clone();
-    LocalGenerationService::new(provider)
-        .generate(request)
+    desktop_app_with_provider(provider)
+        .generation()
+        .execute(request)
         .map(|versions| {
             versions
                 .into_iter()
@@ -17,10 +33,6 @@ where
                 .collect()
         })
         .map_err(Into::into)
-}
-
-pub(crate) fn service() -> LocalLibraryService {
-    LocalLibraryService::new(default_registry_path())
 }
 
 pub(crate) fn default_registry_path() -> PathBuf {

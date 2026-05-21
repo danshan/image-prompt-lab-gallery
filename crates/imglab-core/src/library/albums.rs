@@ -7,6 +7,10 @@ use super::{
     LocalLibraryService,
 };
 use crate::{
+    domain::album::{
+        album_kind_from_str, album_kind_to_str, ensure_manual_album_kind,
+        ensure_supported_smart_query_field,
+    },
     AlbumId, AlbumKind, AlbumListItem, AlbumService, AlbumSummary, AssetId,
     BatchAddAssetsToAlbumRequest, DomainError, DomainResult, GallerySort, LibraryId,
     LibraryService, ReorderAlbumItemsRequest, ReorderAlbumsRequest, ReviewStatusFilter,
@@ -292,10 +296,7 @@ fn create_album(
             |row| row.get(0),
         )
         .map_err(database_error)?;
-    let kind_str = match kind {
-        AlbumKind::Manual => "manual",
-        AlbumKind::Smart => "smart",
-    };
+    let kind_str = album_kind_to_str(kind);
     connection
         .execute(
             "
@@ -312,14 +313,6 @@ fn create_album(
     })
 }
 
-fn album_kind_from_str(kind: &str) -> AlbumKind {
-    if kind == "smart" {
-        AlbumKind::Smart
-    } else {
-        AlbumKind::Manual
-    }
-}
-
 fn validate_smart_query(query_json: &str) -> DomainResult<()> {
     let _ = parse_smart_query(query_json)?;
     Ok(())
@@ -332,24 +325,8 @@ pub(super) fn parse_smart_query(query_json: &str) -> DomainResult<SmartAlbumQuer
         .ok_or_else(|| DomainError::InvalidSmartAlbumQuery {
             message: "smart query must be a JSON object".to_string(),
         })?;
-    const ALLOWED: &[&str] = &[
-        "text",
-        "tags",
-        "providers",
-        "minRating",
-        "reviewStatus",
-        "category",
-        "status",
-        "createdAtFrom",
-        "createdAtTo",
-        "sort",
-    ];
     for key in object.keys() {
-        if !ALLOWED.contains(&key.as_str()) {
-            return Err(DomainError::InvalidSmartAlbumQuery {
-                message: format!("unsupported smart query field: {key}"),
-            });
-        }
+        ensure_supported_smart_query_field(key)?;
     }
     let query = SmartAlbumQuery {
         text: optional_string(object.get("text"), "text")?,
@@ -502,12 +479,7 @@ fn ensure_manual_album(connection: &Connection, album_id: &AlbumId) -> DomainRes
         .ok_or_else(|| DomainError::InvalidAssetReference {
             id: album_id.0.clone(),
         })?;
-    if kind != "manual" {
-        return Err(DomainError::InvalidSmartAlbumQuery {
-            message: "manual album operation cannot be applied to smart album".to_string(),
-        });
-    }
-    Ok(())
+    ensure_manual_album_kind(&kind)
 }
 
 fn add_assets_to_manual_album(

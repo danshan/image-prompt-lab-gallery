@@ -8,7 +8,7 @@ use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub(super) fn timestamp_string() -> String {
+pub(crate) fn timestamp_string() -> String {
     let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis())
@@ -16,7 +16,7 @@ pub(super) fn timestamp_string() -> String {
     millis.to_string()
 }
 
-pub(super) fn managed_original_path(
+pub(crate) fn managed_original_path(
     version_id: &AssetVersionId,
     extension: &str,
     timestamp: &str,
@@ -44,7 +44,7 @@ fn civil_from_days(days_since_unix_epoch: i64) -> (i32, u32, u32) {
     (year as i32, month as u32, day as u32)
 }
 
-pub(super) fn file_digest(path: &Path, algorithm: &str) -> DomainResult<String> {
+pub(crate) fn file_digest(path: &Path, algorithm: &str) -> DomainResult<String> {
     let file = File::open(path).map_err(|error| io_error(path, error))?;
     match algorithm {
         CHECKSUM_MD5 => md5_reader(file).map_err(|error| io_error(path, error)),
@@ -55,7 +55,7 @@ pub(super) fn file_digest(path: &Path, algorithm: &str) -> DomainResult<String> 
     }
 }
 
-pub(super) fn image_dimensions(path: &Path) -> DomainResult<(Option<u32>, Option<u32>)> {
+pub(crate) fn image_dimensions(path: &Path) -> DomainResult<(Option<u32>, Option<u32>)> {
     const DIMENSION_PREFIX_BYTES: usize = 64 * 1024;
     let file = File::open(path).map_err(|error| io_error(path, error))?;
     let mut bytes = Vec::with_capacity(DIMENSION_PREFIX_BYTES);
@@ -172,7 +172,7 @@ pub(super) fn is_safe_relative_path(path: &Path) -> bool {
         .all(|component| matches!(component, Component::Normal(_)))
 }
 
-pub(super) fn managed_storage_size(root_path: &Path) -> DomainResult<u64> {
+pub(crate) fn managed_storage_size(root_path: &Path) -> DomainResult<u64> {
     REQUIRED_DIRS
         .iter()
         .filter(|relative| !relative.contains('/'))
@@ -200,7 +200,7 @@ fn directory_size(path: &Path) -> DomainResult<u64> {
     Ok(total)
 }
 
-pub(super) fn normalized_extension(path: &Path) -> String {
+pub(crate) fn normalized_extension(path: &Path) -> String {
     path.extension()
         .and_then(|extension| extension.to_str())
         .map(|extension| extension.to_ascii_lowercase())
@@ -208,7 +208,7 @@ pub(super) fn normalized_extension(path: &Path) -> String {
         .unwrap_or_else(|| "bin".to_string())
 }
 
-pub(super) fn mime_type_for_extension(extension: &str) -> &'static str {
+pub(crate) fn mime_type_for_extension(extension: &str) -> &'static str {
     match extension {
         "jpg" | "jpeg" => "image/jpeg",
         "png" => "image/png",
@@ -219,7 +219,7 @@ pub(super) fn mime_type_for_extension(extension: &str) -> &'static str {
     }
 }
 
-pub(super) fn extension_for_mime_type(mime_type: &str) -> &'static str {
+pub(crate) fn extension_for_mime_type(mime_type: &str) -> &'static str {
     match mime_type {
         "image/jpeg" => "jpg",
         "image/webp" => "webp",

@@ -1,4 +1,4 @@
-import type { GalleryQueryState } from "./workbench-state";
+import type { GalleryQueryState } from "./app/workflows/gallery/state.js";
 
 export type TaskOrderState = {
   id: string;

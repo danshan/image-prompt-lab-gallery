@@ -1,4 +1,4 @@
-import type { ReviewFieldName } from "../workbench-state";
+import type { ReviewFieldName } from "./workflows/review/state.js";
 
 export type View = "gallery" | "albums" | "review" | "queue" | "settings";
 export type TaskPanel = "compose" | "queue" | "detail";

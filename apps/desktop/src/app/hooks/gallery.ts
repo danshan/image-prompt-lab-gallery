@@ -1,1 +1,1 @@
-export { useGalleryDerivedState } from "../../studio-data-hooks";
+export { useGalleryDerivedState } from "../workflows/gallery";

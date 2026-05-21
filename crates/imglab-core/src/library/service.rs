@@ -3,25 +3,18 @@ use super::{
     storage::timestamp_string, DATABASE_FILE, MANIFEST_FILE, REQUIRED_DIRS,
 };
 use crate::{
-    CreateLibraryRequest, DomainError, DomainResult, LibraryId, LibrarySummary,
-    CURRENT_SCHEMA_VERSION,
+    domain::library::{
+        ensure_schema_supported, summary_from_manifest as domain_summary_from_manifest,
+        LibraryManifest,
+    },
+    CreateLibraryRequest, DomainError, DomainResult, LibrarySummary, CURRENT_SCHEMA_VERSION,
 };
 use rusqlite::Connection;
-use serde::{Deserialize, Serialize};
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 use uuid::Uuid;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LibraryManifest {
-    pub id: String,
-    pub name: String,
-    pub schema_version: u32,
-    pub created_at: String,
-    pub app: String,
-}
 
 #[derive(Debug, Clone)]
 pub struct LocalLibraryService {
@@ -77,12 +70,7 @@ impl LocalLibraryService {
         Self::validate_layout(root_path)?;
         let manifest = Self::read_manifest(root_path)?;
 
-        if manifest.schema_version > CURRENT_SCHEMA_VERSION {
-            return Err(DomainError::SchemaMismatch {
-                expected: CURRENT_SCHEMA_VERSION,
-                found: manifest.schema_version,
-            });
-        }
+        ensure_schema_supported(manifest.schema_version, CURRENT_SCHEMA_VERSION)?;
 
         let database_path = Self::database_path(root_path);
         let connection = Connection::open(&database_path).map_err(database_error)?;
@@ -117,13 +105,7 @@ impl LocalLibraryService {
         manifest: &LibraryManifest,
         hidden: bool,
     ) -> LibrarySummary {
-        LibrarySummary {
-            id: LibraryId(manifest.id.clone()),
-            name: manifest.name.clone(),
-            root_path: root_path.to_path_buf(),
-            hidden,
-            schema_version: manifest.schema_version,
-        }
+        domain_summary_from_manifest(root_path, manifest, hidden)
     }
 
     pub(super) fn validate_layout(root_path: &Path) -> DomainResult<()> {
@@ -154,7 +136,7 @@ impl LocalLibraryService {
         Ok(())
     }
 
-    pub(super) fn open_library_database(root_path: &Path) -> DomainResult<Connection> {
+    pub(crate) fn open_library_database(root_path: &Path) -> DomainResult<Connection> {
         Self::validate_layout(root_path)?;
         let database_path = Self::database_path(root_path);
         let connection = Connection::open(&database_path).map_err(database_error)?;

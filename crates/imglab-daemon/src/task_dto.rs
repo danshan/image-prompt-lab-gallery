@@ -1,6 +1,7 @@
 use crate::runtime::*;
 use crate::views::generation_operation_as_str;
 use crate::*;
+use imglab_core::application::ports::ImageGenerationProvider;
 
 pub fn health_view() -> HealthView {
     HealthView {
@@ -15,8 +16,8 @@ pub(crate) fn provider_capabilities_view() -> Vec<ProviderCapabilityView> {
     let codex = CodexCliImageProvider::default();
     let fake = imglab_core::FakeImageProvider::success("fake");
     [
-        (&codex as &dyn ImageProvider),
-        (&fake as &dyn ImageProvider),
+        (&codex as &dyn ImageGenerationProvider),
+        (&fake as &dyn ImageGenerationProvider),
     ]
     .into_iter()
     .map(|provider| ProviderCapabilityView {

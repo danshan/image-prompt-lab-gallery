@@ -1,27 +1,12 @@
 import React, { useEffect, useState } from "react";
+import { moveItem } from "../../workflows/shared/state";
 import {
-  addReviewFormTag,
-  applySuggestionFieldToReviewForm,
-  clearAlbumQuery,
-  formatAspectRatio,
-  isReviewFieldGenerating,
-  libraryMaintenanceActions,
-  moveItem,
-  parseTaskDraftImport,
-  removeReviewFormTag,
-  resetGalleryQuery,
-  reviewFormTags,
-  selectedOrCurrentIds,
-  toggleGalleryProvider,
+  previewSmartAlbumCount,
+  smartAlbumQueryJson,
+  splitCsv,
   updateGalleryQuery,
-  type GalleryQueryState,
   type GallerySort,
-  type DetailLoadState,
-  type ReviewFieldName,
-  type ReviewFormState,
-  type ReviewStatusFilter,
-  type SettingsSection,
-} from "../../../workbench-state";
+} from "../../workflows/albums";
 import { Icon } from "../../../studio-icons";
 import {
   formatOperation,
@@ -138,17 +123,19 @@ export function AlbumsWorkspace({
     searchNeedle.length === 0
       ? albums
       : albums.filter((album) => album.name.toLocaleLowerCase().includes(searchNeedle));
-  const smartPreviewCount = previewSmartAlbumCount(gallery, {
+  const smartBuilder = {
     text: smartText,
-    tags: splitCsv(smartTags),
-    providers: splitCsv(smartProviders),
-    minRating: smartMinRating.trim() ? Number(smartMinRating.trim()) : null,
+    tags: smartTags,
+    providers: smartProviders,
+    minRating: smartMinRating,
     reviewPending: smartReviewPending,
     category: smartCategory,
     status: smartStatus,
     createdAtFrom: smartCreatedAtFrom,
     createdAtTo: smartCreatedAtTo,
-  });
+    sort: smartSort,
+  };
+  const smartPreviewCount = previewSmartAlbumCount(gallery, smartBuilder);
   return (
     <section className="albums-workspace">
       <div className="workspace-panel album-list-panel">
@@ -263,19 +250,7 @@ export function AlbumsWorkspace({
                       onCreateAlbum();
                       return;
                     }
-                    const query = {
-                      ...(smartText.trim() ? { text: smartText.trim() } : {}),
-                      ...(smartTags.trim() ? { tags: splitCsv(smartTags) } : {}),
-                      ...(smartProviders.trim() ? { providers: splitCsv(smartProviders) } : {}),
-                      ...(smartMinRating.trim() ? { minRating: Number(smartMinRating.trim()) } : {}),
-                      ...(smartReviewPending ? { reviewStatus: "pending" } : {}),
-                      ...(smartCategory ? { category: smartCategory } : {}),
-                      ...(smartStatus.trim() ? { status: smartStatus.trim() } : {}),
-                      ...(smartCreatedAtFrom.trim() ? { createdAtFrom: smartCreatedAtFrom.trim() } : {}),
-                      ...(smartCreatedAtTo.trim() ? { createdAtTo: smartCreatedAtTo.trim() } : {}),
-                      sort: smartSort,
-                    };
-                    onCreateSmartAlbum(newAlbumName, JSON.stringify(query));
+                    onCreateSmartAlbum(newAlbumName, smartAlbumQueryJson(smartBuilder));
                   }}
                 >
                   Create
@@ -408,58 +383,4 @@ export function AlbumsWorkspace({
       </div>
     </section>
   );
-}
-
-function splitCsv(value: string): string[] {
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0);
-}
-
-function previewSmartAlbumCount(
-  assets: GalleryAsset[],
-  query: {
-    text: string;
-    tags: string[];
-    providers: string[];
-    minRating: number | null;
-    reviewPending: boolean;
-    category: string;
-    status: string;
-    createdAtFrom: string;
-    createdAtTo: string;
-  },
-): number {
-  const text = query.text.trim().toLocaleLowerCase();
-  return assets.filter((asset) => {
-    if (text && ![asset.title, asset.category, asset.status, asset.provider, asset.modelLabel, asset.prompt, ...asset.tags].some((value) => value?.toLocaleLowerCase().includes(text))) {
-      return false;
-    }
-    if (query.tags.length > 0 && !query.tags.every((tag) => asset.tags.includes(tag))) {
-      return false;
-    }
-    if (query.providers.length > 0 && (!asset.provider || !query.providers.includes(asset.provider))) {
-      return false;
-    }
-    if (query.minRating !== null && (asset.rating ?? 0) < query.minRating) {
-      return false;
-    }
-    if (query.reviewPending && asset.reviewPendingCount === 0) {
-      return false;
-    }
-    if (query.category && asset.category !== query.category) {
-      return false;
-    }
-    if (query.status.trim() && asset.status !== query.status.trim()) {
-      return false;
-    }
-    if (query.createdAtFrom.trim() && asset.createdAt < query.createdAtFrom.trim()) {
-      return false;
-    }
-    if (query.createdAtTo.trim() && asset.createdAt > query.createdAtTo.trim()) {
-      return false;
-    }
-    return true;
-  }).length;
 }

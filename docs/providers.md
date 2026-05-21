@@ -16,6 +16,8 @@ Codex provider 不指定图片模型, 也不指定输出路径. 它调用本机 
 
 桌面端 Generate 工作流不会在 Tauri process 内直接运行 Codex CLI. Desktop 会把 generation request 转换为 daemon `image_generation` task, 由 daemon scheduler claim task, 创建 attempt, 执行 provider, 写入 attempt log, 再将 generation event, asset, asset version 和 task output links commit 到 core library. 这样 desktop 关闭或重启后, queued, retry waiting 和 interrupted running tasks 可以通过 daemon recovery 恢复.
 
+Provider runtime 通过 `imglab-core` application facade 和 `ImageProvider` port 进入业务核心. Provider adapter 只负责执行外部命令或 API, 解析 provider result, 并返回 normalized result. Generation operation 推断, input image loading, asset version number 分配, same-asset parent validation, reference source 语义, generation event persistence 和 task output link 写入都由 application/domain 处理, 不应在 provider adapter, daemon executor 或 Tauri command 中重复实现.
+
 当前 scheduler 默认并发策略:
 
 - Global task concurrency: `2`.
@@ -50,7 +52,7 @@ Adapter 会:
 - 校验文件存在.
 - 读取文件 bytes, 再交给 core 导入 managed library.
 - 将 command, prompt, stdout 和 stderr 保存到 generation event raw payload.
-- 通过 core 的 generation request builder 复用 CLI 和 desktop 的 provider 名称归一化, operation 推断和 input image loading.
+- 通过 core application/domain policy 复用 CLI, daemon 和 desktop 的 provider 名称归一化, operation 推断和 input image loading.
 - 由 core 写入当前标准 checksum metadata: `SHA-256` algorithm 和 64 位十六进制 digest.
 - 在 daemon execution 中, stdout, stderr 和 task state transition 会附加到 attempt log, 可从 Tasks Queue detail 和 Settings Logs 查看.
 
@@ -89,4 +91,12 @@ export OPENAI_API_KEY=<key>
 export XAI_API_KEY=<key>
 ```
 
-这些 native provider 完成后, CLI 和桌面端仍应只依赖统一的 `ImageProvider` trait 和 normalized `GenerationResult`.
+这些 native provider 完成后, CLI, daemon 和桌面端仍应只依赖统一的 `ImageProvider` trait 和 normalized `GenerationResult`.
+
+实现 native provider 时的边界要求:
+
+- Provider crate 不分配 asset `version_number`.
+- Provider crate 不解释 parent version 是否属于同一 asset.
+- Provider crate 不直接写 SQLite 或 managed filesystem.
+- Provider crate 不返回 desktop 或 daemon view DTO.
+- Provider crate 通过 `ImageProvider` port 返回 provider output, 由 application use case 完成 persistence 和 task handoff.

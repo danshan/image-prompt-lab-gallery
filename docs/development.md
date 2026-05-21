@@ -14,18 +14,20 @@
 ```bash
 cargo fmt --all --check
 cargo test -p imglab-core
+cargo test -p imglab-cli
 cargo test -p imglab-daemon
 cargo test -p imglab-desktop
-openspec validate "add-generate-task-manager-daemon"
+cargo test -p imglab-provider-codex -p imglab-provider-grok
+scripts/check-architecture.sh
+openspec validate refactor-core-ddd-boundaries --strict
 ```
 
 桌面前端:
 
 ```bash
-cd apps/desktop
-npm test
-npm run build
-npm run dev -- --host 127.0.0.1
+npm test --prefix apps/desktop
+npm run build --prefix apps/desktop
+npm run dev --prefix apps/desktop -- --host 127.0.0.1
 ```
 
 Tauri Rust crate 需要完整 Cargo 依赖缓存. 如果离线检查提示缺失依赖, 先在允许联网的环境中准备依赖:
@@ -61,28 +63,44 @@ cargo run --offline -p imglab-cli -- generate --library /tmp/imglab-library --pr
 
 ## 模块地图
 
-当前代码按 runtime boundary 和业务责任分层:
+当前 core 采用 DDD boundary. 新代码优先按 `domain -> application -> infrastructure -> runtime interface` 的依赖方向组织, runtime 不应直接复刻已经迁移到 domain 或 application 的业务规则.
 
 ```text
 crates/imglab-core/src/
-  dto.rs
-  library/
-    mod.rs              # module hub and public service exports
-    service.rs          # library lifecycle, layout, manifest orchestration
-    registry.rs         # registry database lifecycle and registered libraries
-    generation.rs       # generation service and shared request planning
-    maintenance.rs      # repair and integrity orchestration
-    diagnostics.rs      # studio overview, diagnostics, provider health
-    *.rs                # focused domain modules for assets, gallery, albums, metadata, tasks
+  domain/
+    shared/             # identities and shared value objects
+    library/            # resource library identity, manifest, schema compatibility
+    asset/              # asset aggregate, versions, lineage, version number policies
+    generation/         # generation operation, provider capability and request policy
+    metadata_review/    # suggestion review status and confidence policies
+    album/              # manual and smart album rules
+    task/               # task status machine, attempts, retry and scheduler policies
+  application/
+    facade.rs           # stable ImgLabApplication entrypoint
+    ports/              # repositories, storage, provider, clock, id and transaction ports
+    use_cases/          # write orchestration for library, assets, generation, review, albums, tasks
+    read_models/        # query/read shapes shared by application callers
+    testing.rs          # fake/in-memory ports for application tests
+  infrastructure/
+    composition.rs      # SQLite-backed composition root
+    sqlite/             # context-owned repository adapters and schema entrypoint
+    filesystem/         # managed file store adapter
+    registry/           # local library registry adapter
+  interface_contracts/
+    dto.rs              # runtime-facing DTO compatibility surface
+  compatibility.rs      # doc-hidden legacy root exports for downstream migration
+  library/              # compatibility local-library facade and legacy service adapters
+  dto.rs                # legacy DTO definitions still exposed through interface contracts
+  provider.rs           # provider compatibility traits and fake provider surface
 
 crates/imglab-daemon/src/
   lib.rs                # module hub and public daemon entrypoint
-  runtime.rs            # daemon runtime state, listener, runtime metadata
+  runtime.rs            # daemon runtime state and application facade ownership
   runtime_io.rs         # runtime and token file persistence
   transport.rs          # local HTTP parsing, auth, response serialization
   routes.rs             # API route dispatch and request parsing
-  scheduler.rs          # recovery, runnable checks, scheduler ticks
-  executors.rs          # image generation and metadata task execution
+  scheduler.rs          # daemon-owned recovery, runnable checks, scheduler ticks
+  executors.rs          # task execution through application use cases and provider ports
   logs.rs               # task attempt logs and log tail reads
   task_dto.rs           # daemon task request DTOs
   views.rs              # daemon response DTOs and conversions
@@ -91,25 +109,69 @@ apps/desktop/src-tauri/src/
   lib.rs                # Tauri plugin setup, managed state, command registration, startup
   errors.rs             # command error mapping
   paths.rs              # registry paths, daemon paths, library path normalization, reveal helpers
-  services.rs           # desktop service and provider construction
+  services.rs           # desktop application facade construction
   views.rs              # command input and output DTOs
   view_mappers.rs       # domain-to-command-view conversion
   commands/             # Tauri commands split by workflow
 
 apps/desktop/src/
   main.tsx              # React bootstrap only
-  app/App.tsx           # desktop application state and workflow orchestration
+  app/App.tsx           # shell composition wrapper
+  app/StudioAppController.tsx
+                        # top-level desktop controller wiring
   app/types.ts          # frontend DTOs and app-level types
   app/mock-data.ts      # browser preview fixtures
   app/tauri-adapter.ts  # invoke, dialog, runtime and image path adapter
   app/utils.ts          # focused formatting, prompt, path and thumbnail helpers
+  app/workflows/
+    gallery/            # gallery controller, query, derived state and pure state
+    albums/             # album controller, smart/manual album query and state
+    review/             # review controller, draft state and screen props
+    tasks/              # queue/task controller, detail, derived state and transitions
+    settings/           # library/log settings controller and state
+    library/            # shared library selection state
+    shared/             # generic pure state helpers
   app/screens/          # screen/workflow components
   app/components/       # small shared UI components
   app/hooks/            # workflow hook entrypoints
-  workbench-state.ts    # pure state transitions with Node tests
+  workbench-state.ts    # compatibility barrel for existing Node tests
 ```
 
-`imglab-core` remains the business source of truth. CLI, daemon, and Tauri command layers should call core services or the shared generation planner instead of re-implementing provider normalization, model defaults, operation inference, or library mutation semantics.
+`imglab-core` remains the business source of truth. CLI, daemon, and Tauri command layers should call the application facade, use cases, or explicit interface contracts instead of re-implementing provider normalization, model defaults, operation inference, version-number allocation, retry rules, task transitions, or library mutation semantics.
+
+## DDD 边界与 Composition Root
+
+`domain` 只表达业务事实和 invariant. 它可以依赖 shared value objects 和 domain-local policies, 但不能依赖 SQLite, filesystem, daemon, Tauri, CLI parser, or desktop view types.
+
+`application` 负责 orchestration. Use cases 通过 ports 读取事实, 组合 domain policy, 决定 transaction boundary, 再把明确的 persistence command 交给 repository adapters. 例如 asset child version 的 `version_number` 由 application/domain policy 决定, SQLite repository 只执行 insert/update.
+
+`infrastructure` 实现 ports. 当前 SQLite-backed composition root 位于 `crates/imglab-core/src/infrastructure/composition.rs`, 通过 `sqlite_application(registry_path, provider)` 装配 repositories, managed file store, registry, clock, id generator 和 transaction manager.
+
+Runtime integration:
+
+- `imglab-cli` 在 command handler 中构造 `sqlite_application(...)`, 并通过 application facade 执行 library, asset, search, generation, album, metadata 和 task workflows.
+- `imglab-daemon` 的 `DaemonState` 持有 `SqliteImgLabApplication<P>` 和 daemon-owned runtime state. Routes, scheduler 和 executors 通过 application facade/use cases 修改业务状态.
+- `apps/desktop/src-tauri` 通过 `services::desktop_app()` 构造 desktop application facade. Tauri commands 只做 input validation, error mapping 和 command view mapping.
+- `apps/desktop/src` 的 workflow state 放在 `app/workflows/*`. Screen 和 hook 通过 workflow-owned controller/state/derived modules 协作, 避免把 Gallery, Albums, Review, Queue 和 Settings 的状态机重新集中到单一大文件.
+
+## Architecture Check
+
+架构依赖检查:
+
+```bash
+scripts/check-architecture.sh
+```
+
+该脚本当前扫描 `crates/imglab-core/src/domain`, `crates/imglab-core/src/application`, runtime crates 和 desktop workflow modules, 并报告以下风险:
+
+- Domain modules 直接导入 `rusqlite`.
+- Domain modules 直接使用 `std::fs`.
+- Domain modules 依赖 daemon, CLI, Tauri, infrastructure 或 legacy concrete local-library service.
+- Application modules 直接依赖 SQLite, filesystem, runtime crates, infrastructure 或 legacy library modules.
+- Runtime modules 重新引入 `LocalGenerationService` 或 asset `version_number` 分配规则.
+- Desktop source modules 把 `workbench-state` 当作 primary state owner 导入.
+
+这不是完整静态分析器. 它是一个低成本 guardrail, 用来阻止最危险的依赖方向回流. 如果新增 domain boundary, application port, runtime adapter 或 workflow state owner, 应优先扩展该脚本的搜索模式, 再把新规则写入本节.
 
 ## 桌面端
 

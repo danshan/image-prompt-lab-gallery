@@ -1,5 +1,8 @@
 use super::{database_error, io_error, storage::timestamp_string, LocalLibraryService};
-use crate::{DomainError, DomainResult, LibraryId, LibrarySummary, RenameLibraryAliasRequest};
+use crate::{
+    domain::library::RegistryAlias, DomainError, DomainResult, LibraryId, LibrarySummary,
+    RenameLibraryAliasRequest,
+};
 use rusqlite::{params, Connection, Row};
 use std::{fs, path::PathBuf};
 
@@ -66,7 +69,7 @@ impl LocalLibraryService {
         Ok(())
     }
 
-    pub(super) fn registry_contains_library_id(&self, library_id: &str) -> DomainResult<bool> {
+    pub(crate) fn registry_contains_library_id(&self, library_id: &str) -> DomainResult<bool> {
         let connection = self.ensure_registry()?;
         let count: i64 = connection
             .query_row(
@@ -124,18 +127,13 @@ impl LocalLibraryService {
         request: RenameLibraryAliasRequest,
     ) -> DomainResult<LibrarySummary> {
         let library_id = request.library_id.0;
-        let alias = request.alias.trim();
-        if alias.is_empty() {
-            return Err(DomainError::InvalidLibraryAlias {
-                message: "library alias cannot be empty".to_string(),
-            });
-        }
+        let alias = RegistryAlias::parse(&request.alias)?;
 
         let connection = self.ensure_registry()?;
         let updated = connection
             .execute(
                 "UPDATE library_registry SET name = ?1 WHERE id = ?2",
-                params![alias, &library_id],
+                params![alias.as_str(), &library_id],
             )
             .map_err(database_error)?;
         if updated == 0 {

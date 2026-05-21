@@ -5,6 +5,10 @@ use super::{
     LocalLibraryService,
 };
 use crate::{
+    domain::metadata_review::{
+        is_pending_review, normalize_confidence_json, ACCEPTED_STATUS, PENDING_REVIEW_STATUS,
+        REJECTED_STATUS,
+    },
     AssetId, AssetSummary, BatchReviewMetadataSuggestionRequest, ConfidenceScoreView, DomainError,
     DomainResult, GalleryReadService, GeneratedReviewFieldResultView, LibraryId,
     MetadataReviewService, MetadataSuggestion, MetadataSuggestionId, RelatedTaskSummaryView,
@@ -37,7 +41,7 @@ impl MetadataReviewService for LocalLibraryService {
                     suggested_schema_prompt, suggested_tags_json, suggested_category, confidence_json,
                     status, created_at, reviewed_at
                 )
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'pending_review', ?10, NULL)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, NULL)
                 ",
                 params![
                     suggestion_id.0,
@@ -49,6 +53,7 @@ impl MetadataReviewService for LocalLibraryService {
                     tags_json,
                     request.suggested_category,
                     request.confidence_json,
+                    PENDING_REVIEW_STATUS,
                     now
                 ],
             )
@@ -63,7 +68,7 @@ impl MetadataReviewService for LocalLibraryService {
             suggested_tags: request.suggested_tags,
             suggested_category: request.suggested_category,
             confidence_json: request.confidence_json,
-            status: "pending_review".to_string(),
+            status: PENDING_REVIEW_STATUS.to_string(),
             created_at: Some(now),
             reviewed_at: None,
         })
@@ -83,13 +88,16 @@ impl MetadataReviewService for LocalLibraryService {
                        ms.confidence_json, ms.status, ms.created_at, ms.reviewed_at
                 FROM metadata_suggestions ms
                 INNER JOIN assets a ON a.id = ms.asset_id
-                WHERE a.library_id = ?1 AND ms.status = 'pending_review'
+                WHERE a.library_id = ?1 AND ms.status = ?2
                 ORDER BY ms.created_at
                 ",
             )
             .map_err(database_error)?;
         let rows = statement
-            .query_map(params![library_id.0], metadata_suggestion_from_row)
+            .query_map(
+                params![library_id.0, PENDING_REVIEW_STATUS],
+                metadata_suggestion_from_row,
+            )
             .map_err(database_error)?;
 
         rows.collect::<Result<Vec<_>, _>>().map_err(database_error)
@@ -122,8 +130,8 @@ impl MetadataReviewService for LocalLibraryService {
         let connection = Self::open_library_database(library_path)?;
         let updated = connection
             .execute(
-                "UPDATE metadata_suggestions SET status = 'rejected', reviewed_at = ?1 WHERE id = ?2",
-                params![timestamp_string(), suggestion_id.0],
+                "UPDATE metadata_suggestions SET status = ?1, reviewed_at = ?2 WHERE id = ?3",
+                params![REJECTED_STATUS, timestamp_string(), suggestion_id.0],
             )
             .map_err(database_error)?;
 
@@ -152,8 +160,8 @@ impl MetadataReviewService for LocalLibraryService {
         for suggestion_id in suggestion_ids {
             transaction
                 .execute(
-                    "UPDATE metadata_suggestions SET status = 'rejected', reviewed_at = ?1 WHERE id = ?2",
-                    params![now, suggestion_id.0],
+                    "UPDATE metadata_suggestions SET status = ?1, reviewed_at = ?2 WHERE id = ?3",
+                    params![REJECTED_STATUS, now, suggestion_id.0],
                 )
                 .map_err(database_error)?;
         }
@@ -366,8 +374,8 @@ fn accept_suggestions(
 
         transaction
             .execute(
-                "UPDATE metadata_suggestions SET status = 'accepted', reviewed_at = ?1 WHERE id = ?2",
-                params![now, request.suggestion_id.0],
+                "UPDATE metadata_suggestions SET status = ?1, reviewed_at = ?2 WHERE id = ?3",
+                params![ACCEPTED_STATUS, now, request.suggestion_id.0],
             )
             .map_err(database_error)?;
     }
@@ -377,7 +385,7 @@ fn accept_suggestions(
 
 fn ensure_all_pending(suggestions: &[MetadataSuggestion]) -> DomainResult<()> {
     for suggestion in suggestions {
-        if suggestion.status != "pending_review" {
+        if !is_pending_review(&suggestion.status) {
             return Err(DomainError::InvalidAssetReference {
                 id: format!("suggestion is not pending: {}", suggestion.id.0),
             });
@@ -490,35 +498,4 @@ fn load_suggestion(
             },
             other => database_error(other),
         })
-}
-
-fn normalize_confidence_json(confidence_json: &str) -> ConfidenceScoreView {
-    let Ok(value) = serde_json::from_str::<Value>(confidence_json) else {
-        return ConfidenceScoreView {
-            overall: None,
-            title: None,
-            description: None,
-            schema_prompt: None,
-            tags: None,
-            category: None,
-        };
-    };
-    let fields = value.get("fields");
-    ConfidenceScoreView {
-        overall: normalize_score(value.get("overall")),
-        title: normalize_score(fields.and_then(|fields| fields.get("title"))),
-        description: normalize_score(fields.and_then(|fields| fields.get("description"))),
-        schema_prompt: normalize_score(fields.and_then(|fields| fields.get("schemaPrompt"))),
-        tags: normalize_score(fields.and_then(|fields| fields.get("tags"))),
-        category: normalize_score(fields.and_then(|fields| fields.get("category"))),
-    }
-}
-
-fn normalize_score(value: Option<&Value>) -> Option<u8> {
-    let value = value?.as_f64()?;
-    if !(0.0..=100.0).contains(&value) {
-        return None;
-    }
-    let normalized = if value <= 1.0 { value * 100.0 } else { value };
-    Some(normalized.round().clamp(0.0, 100.0) as u8)
 }

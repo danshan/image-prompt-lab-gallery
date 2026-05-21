@@ -2,10 +2,10 @@ use crate::*;
 
 #[tauri::command]
 pub(crate) fn search_assets(input: SearchInput) -> Result<Vec<AssetView>, CommandError> {
-    let service = service();
-    let library = service.open_library(&input.library_path)?;
-    service
-        .search(
+    let app = desktop_app();
+    let library = app.library().open_library(&input.library_path)?;
+    app.search()
+        .execute(
             &library.id,
             SearchQuery {
                 text: input.text,
@@ -25,7 +25,8 @@ pub(crate) fn query_gallery(
     input: QueryGalleryInput,
 ) -> Result<Vec<GalleryAssetView>, CommandError> {
     let library_path = input.library_path.clone();
-    service()
+    desktop_app()
+        .gallery()
         .query_gallery(&library_path, gallery_query_from_input(input)?)
         .map(|items| {
             items
@@ -42,7 +43,8 @@ pub(crate) fn get_asset_detail(input: AssetDetailInput) -> Result<AssetDetailVie
         .current_version_id
         .as_ref()
         .map(|id| imglab_core::AssetVersionId(id.clone()));
-    service()
+    desktop_app()
+        .gallery()
         .get_asset_detail(
             &input.library_path,
             &AssetId(input.asset_id),
@@ -60,7 +62,8 @@ pub(crate) fn get_asset_inspector_detail(
         .current_version_id
         .as_ref()
         .map(|id| imglab_core::AssetVersionId(id.clone()));
-    service()
+    desktop_app()
+        .gallery()
         .get_asset_inspector_detail(
             &input.library_path,
             &AssetId(input.asset_id),
