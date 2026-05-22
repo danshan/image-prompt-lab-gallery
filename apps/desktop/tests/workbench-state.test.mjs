@@ -2,12 +2,20 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   acceptSuggestionState,
+  albumContentsQuery,
   applySuggestionFieldToReviewForm,
   applyGalleryQuery,
   beginDetailLoad,
   beginReviewFieldGeneration,
   buildBatchReviewPayloads,
+  clearGalleryAlbumFilter,
+  clearGalleryMinRatingFilter,
+  clearGalleryProviderFilter,
+  clearGalleryReviewFilter,
+  clearGalleryTagFilter,
+  clearGalleryTextFilter,
   clearAlbumQuery,
+  clearSelectedAlbumState,
   clearCurationStateForLibrarySwitch,
   clearLibraryWorkspaceState,
   clearSelectionForLibrarySwitch,
@@ -15,11 +23,14 @@ import {
   completeReviewFieldGeneration,
   countActiveTasks,
   createReviewFormState,
+  defaultAlbumAddSourceQuery,
   defaultSettingsSection,
   defaultGalleryQuery,
   failReviewFieldGeneration,
   failDetailLoad,
+  filterAlbumAddCandidates,
   formatAspectRatio,
+  galleryAlbumFilterIds,
   addReviewFormTag,
   isReviewFieldGenerating,
   libraryMaintenanceActions,
@@ -33,9 +44,14 @@ import {
   removeSuggestionState,
   reorderByIds,
   resetGalleryQuery,
+  removeGalleryAlbumFilter,
   reviewFormTags,
   selectedOrCurrentIds,
+  selectAlbumState,
+  setGalleryAlbumFilter,
+  setGalleryUnassignedAlbumFilter,
   sortedNonEmptyProviders,
+  toggleGalleryAlbumFilter,
   toggleGalleryProvider,
   toggleGalleryTag,
   toggleSelection,
@@ -207,10 +223,83 @@ test("resetGalleryQuery returns independent arrays", () => {
   assert.deepEqual(second.providers, []);
 });
 
-test("album query helpers set and clear selected album", () => {
+test("gallery album filters are independent from albums selection", () => {
+  const selectedAlbumId = selectAlbumState(null, "album-1");
+  const galleryQuery = setGalleryAlbumFilter(defaultGalleryQuery, ["album-2", "album-3"]);
+
+  assert.equal(selectedAlbumId, "album-1");
+  assert.deepEqual(galleryAlbumFilterIds(galleryQuery), ["album-2", "album-3"]);
+  assert.equal(clearSelectedAlbumState(), null);
+  assert.deepEqual(clearGalleryAlbumFilter(galleryQuery).albumFilter, { mode: "any" });
+});
+
+test("gallery album filter supports toggle and unassigned mode", () => {
+  const oneAlbum = toggleGalleryAlbumFilter(defaultGalleryQuery, "album-1");
+  const twoAlbums = toggleGalleryAlbumFilter(oneAlbum, "album-2");
+  const removed = toggleGalleryAlbumFilter(twoAlbums, "album-1");
+  const unassigned = setGalleryUnassignedAlbumFilter(twoAlbums);
+
+  assert.deepEqual(galleryAlbumFilterIds(twoAlbums), ["album-1", "album-2"]);
+  assert.deepEqual(galleryAlbumFilterIds(removed), ["album-2"]);
+  assert.deepEqual(unassigned.albumFilter, { mode: "unassigned" });
+  assert.equal(unassigned.sort, "newest");
+});
+
+test("gallery filter helpers clear one active filter at a time", () => {
+  const query = {
+    ...defaultGalleryQuery,
+    text: "botanical",
+    providers: ["fake", "codex-cli"],
+    minRating: 4,
+    reviewStatus: "pending",
+    tags: ["neon", "macro"],
+    albumFilter: { mode: "inAny", albumIds: ["album-1", "album-2"] },
+    sort: "albumOrder",
+  };
+
+  assert.equal(clearGalleryTextFilter(query).text, "");
+  assert.deepEqual(clearGalleryProviderFilter(query, "fake").providers, ["codex-cli"]);
+  assert.equal(clearGalleryMinRatingFilter(query).minRating, null);
+  assert.equal(clearGalleryReviewFilter(query).reviewStatus, "any");
+  assert.deepEqual(clearGalleryTagFilter(query, "neon").tags, ["macro"]);
+  assert.equal(clearGalleryAlbumFilter(query).sort, "newest");
+
+  const oneAlbumLeft = removeGalleryAlbumFilter(query, "album-1");
+  assert.deepEqual(oneAlbumLeft.albumFilter, { mode: "inAny", albumIds: ["album-2"] });
+  assert.equal(oneAlbumLeft.sort, "newest");
+  assert.deepEqual(removeGalleryAlbumFilter(oneAlbumLeft, "album-2").albumFilter, { mode: "any" });
+});
+
+test("album contents and add drawer queries are separate query objects", () => {
+  const galleryQuery = {
+    ...defaultGalleryQuery,
+    providers: ["fake"],
+  };
+  const albumQuery = albumContentsQuery("album-1", "manual");
+  const addQuery = defaultAlbumAddSourceQuery();
+
+  assert.deepEqual(galleryQuery.providers, ["fake"]);
+  assert.deepEqual(albumQuery.albumFilter, { mode: "inAny", albumIds: ["album-1"] });
+  assert.equal(albumQuery.sort, "albumOrder");
+  assert.deepEqual(addQuery.albumFilter, { mode: "any" });
+  assert.notEqual(albumQuery, addQuery);
+});
+
+test("album add candidates exclude current album members", () => {
+  const assets = [
+    { id: "in-album", albums: [{ id: "album-1" }] },
+    { id: "other", albums: [{ id: "album-2" }] },
+    { id: "free", albums: [] },
+  ];
+
+  assert.deepEqual(
+    filterAlbumAddCandidates(assets, "album-1").map((asset) => asset.id),
+    ["other", "free"],
+  );
+
   const albumQuery = openAlbumQuery(defaultGalleryQuery, "album-1");
-  assert.equal(albumQuery.albumId, "album-1");
-  assert.equal(clearAlbumQuery(albumQuery).albumId, null);
+  assert.deepEqual(albumQuery.albumFilter, { mode: "inAny", albumIds: ["album-1"] });
+  assert.deepEqual(clearAlbumQuery(albumQuery).albumFilter, { mode: "any" });
 });
 
 test("review form state is initialized from suggestion and parses tags", () => {
@@ -500,6 +589,62 @@ test("applyGalleryQuery filters by text, tags, review status, and rating", () =>
 
   assert.equal(results.length, 1);
   assert.equal(results[0].title, "Neon Botanical Study");
+});
+
+test("applyGalleryQuery filters by album union and unassigned state", () => {
+  const assets = [
+    {
+      title: "A",
+      category: null,
+      rating: null,
+      status: "generated",
+      provider: "fake",
+      modelLabel: null,
+      tags: [],
+      reviewPendingCount: 0,
+      albums: [{ id: "album-a" }],
+      createdAt: "1",
+      updatedAt: "1",
+    },
+    {
+      title: "B",
+      category: null,
+      rating: null,
+      status: "generated",
+      provider: "fake",
+      modelLabel: null,
+      tags: [],
+      reviewPendingCount: 0,
+      albums: [{ id: "album-b" }],
+      createdAt: "2",
+      updatedAt: "2",
+    },
+    {
+      title: "Free",
+      category: null,
+      rating: null,
+      status: "generated",
+      provider: "fake",
+      modelLabel: null,
+      tags: [],
+      reviewPendingCount: 0,
+      albums: [],
+      createdAt: "3",
+      updatedAt: "3",
+    },
+  ];
+
+  const union = applyGalleryQuery(assets, {
+    ...defaultGalleryQuery,
+    albumFilter: { mode: "inAny", albumIds: ["album-a", "album-b"] },
+  });
+  const unassigned = applyGalleryQuery(assets, {
+    ...defaultGalleryQuery,
+    albumFilter: { mode: "unassigned" },
+  });
+
+  assert.deepEqual(union.map((asset) => asset.title).sort(), ["A", "B"]);
+  assert.deepEqual(unassigned.map((asset) => asset.title), ["Free"]);
 });
 
 test("applyGalleryQuery matches prompt text", () => {

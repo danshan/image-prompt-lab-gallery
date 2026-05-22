@@ -66,6 +66,8 @@ export type GalleryAsset = {
   height: number | null;
   versionLabel: string | null;
   versionCount: number;
+  albums: Album[];
+  albumContext: Album | null;
   createdAt: string;
   updatedAt: string;
 };

@@ -442,6 +442,38 @@ pub enum ReviewStatusFilter {
     Pending,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum GalleryAlbumFilter {
+    #[default]
+    Any,
+    InAny(Vec<AlbumId>),
+    Unassigned,
+}
+
+impl GalleryAlbumFilter {
+    pub fn from_legacy_album_id(album_id: Option<AlbumId>) -> Self {
+        album_id
+            .map(|album_id| Self::InAny(vec![album_id]))
+            .unwrap_or_default()
+    }
+
+    pub fn normalized(self) -> Self {
+        match self {
+            Self::InAny(album_ids) if album_ids.is_empty() => Self::Any,
+            Self::InAny(album_ids) => {
+                let mut deduplicated = Vec::new();
+                for album_id in album_ids {
+                    if !deduplicated.contains(&album_id) {
+                        deduplicated.push(album_id);
+                    }
+                }
+                Self::InAny(deduplicated)
+            }
+            other => other,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct GalleryQuery {
     pub text: Option<String>,
@@ -449,6 +481,7 @@ pub struct GalleryQuery {
     pub min_rating: Option<u8>,
     pub review_status: ReviewStatusFilter,
     pub tags: Vec<String>,
+    pub album_filter: GalleryAlbumFilter,
     pub album_id: Option<AlbumId>,
     pub sort: GallerySort,
 }
@@ -461,6 +494,7 @@ impl Default for GalleryQuery {
             min_rating: None,
             review_status: ReviewStatusFilter::Any,
             tags: Vec::new(),
+            album_filter: GalleryAlbumFilter::Any,
             album_id: None,
             sort: GallerySort::Newest,
         }

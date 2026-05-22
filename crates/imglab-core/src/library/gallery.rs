@@ -8,10 +8,10 @@ use super::{
 use crate::{
     version_name, AlbumId, AlbumKind, AlbumMembershipView, AssetId, AssetInspectorDetailView,
     AssetService, AssetSummary, AssetVersionId, CanonicalMetadataView, DomainError, DomainResult,
-    FileContextView, GalleryAssetView, GalleryQuery, GalleryReadService, GallerySort,
-    GenerationEventId, LibraryService, PendingSuggestionSummaryView, ReferenceSourceView,
-    ReviewStatusFilter, SearchQuery, SearchService, TaskId, TaskOriginView, TaskStatus, TaskType,
-    VersionSummary,
+    FileContextView, GalleryAlbumFilter, GalleryAssetView, GalleryQuery, GalleryReadService,
+    GallerySort, GenerationEventId, LibraryService, PendingSuggestionSummaryView,
+    ReferenceSourceView, ReviewStatusFilter, SearchQuery, SearchService, TaskId, TaskOriginView,
+    TaskStatus, TaskType, VersionSummary,
 };
 use rusqlite::{params, Connection};
 use std::collections::{HashMap, HashSet};
@@ -43,38 +43,29 @@ impl GalleryReadService for LocalLibraryService {
     ) -> DomainResult<Vec<GalleryAssetView>> {
         validate_gallery_query(&query)?;
         let connection = Self::open_library_database(library_path)?;
-        let mut items = load_gallery_asset_views(&connection)?;
-        let album_context = query
-            .album_id
-            .as_ref()
-            .map(|album_id| load_album_filter_context(&connection, album_id))
-            .transpose()?;
-        let album_context_view = query
-            .album_id
-            .as_ref()
+        let album_filter = effective_gallery_album_filter(&query);
+        let album_contexts = load_album_filter_contexts(&connection, &album_filter)?;
+        validate_gallery_album_context(&query, &album_filter, &album_contexts)?;
+        let single_album_context = single_album_filter_context(&album_filter, &album_contexts);
+        let album_context_view = single_album_filter_id(&album_filter)
             .map(|album_id| load_album_membership_context(&connection, album_id))
             .transpose()?;
+        let mut items = load_gallery_asset_views(&connection)?;
 
         apply_gallery_filter_spec(&mut items, GalleryFilterSpec::from_gallery_query(&query));
+        apply_gallery_album_filter(&connection, &mut items, &album_filter, &album_contexts)?;
 
-        if let Some(context) = &album_context {
-            match context {
-                AlbumFilterContext::Manual(album_id) => {
-                    let album_assets = load_album_asset_ids(&connection, album_id)?;
-                    items.retain(|item| album_assets.contains(&item.id.0));
-                }
-                AlbumFilterContext::Smart(smart_query) => {
-                    apply_smart_album_query(&mut items, smart_query)
-                }
-            }
-        }
-
-        let effective_sort = match &album_context {
+        let effective_sort = match single_album_context {
             Some(AlbumFilterContext::Smart(smart_query)) => smart_query.sort.unwrap_or(query.sort),
             _ => query.sort,
         };
 
-        sort_gallery_items(&mut items, effective_sort, &album_context, &connection)?;
+        sort_gallery_items(
+            &mut items,
+            effective_sort,
+            single_album_context,
+            &connection,
+        )?;
 
         if let Some(album) = album_context_view {
             for item in &mut items {
@@ -253,12 +244,54 @@ fn validate_gallery_query(query: &GalleryQuery) -> DomainResult<()> {
     if let Some(min_rating) = query.min_rating {
         validate_rating_range(min_rating, "min_rating", true)?;
     }
-    if query.sort == GallerySort::AlbumOrder && query.album_id.is_none() {
+    Ok(())
+}
+
+fn effective_gallery_album_filter(query: &GalleryQuery) -> GalleryAlbumFilter {
+    match &query.album_filter {
+        GalleryAlbumFilter::Any => {
+            GalleryAlbumFilter::from_legacy_album_id(query.album_id.clone()).normalized()
+        }
+        album_filter => album_filter.clone().normalized(),
+    }
+}
+
+fn validate_gallery_album_context(
+    query: &GalleryQuery,
+    album_filter: &GalleryAlbumFilter,
+    album_contexts: &[AlbumFilterContext],
+) -> DomainResult<()> {
+    if query.sort != GallerySort::AlbumOrder {
+        return Ok(());
+    }
+
+    let is_single_manual = matches!(
+        (album_filter, album_contexts),
+        (GalleryAlbumFilter::InAny(album_ids), [AlbumFilterContext::Manual(_)])
+            if album_ids.len() == 1
+    );
+    if !is_single_manual {
         return Err(DomainError::InvalidGalleryQuery {
-            message: "album_order sort requires an album filter".to_string(),
+            message: "album_order sort requires a single manual album filter".to_string(),
         });
     }
     Ok(())
+}
+
+fn single_album_filter_id(album_filter: &GalleryAlbumFilter) -> Option<&AlbumId> {
+    match album_filter {
+        GalleryAlbumFilter::InAny(album_ids) if album_ids.len() == 1 => album_ids.first(),
+        GalleryAlbumFilter::Any | GalleryAlbumFilter::InAny(_) | GalleryAlbumFilter::Unassigned => {
+            None
+        }
+    }
+}
+
+fn single_album_filter_context<'a>(
+    album_filter: &GalleryAlbumFilter,
+    album_contexts: &'a [AlbumFilterContext],
+) -> Option<&'a AlbumFilterContext> {
+    single_album_filter_id(album_filter).and_then(|_| album_contexts.first())
 }
 
 fn load_gallery_asset_views(connection: &Connection) -> DomainResult<Vec<GalleryAssetView>> {
@@ -973,6 +1006,65 @@ fn load_album_asset_ids(
     Ok(asset_ids)
 }
 
+fn apply_gallery_album_filter(
+    connection: &Connection,
+    items: &mut Vec<GalleryAssetView>,
+    album_filter: &GalleryAlbumFilter,
+    album_contexts: &[AlbumFilterContext],
+) -> DomainResult<()> {
+    match album_filter {
+        GalleryAlbumFilter::Any => {}
+        GalleryAlbumFilter::InAny(_) => {
+            let mut matching_asset_ids = HashSet::new();
+            for context in album_contexts {
+                match context {
+                    AlbumFilterContext::Manual(album_id) => {
+                        matching_asset_ids.extend(load_album_asset_ids(connection, album_id)?);
+                    }
+                    AlbumFilterContext::Smart(smart_query) => {
+                        let mut smart_items = items.clone();
+                        apply_smart_album_query(&mut smart_items, smart_query);
+                        matching_asset_ids.extend(smart_items.into_iter().map(|item| item.id.0));
+                    }
+                }
+            }
+            items.retain(|item| matching_asset_ids.contains(&item.id.0));
+        }
+        GalleryAlbumFilter::Unassigned => {
+            let smart_membership_ids = load_smart_album_asset_ids(connection, items)?;
+            items.retain(|item| {
+                item.albums.is_empty() && !smart_membership_ids.contains(&item.id.0)
+            });
+        }
+    }
+    Ok(())
+}
+
+fn load_smart_album_asset_ids(
+    connection: &Connection,
+    items: &[GalleryAssetView],
+) -> DomainResult<HashSet<String>> {
+    let mut statement = connection
+        .prepare("SELECT smart_query_json FROM albums WHERE kind = 'smart'")
+        .map_err(database_error)?;
+    let rows = statement
+        .query_map([], |row| row.get::<_, Option<String>>(0))
+        .map_err(database_error)?;
+    let mut asset_ids = HashSet::new();
+    for row in rows {
+        let Some(query_json) = row.map_err(database_error)? else {
+            return Err(DomainError::InvalidSmartAlbumQuery {
+                message: "smart album is missing query".to_string(),
+            });
+        };
+        let smart_query = parse_smart_query(&query_json)?;
+        let mut smart_items = items.to_vec();
+        apply_smart_album_query(&mut smart_items, &smart_query);
+        asset_ids.extend(smart_items.into_iter().map(|item| item.id.0));
+    }
+    Ok(asset_ids)
+}
+
 enum AlbumFilterContext {
     Manual(AlbumId),
     Smart(crate::SmartAlbumQuery),
@@ -1030,7 +1122,10 @@ fn load_album_filter_context(
             params![album_id.0],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
-        .map_err(database_error)?;
+        .or_else(|error| match error {
+            rusqlite::Error::QueryReturnedNoRows => Err(unknown_album_error(album_id)),
+            other => Err(database_error(other)),
+        })?;
     if kind == "smart" {
         let query_json = smart_query_json.ok_or_else(|| DomainError::InvalidSmartAlbumQuery {
             message: "smart album is missing query".to_string(),
@@ -1038,6 +1133,25 @@ fn load_album_filter_context(
         Ok(AlbumFilterContext::Smart(parse_smart_query(&query_json)?))
     } else {
         Ok(AlbumFilterContext::Manual(album_id.clone()))
+    }
+}
+
+fn load_album_filter_contexts(
+    connection: &Connection,
+    album_filter: &GalleryAlbumFilter,
+) -> DomainResult<Vec<AlbumFilterContext>> {
+    match album_filter {
+        GalleryAlbumFilter::Any | GalleryAlbumFilter::Unassigned => Ok(Vec::new()),
+        GalleryAlbumFilter::InAny(album_ids) => album_ids
+            .iter()
+            .map(|album_id| load_album_filter_context(connection, album_id))
+            .collect(),
+    }
+}
+
+fn unknown_album_error(album_id: &AlbumId) -> DomainError {
+    DomainError::InvalidGalleryQuery {
+        message: format!("unknown album id: {}", album_id.0),
     }
 }
 
@@ -1084,7 +1198,7 @@ fn apply_gallery_filter_spec(items: &mut Vec<GalleryAssetView>, spec: GalleryFil
 fn sort_gallery_items(
     items: &mut [GalleryAssetView],
     sort: GallerySort,
-    album_context: &Option<AlbumFilterContext>,
+    album_context: Option<&AlbumFilterContext>,
     connection: &Connection,
 ) -> DomainResult<()> {
     match sort {

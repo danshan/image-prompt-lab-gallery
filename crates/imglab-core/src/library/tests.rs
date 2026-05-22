@@ -4,11 +4,11 @@ use crate::MetadataReviewService;
 use crate::{
     AlbumId, AlbumKind, AlbumService, AppendTaskOutputRequest, AssetService,
     BatchAddAssetsToAlbumRequest, BatchCreateTasksRequest, BatchReviewMetadataSuggestionRequest,
-    CreateTaskInput, GalleryQuery, GalleryReadService, GallerySort, GenerateImageRequest,
-    GeneratedImage, GenerationResult, ImageProvider, ImportAssetRequest, ReorderAlbumItemsRequest,
-    ReorderAlbumsRequest, ReviewMetadataSuggestionRequest, ReviewStatusFilter, SearchQuery,
-    SearchService, TaskOutputType, TaskService, TaskStatus, TaskType, UpdateAssetMetadataRequest,
-    UpdateTaskStatusRequest,
+    CreateTaskInput, GalleryAlbumFilter, GalleryQuery, GalleryReadService, GallerySort,
+    GenerateImageRequest, GeneratedImage, GenerationResult, ImageProvider, ImportAssetRequest,
+    ReorderAlbumItemsRequest, ReorderAlbumsRequest, ReviewMetadataSuggestionRequest,
+    ReviewStatusFilter, SearchQuery, SearchService, TaskOutputType, TaskService, TaskStatus,
+    TaskType, UpdateAssetMetadataRequest, UpdateTaskStatusRequest,
 };
 use std::time::Instant;
 use uuid::Uuid;
@@ -1095,6 +1095,7 @@ fn generation_service_saves_fake_provider_output() {
                 min_rating: None,
                 review_status: ReviewStatusFilter::Any,
                 tags: vec![],
+                album_filter: GalleryAlbumFilter::Any,
                 album_id: None,
                 sort: GallerySort::Newest,
             },
@@ -1784,6 +1785,7 @@ fn gallery_query_filters_and_sorts_cards() {
                 min_rating: Some(4),
                 review_status: ReviewStatusFilter::Pending,
                 tags: vec!["neon".to_string()],
+                album_filter: GalleryAlbumFilter::Any,
                 album_id: None,
                 sort: GallerySort::RatingDesc,
             },
@@ -2382,6 +2384,196 @@ fn reorders_albums_and_manual_album_items() {
     assert_eq!(items[0].id, asset_b.id);
     assert_eq!(items[1].id, asset_a.id);
     assert!(!items.iter().any(|item| item.id == asset_c.id));
+}
+
+#[test]
+fn gallery_album_filter_supports_union_unassigned_and_validation() {
+    let root = test_root("gallery-album-filter");
+    let registry = test_root("gallery-album-filter-registry").join("registry.sqlite");
+    let source_dir = test_root("gallery-album-filter-source");
+    fs::create_dir_all(&source_dir).expect("create source dir");
+    let service = LocalLibraryService::new(registry);
+    let library = service
+        .create_library(CreateLibraryRequest {
+            root_path: root.clone(),
+            name: "Gallery Album Filter".to_string(),
+        })
+        .expect("create library");
+    let album_a = service
+        .create_manual_album(&library.id, "A")
+        .expect("album a");
+    let album_b = service
+        .create_manual_album(&library.id, "B")
+        .expect("album b");
+
+    let import_named = |name: &str| {
+        let source = source_dir.join(format!("{name}.png"));
+        fs::write(&source, png_bytes(10, 10)).expect("write source");
+        service
+            .import_asset(ImportAssetRequest {
+                library_path: root.clone(),
+                source_path: source,
+            })
+            .expect("import")
+            .0
+    };
+
+    let asset_a = import_named("a");
+    let asset_b = import_named("b");
+    let shared = import_named("shared");
+    let smart_only = import_named("smart-only");
+    let unassigned = import_named("unassigned");
+
+    service
+        .batch_add_assets(BatchAddAssetsToAlbumRequest {
+            album_id: album_a.id.clone(),
+            asset_ids: vec![asset_a.id.clone(), shared.id.clone()],
+        })
+        .expect("batch add a");
+    service
+        .batch_add_assets(BatchAddAssetsToAlbumRequest {
+            album_id: album_b.id.clone(),
+            asset_ids: vec![asset_b.id.clone(), shared.id.clone()],
+        })
+        .expect("batch add b");
+    service
+        .update_asset_metadata(UpdateAssetMetadataRequest {
+            library_path: root.clone(),
+            asset_id: smart_only.id.clone(),
+            title: Some("smart-only".to_string()),
+            description: None,
+            schema_prompt: None,
+            rating: None,
+            category: None,
+            status: None,
+        })
+        .expect("title smart-only");
+    service
+        .update_asset_metadata(UpdateAssetMetadataRequest {
+            library_path: root.clone(),
+            asset_id: unassigned.id.clone(),
+            title: Some("unassigned".to_string()),
+            description: None,
+            schema_prompt: None,
+            rating: None,
+            category: None,
+            status: None,
+        })
+        .expect("title unassigned");
+    service
+        .create_smart_album(crate::CreateSmartAlbumRequest {
+            library_path: root.clone(),
+            name: "Smart Only".to_string(),
+            smart_query_json: r#"{"text":"smart-only"}"#.to_string(),
+        })
+        .expect("smart album");
+
+    let default_items = service
+        .query_gallery(&root, GalleryQuery::default())
+        .expect("default query");
+    assert_eq!(default_items.len(), 5);
+
+    let single = service
+        .query_gallery(
+            &root,
+            GalleryQuery {
+                album_filter: GalleryAlbumFilter::InAny(vec![album_a.id.clone()]),
+                ..GalleryQuery::default()
+            },
+        )
+        .expect("single album query");
+    assert_eq!(single.len(), 2);
+    assert!(single.iter().any(|item| item.id == asset_a.id));
+    assert!(single.iter().any(|item| item.id == shared.id));
+    assert!(single
+        .iter()
+        .all(|item| item.album_context.as_ref().map(|album| &album.id) == Some(&album_a.id)));
+
+    let union = service
+        .query_gallery(
+            &root,
+            GalleryQuery {
+                album_filter: GalleryAlbumFilter::InAny(vec![
+                    album_a.id.clone(),
+                    album_b.id.clone(),
+                    album_a.id.clone(),
+                ]),
+                ..GalleryQuery::default()
+            },
+        )
+        .expect("multi album query");
+    assert_eq!(union.len(), 3);
+    assert!(union.iter().any(|item| item.id == asset_a.id));
+    assert!(union.iter().any(|item| item.id == asset_b.id));
+    assert!(union.iter().any(|item| item.id == shared.id));
+    assert!(union.iter().all(|item| item.album_context.is_none()));
+
+    let empty_filter = service
+        .query_gallery(
+            &root,
+            GalleryQuery {
+                album_filter: GalleryAlbumFilter::InAny(Vec::new()),
+                ..GalleryQuery::default()
+            },
+        )
+        .expect("empty album filter");
+    assert_eq!(empty_filter.len(), default_items.len());
+
+    let unassigned_items = service
+        .query_gallery(
+            &root,
+            GalleryQuery {
+                album_filter: GalleryAlbumFilter::Unassigned,
+                ..GalleryQuery::default()
+            },
+        )
+        .expect("unassigned query");
+    assert_eq!(unassigned_items.len(), 1);
+    assert_eq!(unassigned_items[0].id, unassigned.id);
+
+    let unknown_error = service
+        .query_gallery(
+            &root,
+            GalleryQuery {
+                album_filter: GalleryAlbumFilter::InAny(vec![AlbumId("missing".to_string())]),
+                ..GalleryQuery::default()
+            },
+        )
+        .expect_err("unknown album id");
+    assert!(matches!(
+        unknown_error,
+        DomainError::InvalidGalleryQuery { .. }
+    ));
+
+    let multi_album_order_error = service
+        .query_gallery(
+            &root,
+            GalleryQuery {
+                album_filter: GalleryAlbumFilter::InAny(vec![album_a.id, album_b.id]),
+                sort: GallerySort::AlbumOrder,
+                ..GalleryQuery::default()
+            },
+        )
+        .expect_err("album_order rejects multi album");
+    assert!(matches!(
+        multi_album_order_error,
+        DomainError::InvalidGalleryQuery { .. }
+    ));
+
+    let unassigned_album_order_error = service
+        .query_gallery(
+            &root,
+            GalleryQuery {
+                album_filter: GalleryAlbumFilter::Unassigned,
+                sort: GallerySort::AlbumOrder,
+                ..GalleryQuery::default()
+            },
+        )
+        .expect_err("album_order rejects unassigned");
+    assert!(matches!(
+        unassigned_album_order_error,
+        DomainError::InvalidGalleryQuery { .. }
+    ));
 }
 
 #[test]

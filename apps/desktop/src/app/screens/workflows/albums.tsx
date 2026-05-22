@@ -1,11 +1,17 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { moveItem } from "../../workflows/shared/state";
 import {
+  clearGalleryAlbumFilter,
+  galleryAlbumFilterIds,
   previewSmartAlbumCount,
+  setGalleryUnassignedAlbumFilter,
   smartAlbumQueryJson,
   splitCsv,
+  toggleGalleryAlbumFilter,
   updateGalleryQuery,
+  type GalleryQueryState,
   type GallerySort,
+  type ReviewStatusFilter,
 } from "../../workflows/albums";
 import { Icon } from "../../../studio-icons";
 import {
@@ -76,8 +82,16 @@ export function AlbumsWorkspace({
   onReorderAlbums,
   onRemoveAsset,
   onReorderAssets,
-  selectedGalleryAssetCount,
-  onBatchAddSelected,
+  addDrawerOpen,
+  addQuery,
+  addGallery,
+  addSelectionIds,
+  addSubmitting,
+  onOpenAddDrawer,
+  onCloseAddDrawer,
+  onAddQueryChange,
+  onToggleAddSelection,
+  onSubmitAddSelection,
   onSelectAsset,
 }: {
   albums: AlbumListItem[];
@@ -102,8 +116,16 @@ export function AlbumsWorkspace({
   onReorderAlbums: (albumIds: string[]) => void;
   onRemoveAsset: (assetId: string) => void;
   onReorderAssets: (assetIds: string[]) => void;
-  selectedGalleryAssetCount: number;
-  onBatchAddSelected: (albumId: string) => void;
+  addDrawerOpen: boolean;
+  addQuery: GalleryQueryState;
+  addGallery: GalleryAsset[];
+  addSelectionIds: string[];
+  addSubmitting: boolean;
+  onOpenAddDrawer: () => void;
+  onCloseAddDrawer: () => void;
+  onAddQueryChange: (query: GalleryQueryState) => void;
+  onToggleAddSelection: (assetId: string) => void;
+  onSubmitAddSelection: () => void;
   onSelectAsset: (assetId: string) => void;
 }) {
   const [newAlbumKind, setNewAlbumKind] = useState<"manual" | "smart">("manual");
@@ -310,10 +332,12 @@ export function AlbumsWorkspace({
           {selectedAlbum && (
             <div className="row-actions">
               {selectedAlbum.kind === "manual" && (
-                <button disabled={selectedGalleryAssetCount === 0} onClick={() => onBatchAddSelected(selectedAlbum.id)}>
-                  Add selected ({selectedGalleryAssetCount})
+                <button className="primary-button" onClick={onOpenAddDrawer}>
+                  <Icon name="plus" />
+                  <span>Add images</span>
                 </button>
               )}
+              {selectedAlbum.kind === "smart" && <span className="rule-chip">Rule based</span>}
               <button onClick={() => {
                 const next = window.prompt("Album name", selectedAlbum.name);
                 if (next) {
@@ -381,6 +405,185 @@ export function AlbumsWorkspace({
           </section>
         )}
       </div>
+      {selectedAlbum?.kind === "manual" && addDrawerOpen && (
+        <AddImagesDrawer
+          query={addQuery}
+          assets={addGallery}
+          selectedIds={addSelectionIds}
+          albums={albums}
+          providers={availableProviders}
+          submitting={addSubmitting}
+          onQueryChange={onAddQueryChange}
+          onToggleSelection={onToggleAddSelection}
+          onSubmit={onSubmitAddSelection}
+          onClose={onCloseAddDrawer}
+        />
+      )}
     </section>
+  );
+}
+
+function AddImagesDrawer({
+  query,
+  assets,
+  selectedIds,
+  albums,
+  providers,
+  submitting,
+  onQueryChange,
+  onToggleSelection,
+  onSubmit,
+  onClose,
+}: {
+  query: GalleryQueryState;
+  assets: GalleryAsset[];
+  selectedIds: string[];
+  albums: AlbumListItem[];
+  providers: string[];
+  submitting: boolean;
+  onQueryChange: (query: GalleryQueryState) => void;
+  onToggleSelection: (assetId: string) => void;
+  onSubmit: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <aside className="album-add-drawer" aria-label="Add images to album">
+      <div className="drawer-header">
+        <div>
+          <h3>Add images</h3>
+          <p>{assets.length} eligible asset{assets.length === 1 ? "" : "s"}</p>
+        </div>
+        <button className="icon-button" aria-label="Close add images" onClick={onClose}>
+          <Icon name="close" />
+        </button>
+      </div>
+      <div className="drawer-filter-row">
+        <label className="search-box compact">
+          <Icon name="search" />
+          <span>Search</span>
+          <input
+            value={query.text}
+            onChange={(event) => onQueryChange(updateGalleryQuery(query, { text: event.target.value }))}
+            placeholder="Search assets"
+          />
+        </label>
+        <select
+          className="select-control"
+          value={query.providers[0] ?? ""}
+          onChange={(event) =>
+            onQueryChange(updateGalleryQuery(query, { providers: event.target.value ? [event.target.value] : [] }))
+          }
+        >
+          <option value="">Any provider</option>
+          {providers.map((provider) => (
+            <option key={provider} value={provider}>
+              {provider}
+            </option>
+          ))}
+        </select>
+        <select
+          className="select-control"
+          value={query.minRating ?? ""}
+          onChange={(event) =>
+            onQueryChange(updateGalleryQuery(query, { minRating: event.target.value ? Number(event.target.value) : null }))
+          }
+        >
+          <option value="">Any rating</option>
+          <option value="5">5 stars</option>
+          <option value="4">4+ stars</option>
+          <option value="3">3+ stars</option>
+        </select>
+        <select
+          className="select-control"
+          value={query.reviewStatus}
+          onChange={(event) =>
+            onQueryChange(updateGalleryQuery(query, { reviewStatus: event.target.value as ReviewStatusFilter }))
+          }
+        >
+          <option value="any">Any review</option>
+          <option value="pending">Review pending</option>
+        </select>
+        <AlbumSourceFilterSelector albums={albums} query={query} onQueryChange={onQueryChange} />
+      </div>
+      <div className="album-add-list">
+        {assets.length === 0 ? (
+          <div className="empty-state compact">No eligible assets match this source query.</div>
+        ) : (
+          assets.map((asset, index) => (
+            <label key={asset.id} className="album-add-item">
+              <input
+                type="checkbox"
+                checked={selectedIds.includes(asset.id)}
+                onChange={() => onToggleSelection(asset.id)}
+              />
+              <Thumbnail asset={asset} index={index} />
+              <span>
+                <strong>{asset.title ?? "Untitled"}</strong>
+                <small>{asset.provider ?? "Unknown provider"}</small>
+              </span>
+            </label>
+          ))
+        )}
+      </div>
+      <div className="drawer-footer">
+        <button onClick={onClose}>Cancel</button>
+        <button
+          className="primary-button"
+          disabled={selectedIds.length === 0 || submitting}
+          onClick={onSubmit}
+        >
+          Add selected ({selectedIds.length})
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+function AlbumSourceFilterSelector({
+  albums,
+  query,
+  onQueryChange,
+}: {
+  albums: AlbumListItem[];
+  query: GalleryQueryState;
+  onQueryChange: (query: GalleryQueryState) => void;
+}) {
+  const selectedIds = galleryAlbumFilterIds(query);
+  const unassigned = query.albumFilter.mode === "unassigned";
+  const label = unassigned
+    ? "Not in any album"
+    : selectedIds.length === 0
+      ? "Any album"
+      : selectedIds.length === 1
+        ? (albums.find((album) => album.id === selectedIds[0])?.name ?? "1 album")
+        : `${selectedIds.length} albums`;
+  return (
+    <details className="filter-popover">
+      <summary className={selectedIds.length > 0 || unassigned ? "chip-button active" : "chip-button"}>
+        {label}
+      </summary>
+      <div className="filter-popover-panel">
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={unassigned}
+            onChange={() => onQueryChange(unassigned ? clearGalleryAlbumFilter(query) : setGalleryUnassignedAlbumFilter(query))}
+          />
+          <span>Not in any album</span>
+        </label>
+        {albums.map((album) => (
+          <label key={album.id} className="checkbox-row">
+            <input
+              type="checkbox"
+              disabled={unassigned}
+              checked={selectedIds.includes(album.id)}
+              onChange={() => onQueryChange(toggleGalleryAlbumFilter(query, album.id))}
+            />
+            <span>{album.name}</span>
+          </label>
+        ))}
+        <button onClick={() => onQueryChange(clearGalleryAlbumFilter(query))}>Clear album filter</button>
+      </div>
+    </details>
   );
 }

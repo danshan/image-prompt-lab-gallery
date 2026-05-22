@@ -1,5 +1,9 @@
 export type GallerySort = "newest" | "oldest" | "ratingDesc" | "titleAsc" | "providerAsc" | "albumOrder";
 export type ReviewStatusFilter = "any" | "pending";
+export type GalleryAlbumFilterState =
+  | { mode: "any" }
+  | { mode: "inAny"; albumIds: string[] }
+  | { mode: "unassigned" };
 
 export type GalleryQueryState = {
   text: string;
@@ -7,8 +11,12 @@ export type GalleryQueryState = {
   minRating: number | null;
   reviewStatus: ReviewStatusFilter;
   tags: string[];
-  albumId: string | null;
+  albumFilter: GalleryAlbumFilterState;
   sort: GallerySort;
+};
+
+export type GalleryFilterAlbum = {
+  id: string;
 };
 
 export type GalleryFilterAsset = {
@@ -21,6 +29,7 @@ export type GalleryFilterAsset = {
   prompt?: string | null;
   tags: string[];
   reviewPendingCount: number;
+  albums?: GalleryFilterAlbum[];
   createdAt: string;
   updatedAt: string;
 };
@@ -38,7 +47,7 @@ export const defaultGalleryQuery: GalleryQueryState = {
   minRating: null,
   reviewStatus: "any",
   tags: [],
-  albumId: null,
+  albumFilter: { mode: "any" },
   sort: "newest",
 };
 
@@ -69,8 +78,97 @@ export function toggleGalleryTag(query: GalleryQueryState, tag: string): Gallery
   return updateGalleryQuery(query, { tags });
 }
 
+export function clearGalleryTextFilter(query: GalleryQueryState): GalleryQueryState {
+  return updateGalleryQuery(query, { text: "" });
+}
+
+export function clearGalleryProviderFilter(
+  query: GalleryQueryState,
+  provider: string,
+): GalleryQueryState {
+  return updateGalleryQuery(query, {
+    providers: query.providers.filter((item) => item !== provider),
+  });
+}
+
+export function clearGalleryMinRatingFilter(query: GalleryQueryState): GalleryQueryState {
+  return updateGalleryQuery(query, { minRating: null });
+}
+
+export function clearGalleryReviewFilter(query: GalleryQueryState): GalleryQueryState {
+  return updateGalleryQuery(query, { reviewStatus: "any" });
+}
+
+export function clearGalleryTagFilter(query: GalleryQueryState, tag: string): GalleryQueryState {
+  return updateGalleryQuery(query, {
+    tags: query.tags.filter((item) => item !== tag),
+  });
+}
+
+export function galleryAlbumFilterIds(query: GalleryQueryState): string[] {
+  return query.albumFilter.mode === "inAny" ? query.albumFilter.albumIds : [];
+}
+
+export function clearGalleryAlbumFilter(query: GalleryQueryState): GalleryQueryState {
+  return updateGalleryQuery(query, {
+    albumFilter: { mode: "any" },
+    sort: query.sort === "albumOrder" ? "newest" : query.sort,
+  });
+}
+
+export function setGalleryAlbumFilter(
+  query: GalleryQueryState,
+  albumIds: string[],
+): GalleryQueryState {
+  return updateGalleryQuery(query, {
+    albumFilter: normalizeGalleryAlbumFilter({ mode: "inAny", albumIds }),
+    sort: query.sort === "albumOrder" ? "newest" : query.sort,
+  });
+}
+
+export function toggleGalleryAlbumFilter(
+  query: GalleryQueryState,
+  albumId: string,
+): GalleryQueryState {
+  const current = query.albumFilter.mode === "inAny" ? query.albumFilter.albumIds : [];
+  const albumIds = current.includes(albumId)
+    ? current.filter((item) => item !== albumId)
+    : [...current, albumId];
+  return setGalleryAlbumFilter(query, albumIds);
+}
+
+export function removeGalleryAlbumFilter(
+  query: GalleryQueryState,
+  albumId: string,
+): GalleryQueryState {
+  if (query.albumFilter.mode !== "inAny") {
+    return query;
+  }
+  return setGalleryAlbumFilter(
+    query,
+    query.albumFilter.albumIds.filter((item) => item !== albumId),
+  );
+}
+
+export function setGalleryUnassignedAlbumFilter(query: GalleryQueryState): GalleryQueryState {
+  return updateGalleryQuery(query, {
+    albumFilter: { mode: "unassigned" },
+    sort: query.sort === "albumOrder" ? "newest" : query.sort,
+  });
+}
+
+export function normalizeGalleryAlbumFilter(
+  albumFilter: GalleryAlbumFilterState,
+): GalleryAlbumFilterState {
+  if (albumFilter.mode !== "inAny") {
+    return albumFilter;
+  }
+  const albumIds = Array.from(new Set(albumFilter.albumIds));
+  return albumIds.length > 0 ? { mode: "inAny", albumIds } : { mode: "any" };
+}
+
 export function resetGalleryQuery(): GalleryQueryState {
-  return { ...defaultGalleryQuery, providers: [], tags: [] };
+  return { ...defaultGalleryQuery, providers: [], tags: [], albumFilter: { mode: "any" } };
 }
 
 export function beginDetailLoad<TDetail>(assetId: string): DetailLoadState<TDetail> {
@@ -139,10 +237,28 @@ export function applyGalleryQuery<TAsset extends GalleryFilterAsset>(
     if (!query.tags.every((tag) => asset.tags.includes(tag))) {
       return false;
     }
+    if (!assetMatchesAlbumFilter(asset, query.albumFilter)) {
+      return false;
+    }
     return true;
   });
 
   return filtered.sort((left, right) => compareGalleryAssets(left, right, query.sort));
+}
+
+function assetMatchesAlbumFilter(
+  asset: GalleryFilterAsset,
+  albumFilter: GalleryAlbumFilterState,
+): boolean {
+  const albums = asset.albums ?? [];
+  switch (albumFilter.mode) {
+    case "any":
+      return true;
+    case "unassigned":
+      return albums.length === 0;
+    case "inAny":
+      return albumFilter.albumIds.length === 0 || albums.some((album) => albumFilter.albumIds.includes(album.id));
+  }
 }
 
 function assetMatchesText(asset: GalleryFilterAsset, text: string): boolean {

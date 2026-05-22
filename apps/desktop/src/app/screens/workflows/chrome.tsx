@@ -1,7 +1,16 @@
 import React, { useEffect, useState } from "react";
 import {
+  clearGalleryAlbumFilter,
+  clearGalleryMinRatingFilter,
+  clearGalleryProviderFilter,
+  clearGalleryReviewFilter,
+  clearGalleryTagFilter,
+  clearGalleryTextFilter,
+  galleryAlbumFilterIds,
+  removeGalleryAlbumFilter,
   resetGalleryQuery,
-  toggleGalleryProvider,
+  setGalleryUnassignedAlbumFilter,
+  toggleGalleryAlbumFilter,
   updateGalleryQuery,
   type GalleryQueryState,
   type GallerySort,
@@ -90,6 +99,8 @@ export function WorkspaceToolbar({
   itemCount,
   status,
   composerOpen,
+  availableProviders,
+  albums,
   onComposerOpenChange,
   onQueryChange,
 }: {
@@ -98,6 +109,8 @@ export function WorkspaceToolbar({
   itemCount: number;
   status: string;
   composerOpen: boolean;
+  availableProviders: string[];
+  albums: AlbumListItem[];
   onComposerOpenChange: (open: boolean) => void;
   onQueryChange: (query: GalleryQueryState) => void;
 }) {
@@ -145,10 +158,24 @@ export function WorkspaceToolbar({
             </button>
           </div>
           <div className="filter-row">
-            <SegmentedButton
-              label="Provider"
-              active={query.providers.length > 0}
-              onClick={() => onQueryChange(toggleGalleryProvider(query, "fake"))}
+            <select
+              className="select-control"
+              value={query.providers[0] ?? ""}
+              onChange={(event) =>
+                onQueryChange(updateGalleryQuery(query, { providers: event.target.value ? [event.target.value] : [] }))
+              }
+            >
+              <option value="">Any provider</option>
+              {availableProviders.map((provider) => (
+                <option key={provider} value={provider}>
+                  {provider}
+                </option>
+              ))}
+            </select>
+            <GalleryAlbumSelector
+              albums={albums}
+              query={query}
+              onQueryChange={onQueryChange}
             />
             <select
               className="select-control"
@@ -190,24 +217,154 @@ export function WorkspaceToolbar({
             </select>
             <strong>{itemCount} items</strong>
           </div>
+          <GalleryFilterChips
+            query={query}
+            albums={albums}
+            onQueryChange={onQueryChange}
+          />
         </>
       )}
     </header>
   );
 }
 
-function SegmentedButton({
+function GalleryAlbumSelector({
+  albums,
+  query,
+  onQueryChange,
+}: {
+  albums: AlbumListItem[];
+  query: GalleryQueryState;
+  onQueryChange: (query: GalleryQueryState) => void;
+}) {
+  const selectedIds = galleryAlbumFilterIds(query);
+  const unassigned = query.albumFilter.mode === "unassigned";
+  return (
+    <details className="filter-popover">
+      <summary className={selectedIds.length > 0 || unassigned ? "chip-button active" : "chip-button"}>
+        Albums
+      </summary>
+      <div className="filter-popover-panel">
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={unassigned}
+            onChange={() => onQueryChange(unassigned ? clearGalleryAlbumFilter(query) : setGalleryUnassignedAlbumFilter(query))}
+          />
+          <span>Not in any album</span>
+        </label>
+        {albums.map((album) => (
+          <label key={album.id} className="checkbox-row">
+            <input
+              type="checkbox"
+              disabled={unassigned}
+              checked={selectedIds.includes(album.id)}
+              onChange={() => onQueryChange(toggleGalleryAlbumFilter(query, album.id))}
+            />
+            <span>{album.name}</span>
+          </label>
+        ))}
+        <button onClick={() => onQueryChange(clearGalleryAlbumFilter(query))}>Clear album filter</button>
+      </div>
+    </details>
+  );
+}
+
+function GalleryFilterChips({
+  query,
+  albums,
+  onQueryChange,
+}: {
+  query: GalleryQueryState;
+  albums: AlbumListItem[];
+  onQueryChange: (query: GalleryQueryState) => void;
+}) {
+  const selectedIds = galleryAlbumFilterIds(query);
+  const hasFilters =
+    query.text.trim().length > 0 ||
+    query.providers.length > 0 ||
+    query.minRating !== null ||
+    query.reviewStatus !== "any" ||
+    query.tags.length > 0 ||
+    query.albumFilter.mode !== "any";
+  if (!hasFilters) {
+    return null;
+  }
+  return (
+    <div className="active-filter-row">
+      {query.text.trim().length > 0 && (
+        <FilterChipButton
+          label={`Search: ${query.text.trim()}`}
+          ariaLabel="Clear search filter"
+          onClick={() => onQueryChange(clearGalleryTextFilter(query))}
+        />
+      )}
+      {query.providers.map((provider) => (
+        <FilterChipButton
+          key={provider}
+          label={`Provider: ${provider}`}
+          ariaLabel={`Clear provider filter ${provider}`}
+          onClick={() => onQueryChange(clearGalleryProviderFilter(query, provider))}
+        />
+      ))}
+      {query.tags.map((tag) => (
+        <FilterChipButton
+          key={tag}
+          label={`Tag: ${tag}`}
+          ariaLabel={`Clear tag filter ${tag}`}
+          onClick={() => onQueryChange(clearGalleryTagFilter(query, tag))}
+        />
+      ))}
+      {query.albumFilter.mode === "unassigned" && (
+        <FilterChipButton
+          label="Not in any album"
+          ariaLabel="Clear album filter"
+          onClick={() => onQueryChange(clearGalleryAlbumFilter(query))}
+        />
+      )}
+      {selectedIds.map((albumId) => {
+        const albumName = albums.find((album) => album.id === albumId)?.name ?? albumId;
+        return (
+          <FilterChipButton
+            key={albumId}
+            label={`Album: ${albumName}`}
+            ariaLabel={`Clear album filter ${albumName}`}
+            onClick={() => onQueryChange(removeGalleryAlbumFilter(query, albumId))}
+          />
+        );
+      })}
+      {query.minRating !== null && (
+        <FilterChipButton
+          label={`${query.minRating}+ stars`}
+          ariaLabel="Clear rating filter"
+          onClick={() => onQueryChange(clearGalleryMinRatingFilter(query))}
+        />
+      )}
+      {query.reviewStatus === "pending" && (
+        <FilterChipButton
+          label="Review pending"
+          ariaLabel="Clear review filter"
+          onClick={() => onQueryChange(clearGalleryReviewFilter(query))}
+        />
+      )}
+      <button onClick={() => onQueryChange(resetGalleryQuery())}>Clear all</button>
+    </div>
+  );
+}
+
+function FilterChipButton({
   label,
-  active,
+  ariaLabel,
   onClick,
 }: {
   label: string;
-  active: boolean;
+  ariaLabel: string;
   onClick: () => void;
 }) {
   return (
-    <button className={active ? "chip-button active" : "chip-button"} onClick={onClick}>
-      {label}
+    <button className="filter-chip" aria-label={ariaLabel} onClick={onClick}>
+      <span>{label}</span>
+      <Icon name="close" />
     </button>
   );
 }

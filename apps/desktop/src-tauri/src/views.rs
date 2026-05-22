@@ -448,8 +448,16 @@ pub(crate) struct QueryGalleryInput {
     pub(crate) min_rating: Option<u8>,
     pub(crate) review_status: Option<String>,
     pub(crate) tags: Option<Vec<String>>,
+    pub(crate) album_filter: Option<GalleryAlbumFilterInput>,
     pub(crate) album_id: Option<String>,
     pub(crate) sort: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct GalleryAlbumFilterInput {
+    pub(crate) mode: String,
+    pub(crate) album_ids: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
-import { clearAlbumQuery, type DetailLoadState, type GalleryQueryState } from "../../workflows/albums";
+import { resetGalleryQuery, type DetailLoadState, type GalleryQueryState } from "../../workflows/albums";
 import { clearLibraryWorkspaceState } from "../../workflows/library/state";
 import type { ReviewFormState } from "../../workflows/review";
 import {
@@ -159,7 +159,7 @@ export function useLibrarySettingsActions({
     setTasks([]);
     setSelectedTaskId(cleared.selectedTaskId);
     setTaskDetail(null);
-    setQuery(clearAlbumQuery(query));
+    setQuery(resetGalleryQuery());
     setLibraryFolderNameInput("image-prompt-lab");
     setStatus("No library selected");
     setRecoverableError(null);

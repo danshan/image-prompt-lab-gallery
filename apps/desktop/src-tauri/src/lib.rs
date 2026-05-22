@@ -18,9 +18,9 @@ use imglab_core::{
     prepare_generation_request, AlbumId, AssetId, BatchAddAssetsToAlbumRequest,
     BatchReviewMetadataSuggestionRequest, CreateLibraryRequest, CreateMetadataSuggestionRequest,
     CreateSmartAlbumRequest, DomainError, ExportLibraryBackupRequest, ExportLibraryRequest,
-    GalleryQuery, GallerySort, GenerateImageRequest, GenerationOperation, GenerationRequestInput,
-    ImportAssetRequest, ImportLibraryBackupRequest, LibraryId, LibraryService,
-    MetadataReviewService, MetadataSuggestionId, RenameLibraryAliasRequest,
+    GalleryAlbumFilter, GalleryQuery, GallerySort, GenerateImageRequest, GenerationOperation,
+    GenerationRequestInput, ImportAssetRequest, ImportLibraryBackupRequest, LibraryId,
+    LibraryService, MetadataReviewService, MetadataSuggestionId, RenameLibraryAliasRequest,
     ReorderAlbumItemsRequest, ReorderAlbumsRequest, RepairLibraryRequest,
     ReviewMetadataSuggestionRequest, ReviewStatusFilter, SearchQuery, UpdateAssetMetadataRequest,
 };

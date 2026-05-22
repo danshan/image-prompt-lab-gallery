@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  applyGalleryQuery,
   beginDetailLoad,
   clearSelectionForLibrarySwitch,
   completeDetailLoad,
   defaultGalleryQuery,
   failDetailLoad,
-  updateGalleryQuery,
   type DetailLoadState,
   type GalleryQueryState,
+  resetGalleryQuery,
 } from "./workflows/gallery";
 import {
   clearCurationStateForLibrarySwitch,
@@ -95,10 +96,11 @@ import {
   validLibraryFolderName,
 } from "./utils";
 import {
-  clearAlbumQuery,
+  albumContentsQuery,
+  defaultAlbumAddSourceQuery,
+  filterAlbumAddCandidates,
   incrementAlbumItemCount,
   createPreviewAlbum,
-  openAlbumQuery,
   removeAlbumState,
   reorderByIds,
   renameAlbumState,
@@ -192,6 +194,8 @@ export function StudioAppController() {
     setAlbums,
     selectedAlbumId,
     setSelectedAlbumId,
+    albumGallery,
+    setAlbumGallery,
     albumSearchInput,
     setAlbumSearchInput,
     albumNameInput,
@@ -200,6 +204,16 @@ export function StudioAppController() {
     setAlbumCreateOpen,
     albumLoading,
     setAlbumLoading,
+    albumAddDrawerOpen,
+    setAlbumAddDrawerOpen,
+    albumAddQuery,
+    setAlbumAddQuery,
+    albumAddGallery,
+    setAlbumAddGallery,
+    albumAddSelectionIds,
+    setAlbumAddSelectionIds,
+    albumAddSubmitting,
+    setAlbumAddSubmitting,
   } = useAlbumControllerState(runningInTauri);
   const {
     suggestions,
@@ -407,6 +421,10 @@ export function StudioAppController() {
     query,
     selectedAssetId,
   });
+  const selectedAlbum = useMemo(
+    () => albums.find((album) => album.id === selectedAlbumId) ?? null,
+    [albums, selectedAlbumId],
+  );
   const { pendingSuggestions, selectedSuggestion } = useReviewDerivedState(suggestions, selectedSuggestionId);
   const { queueCount, runningTaskCount, failedTaskCount } = useTaskActivitySummary(tasks);
   const {
@@ -482,6 +500,17 @@ export function StudioAppController() {
     }, GALLERY_REFRESH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [runningInTauri, library?.rootPath, query]);
+
+  useEffect(() => {
+    void refreshSelectedAlbumContents();
+  }, [runningInTauri, library?.rootPath, selectedAlbumId, selectedAlbum?.kind, albums]);
+
+  useEffect(() => {
+    if (!albumAddDrawerOpen) {
+      return;
+    }
+    void refreshAlbumAddCandidates();
+  }, [runningInTauri, library?.rootPath, albumAddDrawerOpen, albumAddQuery, selectedAlbumId]);
 
   useEffect(() => {
     return () => {
@@ -578,6 +607,55 @@ export function StudioAppController() {
     }
   }
 
+  async function refreshSelectedAlbumContents(albumId = selectedAlbumId) {
+    const album = albums.find((item) => item.id === albumId) ?? null;
+    if (!albumId || !album) {
+      setAlbumGallery([]);
+      return;
+    }
+    const contentsQuery = albumContentsQuery(albumId, album.kind);
+    if (!runningInTauri || !library) {
+      const source = applyPreviewGalleryQuery(contentsQuery);
+      setAlbumGallery(source);
+      return;
+    }
+    try {
+      const items = await invokeCommand<GalleryAsset[]>("query_gallery", {
+        input: galleryQueryInput(library.rootPath, contentsQuery),
+      });
+      setAlbumGallery(items);
+      setRecoverableError(null);
+    } catch (error) {
+      setAlbumGallery([]);
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
+  async function refreshAlbumAddCandidates(nextQuery = albumAddQuery) {
+    if (!selectedAlbumId) {
+      setAlbumAddGallery([]);
+      return;
+    }
+    if (!runningInTauri || !library) {
+      setAlbumAddGallery(filterAlbumAddCandidates(applyPreviewGalleryQuery(nextQuery), selectedAlbumId));
+      return;
+    }
+    try {
+      const items = await invokeCommand<GalleryAsset[]>("query_gallery", {
+        input: galleryQueryInput(library.rootPath, nextQuery),
+      });
+      setAlbumAddGallery(filterAlbumAddCandidates(items, selectedAlbumId));
+      setRecoverableError(null);
+    } catch (error) {
+      setAlbumAddGallery([]);
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
+  function applyPreviewGalleryQuery(nextQuery: GalleryQueryState) {
+    return applyGalleryQuery(mockGallery, nextQuery);
+  }
+
   async function refreshSuggestions() {
     if (!runningInTauri || !library) {
       setSuggestions([]);
@@ -627,12 +705,17 @@ export function StudioAppController() {
     setSelectedAssetId("");
     setDetailState(clearSelectionForLibrarySwitch());
     setGallery([]);
-      setAlbums(runningInTauri ? [] : mockAlbumList);
-      setSelectedAlbumId(cleared.selectedAlbumId);
-      setAlbumSearchInput("");
-      setAlbumNameInput("");
-      setAlbumCreateOpen(false);
-      setSelectedSuggestionId(cleared.selectedSuggestionId);
+    setAlbums(runningInTauri ? [] : mockAlbumList);
+    setSelectedAlbumId(cleared.selectedAlbumId);
+    setAlbumGallery([]);
+    setAlbumSearchInput("");
+    setAlbumNameInput("");
+    setAlbumCreateOpen(false);
+    setAlbumAddDrawerOpen(false);
+    setAlbumAddQuery(defaultAlbumAddSourceQuery());
+    setAlbumAddGallery([]);
+    setAlbumAddSelectionIds([]);
+    setSelectedSuggestionId(cleared.selectedSuggestionId);
     setSelectedSuggestionIds([]);
     setSuggestionHistory([]);
     setTasks(runningInTauri ? [] : mockTasks);
@@ -640,7 +723,7 @@ export function StudioAppController() {
     setTaskDetail(null);
     setReviewForm(cleared.reviewForm);
     setSuggestions(runningInTauri ? [] : mockSuggestions);
-    setQuery(clearAlbumQuery(query));
+    setQuery(resetGalleryQuery());
     setRecoverableError(null);
     setStatus(nextLibrary ? "Library switched" : "No library selected");
     if (runningInTauri && nextLibrary) {
@@ -741,7 +824,7 @@ export function StudioAppController() {
       setAlbumSearchInput("");
       setAlbumCreateOpen(false);
       setSelectedAlbumId(created.id);
-      setQuery((current) => openAlbumQuery(current, created.id));
+      setAlbumGallery([]);
       setStatus("Album created");
       setRecoverableError(null);
       return;
@@ -758,7 +841,7 @@ export function StudioAppController() {
       setAlbumCreateOpen(false);
       await refreshAlbums();
       setSelectedAlbumId(created.id);
-      setQuery((current) => openAlbumQuery(current, created.id));
+      setAlbumGallery([]);
       setStatus("Album created");
       setRecoverableError(null);
     } catch (error) {
@@ -775,7 +858,7 @@ export function StudioAppController() {
       const created = createPreviewAlbum(`album-${crypto.randomUUID()}`, trimmed, "smart", albums.length + 1);
       setAlbums((current) => [created, ...current]);
       setSelectedAlbumId(created.id);
-      setQuery((current) => openAlbumQuery(current, created.id));
+      setAlbumGallery([]);
       return;
     }
     try {
@@ -791,7 +874,7 @@ export function StudioAppController() {
       setAlbumCreateOpen(false);
       await refreshAlbums();
       setSelectedAlbumId(created.id);
-      setQuery((current) => openAlbumQuery(current, created.id));
+      setAlbumGallery([]);
       setRecoverableError(null);
     } catch (error) {
       setRecoverableError(errorMessage(error));
@@ -800,13 +883,14 @@ export function StudioAppController() {
 
   function openAlbum(albumId: string) {
     setSelectedAlbumId(albumId);
-    setQuery((current) => updateGalleryQuery(openAlbumQuery(current, albumId), { sort: "albumOrder" }));
     setActiveView("albums");
   }
 
   function closeAlbum() {
     setSelectedAlbumId(null);
-    setQuery((current) => clearAlbumQuery(current));
+    setAlbumGallery([]);
+    setAlbumAddDrawerOpen(false);
+    setAlbumAddSelectionIds([]);
   }
 
   async function renameAlbum(albumId: string, name: string) {
@@ -875,7 +959,7 @@ export function StudioAppController() {
       return;
     }
     if (!runningInTauri) {
-      setGallery((current) => current.filter((asset) => asset.id !== assetId));
+      setAlbumGallery((current) => current.filter((asset) => asset.id !== assetId));
       return;
     }
     try {
@@ -885,7 +969,7 @@ export function StudioAppController() {
           assetId,
         },
       });
-      await Promise.all([refreshAlbums(), refreshGallery()]);
+      await Promise.all([refreshAlbums(), refreshSelectedAlbumContents(), refreshGallery()]);
       setRecoverableError(null);
     } catch (error) {
       setRecoverableError(errorMessage(error));
@@ -896,7 +980,7 @@ export function StudioAppController() {
     if (!library || !selectedAlbumId) {
       return;
     }
-    setGallery((current) => reorderByIds(current, assetIds));
+    setAlbumGallery((current) => reorderByIds(current, assetIds));
     if (!runningInTauri) {
       return;
     }
@@ -907,11 +991,11 @@ export function StudioAppController() {
           assetIds,
         },
       });
-      await refreshGallery();
+      await refreshSelectedAlbumContents();
       setRecoverableError(null);
     } catch (error) {
       setRecoverableError(errorMessage(error));
-      await refreshGallery();
+      await refreshSelectedAlbumContents();
     }
   }
 
@@ -921,6 +1005,9 @@ export function StudioAppController() {
     }
     if (!runningInTauri) {
       setAlbums((current) => incrementAlbumItemCount(current, albumId, selectedGalleryAssetIds.length));
+      if (selectedAlbumId === albumId) {
+        setAlbumGallery(filterAlbumAddCandidates(mockGallery, null).filter((asset) => selectedGalleryAssetIds.includes(asset.id)));
+      }
       return;
     }
     try {
@@ -930,11 +1017,69 @@ export function StudioAppController() {
           assetIds: selectedGalleryAssetIds,
         },
       });
-      await Promise.all([refreshAlbums(), refreshGallery()]);
+      await Promise.all([refreshAlbums(), refreshSelectedAlbumContents(albumId), refreshGallery()]);
       setRecoverableError(null);
       setStatus("Selected assets added to album");
     } catch (error) {
       setRecoverableError(errorMessage(error));
+    }
+  }
+
+  function openAlbumAddDrawer() {
+    const nextQuery = defaultAlbumAddSourceQuery();
+    setAlbumAddQuery(nextQuery);
+    setAlbumAddSelectionIds([]);
+    setAlbumAddDrawerOpen(true);
+    void refreshAlbumAddCandidates(nextQuery);
+  }
+
+  function closeAlbumAddDrawer() {
+    setAlbumAddDrawerOpen(false);
+    setAlbumAddSelectionIds([]);
+    setAlbumAddGallery([]);
+  }
+
+  function updateAlbumAddQuery(nextQuery: GalleryQueryState) {
+    setAlbumAddQuery(nextQuery);
+  }
+
+  async function submitAlbumAddSelection() {
+    if (!library || !selectedAlbumId || albumAddSelectionIds.length === 0) {
+      return;
+    }
+    setAlbumAddSubmitting(true);
+    if (!runningInTauri) {
+      setAlbums((current) => incrementAlbumItemCount(current, selectedAlbumId, albumAddSelectionIds.length));
+      setAlbumGallery((current) => [
+        ...current,
+        ...mockGallery.filter((asset) => albumAddSelectionIds.includes(asset.id)),
+      ]);
+      closeAlbumAddDrawer();
+      setAlbumAddSubmitting(false);
+      setStatus("Images added to album");
+      return;
+    }
+    try {
+      await invokeCommand("batch_add_assets_to_album", {
+        input: {
+          albumId: selectedAlbumId,
+          assetIds: albumAddSelectionIds,
+        },
+      });
+      await Promise.all([
+        refreshAlbums(),
+        refreshSelectedAlbumContents(selectedAlbumId),
+        refreshAlbumAddCandidates(),
+        refreshGallery(),
+      ]);
+      setAlbumAddSelectionIds([]);
+      setAlbumAddDrawerOpen(false);
+      setStatus("Images added to album");
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    } finally {
+      setAlbumAddSubmitting(false);
     }
   }
 
@@ -979,6 +1124,7 @@ export function StudioAppController() {
       await Promise.all([
         refreshAlbums(),
         refreshGallery(),
+        refreshSelectedAlbumContents(albumId),
         loadAssetDetail(detail.id, selectedAsset?.currentVersionId ?? null),
       ]);
       setStatus("Asset added to album");
@@ -1006,6 +1152,10 @@ export function StudioAppController() {
       library={library}
       libraries={libraries}
       libraryStatus={libraryStatus}
+      albums={albums}
+      selectedAlbumId={selectedAlbumId}
+      albumSearchValue={albumSearchInput}
+      settingsSection={settingsSection}
       activeView={activeView}
       reviewCount={pendingSuggestions.length}
       queueCount={queueCount}
@@ -1013,6 +1163,14 @@ export function StudioAppController() {
       onExpandedChange={setSidebarExpanded}
       onViewChange={changeView}
       onLibraryChange={switchLibrary}
+      onAlbumSearchChange={setAlbumSearchInput}
+      onCreateAlbumClick={() => {
+        setActiveView("albums");
+        setAlbumCreateOpen(true);
+      }}
+      onCloseAlbum={closeAlbum}
+      onOpenAlbum={openAlbum}
+      onSettingsSectionChange={setSettingsSection}
     />
   );
   const workspaceSlot = (
@@ -1023,6 +1181,8 @@ export function StudioAppController() {
           itemCount={displayedGallery.length}
           status={status}
           composerOpen={composerOpen}
+          availableProviders={availableProviders}
+          albums={albums}
           onComposerOpenChange={openComposerForTextGeneration}
           onQueryChange={setQuery}
         />
@@ -1075,7 +1235,7 @@ export function StudioAppController() {
             availableCategories={availableCategories}
             availableProviders={availableProviders}
             selectedAlbumId={selectedAlbumId}
-            gallery={displayedGallery}
+            gallery={albumGallery}
             loading={albumLoading}
             searchValue={albumSearchInput}
             onSearchChange={setAlbumSearchInput}
@@ -1092,8 +1252,16 @@ export function StudioAppController() {
             onReorderAlbums={(albumIds) => void reorderAlbumsByIds(albumIds)}
             onRemoveAsset={(assetId) => void removeAssetFromSelectedAlbum(assetId)}
             onReorderAssets={(assetIds) => void reorderSelectedAlbumAssets(assetIds)}
-            selectedGalleryAssetCount={selectedGalleryAssetIds.length}
-            onBatchAddSelected={(albumId) => void addSelectedGalleryAssetsToAlbum(albumId)}
+            addDrawerOpen={albumAddDrawerOpen}
+            addQuery={albumAddQuery}
+            addGallery={albumAddGallery}
+            addSelectionIds={albumAddSelectionIds}
+            addSubmitting={albumAddSubmitting}
+            onOpenAddDrawer={openAlbumAddDrawer}
+            onCloseAddDrawer={closeAlbumAddDrawer}
+            onAddQueryChange={updateAlbumAddQuery}
+            onToggleAddSelection={(assetId) => setAlbumAddSelectionIds((current) => toggleSelection(current, assetId))}
+            onSubmitAddSelection={() => void submitAlbumAddSelection()}
             onSelectAsset={selectGalleryAsset}
           />
         )}

@@ -118,16 +118,24 @@ export function useGallerySelectionControllerState(runningInTauri: boolean) {
 export function useAlbumControllerState(runningInTauri: boolean) {
   const [albums, setAlbums] = useState<AlbumListItem[]>(runningInTauri ? [] : mockAlbumList);
   const [selectedAlbumId, setSelectedAlbumId] = useState<string | null>(null);
+  const [albumGallery, setAlbumGallery] = useState<GalleryAsset[]>([]);
   const [albumSearchInput, setAlbumSearchInput] = useState("");
   const [albumNameInput, setAlbumNameInput] = useState("");
   const [albumCreateOpen, setAlbumCreateOpen] = useState(false);
   const [albumLoading, setAlbumLoading] = useState(false);
+  const [albumAddDrawerOpen, setAlbumAddDrawerOpen] = useState(false);
+  const [albumAddQuery, setAlbumAddQuery] = useState<GalleryQueryState>(defaultGalleryQuery);
+  const [albumAddGallery, setAlbumAddGallery] = useState<GalleryAsset[]>([]);
+  const [albumAddSelectionIds, setAlbumAddSelectionIds] = useState<string[]>([]);
+  const [albumAddSubmitting, setAlbumAddSubmitting] = useState(false);
 
   return {
     albums,
     setAlbums,
     selectedAlbumId,
     setSelectedAlbumId,
+    albumGallery,
+    setAlbumGallery,
     albumSearchInput,
     setAlbumSearchInput,
     albumNameInput,
@@ -136,6 +144,16 @@ export function useAlbumControllerState(runningInTauri: boolean) {
     setAlbumCreateOpen,
     albumLoading,
     setAlbumLoading,
+    albumAddDrawerOpen,
+    setAlbumAddDrawerOpen,
+    albumAddQuery,
+    setAlbumAddQuery,
+    albumAddGallery,
+    setAlbumAddGallery,
+    albumAddSelectionIds,
+    setAlbumAddSelectionIds,
+    albumAddSubmitting,
+    setAlbumAddSubmitting,
   };
 }
 

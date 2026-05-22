@@ -1,20 +1,70 @@
 export {
+  clearGalleryAlbumFilter,
+  clearGalleryMinRatingFilter,
+  clearGalleryProviderFilter,
+  clearGalleryReviewFilter,
+  galleryAlbumFilterIds,
+  removeGalleryAlbumFilter,
+  resetGalleryQuery,
+  setGalleryAlbumFilter,
+  setGalleryUnassignedAlbumFilter,
+  toggleGalleryAlbumFilter,
   updateGalleryQuery,
   type DetailLoadState,
   type GalleryQueryState,
   type GallerySort,
+  type ReviewStatusFilter,
 } from "../gallery/state.js";
-import { updateGalleryQuery, type GalleryQueryState } from "../gallery/state.js";
+import {
+  resetGalleryQuery,
+  setGalleryAlbumFilter,
+  type GalleryQueryState,
+} from "../gallery/state.js";
 export { reorderByIds } from "../shared/state.js";
 
 import type { AlbumListItem } from "../../types.js";
 
-export function openAlbumQuery(query: GalleryQueryState, albumId: string): GalleryQueryState {
-  return updateGalleryQuery(query, { albumId });
+export function albumContentsQuery(
+  albumId: string | null,
+  albumKind: AlbumListItem["kind"] | null = "manual",
+): GalleryQueryState {
+  if (!albumId) {
+    return resetGalleryQuery();
+  }
+  return {
+    ...setGalleryAlbumFilter(resetGalleryQuery(), [albumId]),
+    sort: albumKind === "manual" ? "albumOrder" : "newest",
+  };
 }
 
-export function clearAlbumQuery(query: GalleryQueryState): GalleryQueryState {
-  return updateGalleryQuery(query, { albumId: null });
+export function defaultAlbumAddSourceQuery(): GalleryQueryState {
+  return resetGalleryQuery();
+}
+
+export function selectAlbumState(_current: string | null, albumId: string): string {
+  return albumId;
+}
+
+export function clearSelectedAlbumState(): string | null {
+  return null;
+}
+
+export function filterAlbumAddCandidates<TAsset extends { id: string; albums?: { id: string }[] }>(
+  assets: TAsset[],
+  albumId: string | null,
+): TAsset[] {
+  if (!albumId) {
+    return assets;
+  }
+  return assets.filter((asset) => !(asset.albums ?? []).some((album) => album.id === albumId));
+}
+
+export function openAlbumQuery(_query: GalleryQueryState, albumId: string): GalleryQueryState {
+  return albumContentsQuery(albumId);
+}
+
+export function clearAlbumQuery(_query: GalleryQueryState): GalleryQueryState {
+  return resetGalleryQuery();
 }
 
 export function createPreviewAlbum(

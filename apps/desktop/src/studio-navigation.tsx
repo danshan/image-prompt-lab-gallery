@@ -13,10 +13,23 @@ type LibraryStatusSummary = {
   integrityIssueCount: number;
 };
 
+type AlbumNavItem = {
+  id: string;
+  name: string;
+  kind: "manual" | "smart";
+  itemCount?: number | null;
+};
+
+type SettingsSectionNav = "libraries" | "providers" | "updates" | "logs";
+
 export function Sidebar({
   library,
   libraries,
   libraryStatus,
+  albums,
+  selectedAlbumId,
+  albumSearchValue,
+  settingsSection,
   activeView,
   reviewCount,
   queueCount,
@@ -24,10 +37,19 @@ export function Sidebar({
   onExpandedChange,
   onViewChange,
   onLibraryChange,
+  onAlbumSearchChange,
+  onCreateAlbumClick,
+  onCloseAlbum,
+  onOpenAlbum,
+  onSettingsSectionChange,
 }: {
   library: LibraryNavItem | null;
   libraries: LibraryNavItem[];
   libraryStatus: LibraryStatusSummary | null;
+  albums: AlbumNavItem[];
+  selectedAlbumId: string | null;
+  albumSearchValue: string;
+  settingsSection: SettingsSectionNav;
   activeView: StudioView;
   reviewCount: number;
   queueCount: number;
@@ -35,6 +57,11 @@ export function Sidebar({
   onExpandedChange: (expanded: boolean) => void;
   onViewChange: (view: StudioView) => void;
   onLibraryChange: (libraryId: string) => void;
+  onAlbumSearchChange: (value: string) => void;
+  onCreateAlbumClick: () => void;
+  onCloseAlbum: () => void;
+  onOpenAlbum: (albumId: string) => void;
+  onSettingsSectionChange: (section: SettingsSectionNav) => void;
 }) {
   return (
     <>
@@ -65,53 +92,196 @@ export function Sidebar({
         <small className="app-version">Image Prompt Lab 1.2.0</small>
       </StudioRail>
       <LibraryContextPanel>
-        <label className="library-card library-selector-card">
-          <span className="database-icon" aria-hidden="true">
-            <Icon name="database" />
-          </span>
-          <span>
-            <strong>{library?.name ?? "No library"}</strong>
-            <small>Library</small>
-          </span>
-          <select
-            className="library-picker"
-            aria-label="Switch library"
-            value={library?.id ?? ""}
-            onChange={(event) => onLibraryChange(event.target.value)}
-          >
-            {libraries.length === 0 ? (
-              <option value="">No library registered</option>
-            ) : (
-              libraries.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))
-            )}
-          </select>
-          <span className="library-chevron" aria-hidden="true">
-            <Icon name="chevronDown" />
-          </span>
-        </label>
-        <section className="library-status">
-          <div>
-            <span>Library Status</span>
-            <strong className="healthy">Healthy</strong>
-          </div>
-          <div>
-            <span>Storage</span>
-            <span>{formatBytes(libraryStatus?.storageSizeBytes ?? null)}</span>
-          </div>
-          <div>
-            <span>Integrity Check</span>
-            <strong className={libraryStatus?.integrityIssueCount ? "warning" : "healthy"}>
-              {libraryStatus?.integrityIssueCount ? `${libraryStatus.integrityIssueCount} issue(s)` : "All good"}
-            </strong>
-          </div>
-          <button>Run Integrity Check</button>
-        </section>
+        {activeView === "albums" ? (
+          <AlbumsContextPanel
+            albums={albums}
+            selectedAlbumId={selectedAlbumId}
+            searchValue={albumSearchValue}
+            onSearchChange={onAlbumSearchChange}
+            onCreateAlbumClick={onCreateAlbumClick}
+            onCloseAlbum={onCloseAlbum}
+            onOpenAlbum={onOpenAlbum}
+          />
+        ) : activeView === "settings" ? (
+          <SettingsContextPanel
+            activeSection={settingsSection}
+            onSectionChange={onSettingsSectionChange}
+          />
+        ) : (
+          <LibrarySummaryPanel
+            library={library}
+            libraries={libraries}
+            libraryStatus={libraryStatus}
+            onLibraryChange={onLibraryChange}
+          />
+        )}
       </LibraryContextPanel>
     </>
+  );
+}
+
+function LibrarySummaryPanel({
+  library,
+  libraries,
+  libraryStatus,
+  onLibraryChange,
+}: {
+  library: LibraryNavItem | null;
+  libraries: LibraryNavItem[];
+  libraryStatus: LibraryStatusSummary | null;
+  onLibraryChange: (libraryId: string) => void;
+}) {
+  return (
+    <>
+      <label className="library-card library-selector-card">
+        <span className="database-icon" aria-hidden="true">
+          <Icon name="database" />
+        </span>
+        <span>
+          <strong>{library?.name ?? "No library"}</strong>
+          <small>Library</small>
+        </span>
+        <select
+          className="library-picker"
+          aria-label="Switch library"
+          value={library?.id ?? ""}
+          onChange={(event) => onLibraryChange(event.target.value)}
+        >
+          {libraries.length === 0 ? (
+            <option value="">No library registered</option>
+          ) : (
+            libraries.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))
+          )}
+        </select>
+        <span className="library-chevron" aria-hidden="true">
+          <Icon name="chevronDown" />
+        </span>
+      </label>
+      <section className="library-status">
+        <div>
+          <span>Library Status</span>
+          <strong className="healthy">Healthy</strong>
+        </div>
+        <div>
+          <span>Storage</span>
+          <span>{formatBytes(libraryStatus?.storageSizeBytes ?? null)}</span>
+        </div>
+        <div>
+          <span>Integrity Check</span>
+          <strong className={libraryStatus?.integrityIssueCount ? "warning" : "healthy"}>
+            {libraryStatus?.integrityIssueCount ? `${libraryStatus.integrityIssueCount} issue(s)` : "All good"}
+          </strong>
+        </div>
+        <button>Run Integrity Check</button>
+      </section>
+    </>
+  );
+}
+
+function AlbumsContextPanel({
+  albums,
+  selectedAlbumId,
+  searchValue,
+  onSearchChange,
+  onCreateAlbumClick,
+  onCloseAlbum,
+  onOpenAlbum,
+}: {
+  albums: AlbumNavItem[];
+  selectedAlbumId: string | null;
+  searchValue: string;
+  onSearchChange: (value: string) => void;
+  onCreateAlbumClick: () => void;
+  onCloseAlbum: () => void;
+  onOpenAlbum: (albumId: string) => void;
+}) {
+  const needle = searchValue.trim().toLocaleLowerCase();
+  const visibleAlbums = needle
+    ? albums.filter((album) => album.name.toLocaleLowerCase().includes(needle))
+    : albums;
+  return (
+    <section className="context-section">
+      <div className="context-panel-header">
+        <div>
+          <strong>Albums</strong>
+          <small>{albums.length} total</small>
+        </div>
+        <button className="icon-button" aria-label="Create album" onClick={onCreateAlbumClick}>
+          <Icon name="plus" />
+        </button>
+      </div>
+      <input
+        className="context-search"
+        value={searchValue}
+        onChange={(event) => onSearchChange(event.target.value)}
+        placeholder="Search albums"
+      />
+      <div className="context-nav-list">
+        <button
+          className={selectedAlbumId === null ? "context-nav-item active" : "context-nav-item"}
+          onClick={onCloseAlbum}
+        >
+          <span>
+            <strong>All albums</strong>
+            <small>Overview</small>
+          </span>
+          <span>{albums.length}</span>
+        </button>
+        {visibleAlbums.map((album) => (
+          <button
+            key={album.id}
+            className={album.id === selectedAlbumId ? "context-nav-item active" : "context-nav-item"}
+            onClick={() => onOpenAlbum(album.id)}
+          >
+            <span>
+              <strong>{album.name}</strong>
+              <small>{album.kind}</small>
+            </span>
+            <span>{album.itemCount ?? "-"}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SettingsContextPanel({
+  activeSection,
+  onSectionChange,
+}: {
+  activeSection: SettingsSectionNav;
+  onSectionChange: (section: SettingsSectionNav) => void;
+}) {
+  const sections: Array<{ id: SettingsSectionNav; label: string }> = [
+    { id: "libraries", label: "Libraries" },
+    { id: "providers", label: "Providers" },
+    { id: "updates", label: "Updates" },
+    { id: "logs", label: "Logs" },
+  ];
+  return (
+    <section className="context-section">
+      <div className="context-panel-header">
+        <div>
+          <strong>Settings</strong>
+          <small>Sections</small>
+        </div>
+      </div>
+      <div className="context-nav-list">
+        {sections.map((section) => (
+          <button
+            key={section.id}
+            className={section.id === activeSection ? "context-nav-item active" : "context-nav-item"}
+            onClick={() => onSectionChange(section.id)}
+          >
+            <span>{section.label}</span>
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 

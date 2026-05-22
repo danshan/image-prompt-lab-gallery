@@ -9,6 +9,8 @@ export function galleryQueryInput(libraryPath: string, query: GalleryQueryState)
     reviewStatus: query.reviewStatus,
     tags: query.tags,
     sort: query.sort,
-    albumId: query.albumId,
+    albumFilter: query.albumFilter.mode === "inAny" && query.albumFilter.albumIds.length === 0
+      ? { mode: "any" }
+      : query.albumFilter,
   };
 }

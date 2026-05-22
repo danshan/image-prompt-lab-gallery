@@ -116,20 +116,6 @@ export function SettingsWorkspace({
 }) {
   return (
     <section className="settings-workspace">
-      <div className="settings-tabs" role="tablist" aria-label="Settings sections">
-        <button className={activeSection === "libraries" ? "active" : ""} onClick={() => onSectionChange("libraries")}>
-          Libraries
-        </button>
-        <button className={activeSection === "providers" ? "active" : ""} onClick={() => onSectionChange("providers")}>
-          Providers
-        </button>
-        <button className={activeSection === "updates" ? "active" : ""} onClick={() => onSectionChange("updates")}>
-          Updates
-        </button>
-        <button className={activeSection === "logs" ? "active" : ""} onClick={() => onSectionChange("logs")}>
-          Logs
-        </button>
-      </div>
       {activeSection === "libraries" ? (
         <SettingsLibrariesView
           library={library}

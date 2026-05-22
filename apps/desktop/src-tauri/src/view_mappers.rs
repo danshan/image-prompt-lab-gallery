@@ -24,15 +24,66 @@ pub(crate) fn asset_view(summary: imglab_core::AssetSummary) -> AssetView {
 pub(crate) fn gallery_query_from_input(
     input: QueryGalleryInput,
 ) -> Result<GalleryQuery, CommandError> {
+    let legacy_album_id = input.album_id.map(imglab_core::AlbumId);
+    let album_filter =
+        gallery_album_filter_from_input(input.album_filter, legacy_album_id.clone())?;
     Ok(GalleryQuery {
         text: input.text,
         providers: input.providers.unwrap_or_default(),
         min_rating: input.min_rating,
         review_status: review_status_from_input(input.review_status.as_deref())?,
         tags: input.tags.unwrap_or_default(),
-        album_id: input.album_id.map(imglab_core::AlbumId),
+        album_filter,
+        album_id: None,
         sort: gallery_sort_from_input(input.sort.as_deref())?,
     })
+}
+
+pub(crate) fn gallery_album_filter_from_input(
+    value: Option<GalleryAlbumFilterInput>,
+    legacy_album_id: Option<imglab_core::AlbumId>,
+) -> Result<GalleryAlbumFilter, CommandError> {
+    let Some(value) = value else {
+        return Ok(GalleryAlbumFilter::from_legacy_album_id(legacy_album_id));
+    };
+    let album_ids = value
+        .album_ids
+        .unwrap_or_default()
+        .into_iter()
+        .map(imglab_core::AlbumId)
+        .collect::<Vec<_>>();
+    match value.mode.as_str() {
+        "any" => {
+            if album_ids.is_empty() {
+                Ok(GalleryAlbumFilter::Any)
+            } else {
+                Err(invalid_gallery_query(
+                    "any album filter cannot include album ids",
+                ))
+            }
+        }
+        "inAny" | "in_any" => Ok(GalleryAlbumFilter::InAny(album_ids).normalized()),
+        "unassigned" => {
+            if album_ids.is_empty() {
+                Ok(GalleryAlbumFilter::Unassigned)
+            } else {
+                Err(invalid_gallery_query(
+                    "unassigned album filter cannot include album ids",
+                ))
+            }
+        }
+        other => Err(invalid_gallery_query(format!(
+            "unsupported gallery album filter mode: {other}"
+        ))),
+    }
+}
+
+fn invalid_gallery_query(message: impl Into<String>) -> CommandError {
+    CommandError {
+        code: "InvalidGalleryQuery".to_string(),
+        message: message.into(),
+        recoverable: true,
+    }
 }
 
 pub(crate) fn review_status_from_input(
