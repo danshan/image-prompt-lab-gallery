@@ -15,6 +15,8 @@ Highest-priority risks:
 
 Recommended route: create `systematic-ddd-architecture-refactor` as a staged OpenSpec change. The first wave preserves behavior and establishes baselines; later waves consolidate boundaries, harden read models, clean runtime/frontend ownership, and strengthen tests/guardrails.
 
+The current migrated-flow inventory and bounded legacy-service allowlist are tracked in `docs/architecture/ddd-boundary-inventory.md`.
+
 ## Scope and Constraints
 
 Scope:

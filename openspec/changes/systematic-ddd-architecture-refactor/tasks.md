@@ -9,10 +9,10 @@
 
 ## 2. Core Boundary Consolidation
 
-- [ ] 2.1 Inventory migrated write flows and identify their primary application owners.
-- [ ] 2.2 Identify remaining runtime paths that use `LocalLibraryService` as a primary-looking boundary.
-- [ ] 2.3 Refactor or explicitly bound legacy service usage behind application/use-case or compatibility surfaces.
-- [ ] 2.4 Extend architecture checks for new direct runtime bypasses.
+- [x] 2.1 Inventory migrated write flows and identify their primary application owners.
+- [x] 2.2 Identify remaining runtime paths that use `LocalLibraryService` as a primary-looking boundary.
+- [x] 2.3 Refactor or explicitly bound legacy service usage behind application/use-case or compatibility surfaces.
+- [x] 2.4 Extend architecture checks for new direct runtime bypasses.
 
 ## 3. Persistence, Search, and Read-Model Hardening
 
