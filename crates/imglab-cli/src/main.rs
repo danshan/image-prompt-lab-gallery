@@ -4,7 +4,7 @@ use imglab_core::{
     GenerationRequestInput, ImportAssetRequest, LocalLibraryService, MetadataSuggestionId,
     RepairLibraryRequest, ReviewMetadataSuggestionRequest, SearchQuery,
 };
-use imglab_core::{AlbumService, LibraryService, MetadataReviewService, SearchService};
+use imglab_core::{LibraryService, MetadataReviewService};
 use imglab_provider_codex::CodexCliImageProvider;
 use serde_json::json;
 use std::path::PathBuf;
@@ -35,11 +35,11 @@ fn run(args: Vec<String>) -> Result<(), DomainError> {
         "library" => library(app.library(), &args[1..]),
         "import" => import(app.assets(), &args[1..]),
         "export" => export(app.library(), &args[1..]),
-        "search" => search(app.library(), &args[1..]),
+        "search" => search(app.library(), app.search(), &args[1..]),
         "generate" => generate(&args[1..]),
         "tag" => tag(app.library(), &args[1..]),
-        "rate" => rate(app.library(), &args[1..]),
-        "album" => album(app.library(), &args[1..]),
+        "rate" => rate(app.albums(), &args[1..]),
+        "album" => album(app.library(), app.albums(), &args[1..]),
         "suggestion" => suggestion(app.library(), &args[1..]),
         _ => Err(DomainError::InvalidGenerationParameters {
             message: format!("unsupported command: {command}"),
@@ -199,11 +199,15 @@ fn export(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainEr
     Ok(())
 }
 
-fn search(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+fn search(
+    library_service: &LocalLibraryService,
+    search: &imglab_core::application::use_cases::albums::SearchUseCase<LocalLibraryService>,
+    args: &[String],
+) -> Result<(), DomainError> {
     let library_path = required_option(args, "--library")?;
     let query_text = option_value(args, "--query");
-    let library = service.open_library(&PathBuf::from(library_path))?;
-    let results = service.search(
+    let library = library_service.open_library(&PathBuf::from(library_path))?;
+    let results = search.execute(
         &library.id,
         SearchQuery {
             text: query_text,
@@ -307,7 +311,10 @@ where
     Ok(())
 }
 
-fn rate(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+fn rate(
+    albums: &imglab_core::application::use_cases::albums::AlbumUseCase<LocalLibraryService>,
+    args: &[String],
+) -> Result<(), DomainError> {
     let library_path = required_option(args, "--library")?;
     let asset_id = positional(args, 0, "asset id")?;
     let rating = positional(args, 1, "rating")?
@@ -320,7 +327,7 @@ fn rate(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainErro
         return Ok(());
     }
 
-    let asset = service.update_asset_metadata(imglab_core::UpdateAssetMetadataRequest {
+    let asset = albums.update_asset_metadata(imglab_core::UpdateAssetMetadataRequest {
         library_path: PathBuf::from(library_path),
         asset_id: imglab_core::AssetId(asset_id),
         title: None,
@@ -365,7 +372,11 @@ fn tag(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError
     }
 }
 
-fn album(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+fn album(
+    library_service: &LocalLibraryService,
+    albums: &imglab_core::application::use_cases::albums::AlbumUseCase<LocalLibraryService>,
+    args: &[String],
+) -> Result<(), DomainError> {
     let Some(subcommand) = args.first().map(String::as_str) else {
         return Err(DomainError::InvalidGenerationParameters {
             message: "album subcommand is required".to_string(),
@@ -376,13 +387,13 @@ fn album(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainErr
         "create" => {
             let library_path = required_option(args, "--library")?;
             let name = positional(&args[1..], 0, "album name")?;
-            let library = service.open_library(&PathBuf::from(library_path))?;
+            let library = library_service.open_library(&PathBuf::from(library_path))?;
             if has_flag(args, "--dry-run") {
                 print_json(json!({"dry_run": true, "name": name}));
                 return Ok(());
             }
 
-            let album = service.create_manual_album(&library.id, &name)?;
+            let album = albums.create_manual_album(&library.id, &name)?;
             print_json(json!({"id": album.id.0, "name": album.name, "kind": "manual"}));
             Ok(())
         }
@@ -394,7 +405,7 @@ fn album(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainErr
                 return Ok(());
             }
 
-            service.add_asset(
+            albums.add_asset(
                 &imglab_core::AlbumId(album_id.clone()),
                 &AssetId(asset_id.clone()),
             )?;

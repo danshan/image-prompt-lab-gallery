@@ -15,7 +15,7 @@ Highest-priority risks:
 
 Recommended route: create `systematic-ddd-architecture-refactor` as a staged OpenSpec change. The first wave preserves behavior and establishes baselines; later waves consolidate boundaries, harden read models, clean runtime/frontend ownership, and strengthen tests/guardrails.
 
-The current migrated-flow inventory and bounded legacy-service allowlist are tracked in `docs/architecture/ddd-boundary-inventory.md`. The persistence/search decision gate and workload smoke results are tracked in `docs/architecture/persistence-query-engine-decision.md`.
+The current migrated-flow inventory and bounded legacy-service allowlist are tracked in `docs/architecture/ddd-boundary-inventory.md`. The persistence/search decision gate and workload smoke results are tracked in `docs/architecture/persistence-query-engine-decision.md`. The desktop refresh and polling ownership policy is tracked in `docs/architecture/desktop-refresh-policy.md`.
 
 ## Scope and Constraints
 
@@ -105,6 +105,7 @@ Evidence: `crates/imglab-daemon/src/scheduler.rs` performs provider dispatch and
 Problem: Daemon owns execution concerns, but output-link and task transition semantics need a clear core owner.  
 Impact: Retrying, cancellation, output links, and generation lineage can drift across daemon and core.  
 Recommendation: Keep daemon focused on ticking, cancellation markers, process/log boundary, and loopback transport. Move task transition and output-link policies toward core task/generation application services.  
+Implementation note: Task completion, cancellation, failure status, and task event-type decisions now route through `crates/imglab-core/src/domain/task/policies.rs`. The daemon scheduler still owns runtime log IO, provider process boundaries, cancellation marker checks, and retry backoff timestamp calculation.
 Validation: daemon scheduler tests, task transition tests, and generation output contract tests.
 
 Finding ID: RUNTIME-003  
@@ -134,6 +135,7 @@ Evidence: Search, gallery filtering, smart album filtering, and text matching cu
 Problem: The system lacks an explicit decision tree for when to add FTS5, projection tables, Tantivy, DuckDB, or PostgreSQL.  
 Impact: Future DB decisions may be made reactively and increase migration risk.  
 Recommendation: Add persistence/search engine decision gates to `resource-library` specs.  
+Implementation note: The current decision gate keeps SQLite as authoritative storage, adds `scripts/sqlite-workload-smoke.sh` as a repeatable synthetic workload fixture, and defers FTS5/projection tables, Tantivy, DuckDB, and PostgreSQL until workload evidence requires them.
 Validation: OpenSpec scenarios for migration, rollback, backup/restore, index rebuild, and repair.
 
 Finding ID: DB-003  
@@ -163,6 +165,7 @@ Evidence: Desktop polling intervals and refresh fan-out are centralized around t
 Problem: Refresh storms can trigger repeated full gallery/suggestion/task reads after write-heavy workflows.  
 Impact: UI responsiveness and SQLite contention can degrade during generation/review batches.  
 Recommendation: Define refresh policy by workflow, including debounce, background polling, stale-while-refresh behavior, and event-driven replacement candidates.  
+Implementation note: Root refresh effects now live in `apps/desktop/src/app/hooks/controllers/refresh-policy.ts`, with workflow-specific action hooks still owning the concrete refresh commands.
 Validation: Frontend tests for action fan-out and smoke checks for task queue updates.
 
 Finding ID: PERF-003  
@@ -183,6 +186,7 @@ Evidence: `apps/desktop/src/app/StudioAppController.tsx` remains a large orchest
 Problem: Composition, transport orchestration, cross-workflow state transitions, and UI slots remain tightly coupled.  
 Impact: Future workflow changes are harder to reason about and easier to regress.  
 Recommendation: Continue moving async actions and workflow state ownership into workflow-owned controller modules.  
+Implementation note: Polling and refresh orchestration moved out of `StudioAppController.tsx` into `apps/desktop/src/app/hooks/controllers/refresh-policy.ts`, leaving the root controller closer to composition and slot wiring.
 Validation: Desktop tests and build; file-size/ownership scan for controller regression.
 
 Finding ID: FE-002  

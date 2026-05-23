@@ -16,9 +16,9 @@ The goal is not to pretend the legacy `library/*` surface has disappeared. The g
 | Text-to-image and image-to-image generation | `application::use_cases::generation::GenerateImageUseCase` | CLI `generate`, daemon task execution | Migrated application owner with runtime provider dispatch | Provider process execution remains runtime/provider-owned. Version persistence, reference source behavior, and generation event persistence belong to application/domain. |
 | Metadata suggestion create | `application::use_cases::metadata_review::CreateMetadataSuggestionUseCase` | CLI suggestion create, daemon metadata tasks, Tauri review flows | Partially migrated | Daemon constructs the focused use case from the application library adapter. Future work should expose it through the application facade instead of constructing it ad hoc. |
 | Metadata review accept/reject | `application::use_cases::metadata_review::ReviewMetadataSuggestionUseCase` | CLI suggestion accept/reject, Tauri review flows | Transitional compatibility | CLI still calls the legacy service directly. The behavior owner should be the review application owner. |
-| Album create/add/remove/reorder/smart query | `application::use_cases::albums::AlbumUseCase` | CLI album commands, Tauri album workflows | Transitional compatibility | Tauri uses application composition. CLI still exposes direct service helpers and should move toward the album use case. |
+| Album create/add/remove/reorder/smart query | `application::use_cases::albums::AlbumUseCase` | CLI album commands, Tauri album workflows | Migrated application owner for CLI create/add and Tauri workflows | CLI create/add now use `app.albums()`. Remaining album operations should keep using this application owner as they expand. |
 | Gallery query/detail/inspector read model | `application::use_cases::albums::QueryGalleryUseCase` | Tauri gallery, daemon task output lookup | Migrated query owner with large legacy adapter | Query behavior enters through application use case, but implementation remains concentrated in `library/gallery.rs`. |
-| Search | `application::use_cases::albums::SearchUseCase` | CLI search, Tauri search/gallery flows | Transitional compatibility | CLI still calls `SearchService` on `LocalLibraryService`; future work should use `app.search()`. |
+| Search | `application::use_cases::albums::SearchUseCase` | CLI search, Tauri search/gallery flows | Migrated application owner for CLI search | CLI search now opens the library through the library lifecycle surface and executes search through `app.search()`. |
 | Task create/list/detail/reorder/retry/duplicate/output/event | `application::use_cases::tasks::TaskUseCase` | daemon API, Tauri queue workflows | Migrated application owner with daemon orchestration concerns | Repository operations are wrapped by `TaskUseCase`; task transition and output-link policy still need stronger core ownership. |
 
 ## Explicitly Bounded Runtime Legacy Usage
@@ -27,7 +27,7 @@ The following runtime files are allowed to mention `LocalLibraryService` during 
 
 | File | Current reason | Desired end state |
 | --- | --- | --- |
-| `crates/imglab-cli/src/main.rs` | CLI command helpers still use `LocalLibraryService` for library, search, tag, rating, album, and suggestion compatibility commands. | Move commands to application facade/use-case owners in focused waves while preserving CLI JSON. |
+| `crates/imglab-cli/src/main.rs` | CLI command helpers still use `LocalLibraryService` for library lifecycle, tag, and suggestion compatibility commands. Search, rating, and album create/add now use application owners. | Move remaining commands to application facade/use-case owners in focused waves while preserving CLI JSON. |
 | `crates/imglab-daemon/src/lib.rs` | Daemon prelude imports core compatibility types for route/runtime modules. | Replace broad prelude imports with focused application/interface-contract imports. |
 | `crates/imglab-daemon/src/runtime.rs` | `DaemonState` stores `SqliteImgLabApplication<FakeImageProvider>` and exposes a `service()` compatibility accessor for open-library and recovery paths. | Remove the generic service accessor or narrow it to library lifecycle once runtime paths use explicit owners. |
 
@@ -44,7 +44,7 @@ This is intentionally stricter for new files than for legacy files. It prevents 
 
 ## Next Refactor Targets
 
-1. Move CLI search, album, rating/tag, and metadata review commands from direct service helpers to application use-case owners.
+1. Move remaining CLI tag and metadata review commands from direct service helpers to application use-case owners.
 2. Expose metadata suggestion creation through the application facade instead of constructing a focused use case in daemon runtime.
 3. Replace daemon `service()` accessor with narrower lifecycle operations.
 4. Split gallery read-model implementation after persistence/search workload evidence is recorded.
