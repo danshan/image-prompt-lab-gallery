@@ -10,12 +10,13 @@ The current MVP is built around a Tauri + React desktop shell, a Rust core busin
 
 This project is under active MVP development. The stable baseline is:
 
+- Latest desktop release: `v0.1.5`. See [GitHub Releases](https://github.com/danshan/image-prompt-lab-gallery/releases/latest).
 - Cross-platform desktop shell with Tauri, React, and TypeScript.
 - Rust workspace with `imglab-core` as the shared DDD business core for desktop, CLI, and daemon write operations.
 - Local managed resource libraries backed by SQLite and filesystem storage.
 - GUI-first workflow with CLI support for automation.
 - Text-to-image and image-to-image service boundaries.
-- Asset-level version lineage.
+- Asset-level version lineage with Gallery version tree inspection and version promotion.
 - Human-reviewed AI metadata suggestions before canonical metadata updates.
 - Available image providers: `fake` and Codex CLI imagegen adapter.
 - Grok provider crate exists as a boundary, with native implementation deferred.
@@ -54,16 +55,23 @@ Runtime layers should call the application facade or explicit interface contract
 
 SQLite is used through Rust dependencies; no separate SQLite server is required.
 
+## Desktop Release
+
+The current desktop release path is a macOS Tauri build published through GitHub Releases. Release builds include updater artifacts and `latest.json` for the Tauri updater endpoint.
+
+Current release signing uses macOS ad-hoc signing plus Tauri updater signing. It is not Apple Developer ID notarization, so first-open Gatekeeper behavior can still require user intervention.
+
+See [docs/release.md](docs/release.md) for version discipline, signing boundaries, required GitHub secrets, and release verification steps.
+
 ## Quick Start
 
 Run core checks from the repository root:
 
 ```bash
-cargo fmt --all --check
-cargo test -p imglab-core
-cargo test -p imglab-cli
-cargo test -p imglab-daemon
-cargo test -p imglab-provider-codex -p imglab-provider-grok
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+npm run build --prefix apps/desktop
 scripts/check-architecture.sh
 ```
 

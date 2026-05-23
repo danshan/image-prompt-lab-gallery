@@ -10,12 +10,13 @@ Image Prompt Lab Gallery 是一个 local-first 桌面应用, 用于管理 AI 图
 
 项目处于活跃 MVP 开发阶段. 当前稳定基线包括:
 
+- 最新 desktop release: `v0.1.5`. 见 [GitHub Releases](https://github.com/danshan/image-prompt-lab-gallery/releases/latest).
 - 基于 Tauri, React, TypeScript 的跨平台桌面壳.
-- Rust workspace 作为 desktop 和 CLI 写操作共享的核心业务层.
+- Rust workspace 中的 `imglab-core` 是 desktop, CLI, daemon 写操作共享的 DDD 业务核心.
 - 基于 SQLite 与本地文件系统的 managed resource library.
 - GUI-first workflow, 同时提供 CLI 自动化能力.
 - text-to-image 和 image-to-image 的 service boundary.
-- asset-level version lineage.
+- asset-level version lineage, Gallery version tree inspection, 以及 version promotion.
 - AI metadata suggestions 必须经过人工 review 后才写入 canonical metadata.
 - 当前可用图片 provider: `fake` 和 Codex CLI imagegen adapter.
 - Grok provider crate 已保留边界, native implementation 暂缓.
@@ -24,7 +25,7 @@ Image Prompt Lab Gallery 是一个 local-first 桌面应用, 用于管理 AI 图
 
 ```text
 apps/desktop              Tauri and React desktop application
-crates/imglab-core        Core domain model, services, storage, and provider traits
+crates/imglab-core        DDD core: domain, application ports/use cases, infrastructure adapters
 crates/imglab-cli         CLI for library, asset, search, generation, album, and metadata workflows
 crates/imglab-provider-codex
                           Codex CLI imagegen provider adapter
@@ -36,6 +37,15 @@ openspec/specs            Current product and architecture specifications
 openspec/changes          Proposed and archived spec-driven changes
 ```
 
+`imglab-core` 围绕明确边界组织:
+
+- `domain`: business invariants and reusable policies.
+- `application`: ports, use cases, read models, and the `ImgLabApplication` facade.
+- `infrastructure`: SQLite, filesystem, registry, and provider composition adapters.
+- `interface_contracts`: runtime-facing DTO compatibility surface.
+
+Runtime layers 应调用 application facade 或明确的 interface contracts, 不应复制 generation planning, asset version allocation, task transitions 或 library mutation semantics.
+
 ## 前置条件
 
 - Rust stable toolchain.
@@ -45,14 +55,24 @@ openspec/changes          Proposed and archived spec-driven changes
 
 SQLite 通过 Rust 依赖使用, 不需要单独运行 SQLite server.
 
+## Desktop Release
+
+当前 desktop release 路径是通过 GitHub Releases 发布的 macOS Tauri build. Release artifacts 包含 updater artifacts 和供 Tauri updater endpoint 使用的 `latest.json`.
+
+当前 release signing 使用 macOS ad-hoc signing 和 Tauri updater signing. 它不是 Apple Developer ID notarization, 因此首次打开下载应用时仍可能需要处理 macOS Gatekeeper 提示.
+
+版本规则, signing boundary, GitHub secrets 和 release 验证步骤见 [docs/release.md](docs/release.md).
+
 ## 快速开始
 
 在仓库根目录运行核心检查:
 
 ```bash
-cargo fmt --all --check
-cargo check --offline -p imglab-core -p imglab-cli -p imglab-provider-codex -p imglab-provider-grok
-cargo test --offline -p imglab-core -p imglab-provider-codex -p imglab-cli
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+npm run build --prefix apps/desktop
+scripts/check-architecture.sh
 ```
 
 构建并运行 desktop frontend:
