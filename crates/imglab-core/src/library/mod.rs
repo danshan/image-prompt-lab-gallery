@@ -40,6 +40,7 @@ mod generation;
 pub(super) use crate::domain::generation::{operation_from_str, operation_to_str};
 pub use generation::{normalize_provider_name, prepare_generation_request, LocalGenerationService};
 mod gallery;
+mod gallery_search;
 mod maintenance;
 mod metadata;
 use metadata::attach_tag;

@@ -32,7 +32,7 @@ impl SearchService for LocalLibraryService {
                 path: library_id.0.clone(),
             })?;
         let connection = Self::open_library_database(&library.root_path)?;
-        search_assets(&connection, query)
+        super::gallery_search::search_assets(&connection, query)
     }
 }
 
@@ -224,45 +224,6 @@ pub(super) fn validate_rating_range(
     }
 }
 
-fn search_assets(connection: &Connection, query: SearchQuery) -> DomainResult<Vec<AssetSummary>> {
-    let mut items = load_gallery_asset_views(connection)?;
-    if let Some(text) = query
-        .text
-        .as_deref()
-        .map(str::trim)
-        .filter(|text| !text.is_empty())
-    {
-        let needle = text.to_ascii_lowercase();
-        items.retain(|item| search_item_matches_text(item, &needle));
-    }
-    if let Some(provider) = query.provider {
-        items.retain(|item| item.provider.as_deref() == Some(provider.as_str()));
-    }
-    if let Some(min_rating) = query.min_rating {
-        items.retain(|item| item.rating.unwrap_or_default() >= min_rating);
-    }
-    if let Some(status) = query.status {
-        items.retain(|item| item.status == status);
-    }
-    if let Some(category) = query.category {
-        items.retain(|item| item.category.as_deref() == Some(category.as_str()));
-    }
-    if !query.tags.is_empty() {
-        let wanted = query.tags;
-        items.retain(|item| wanted.iter().all(|tag| item.tags.contains(tag)));
-    }
-    Ok(items
-        .into_iter()
-        .map(|item| AssetSummary {
-            id: item.id,
-            title: item.title,
-            category: item.category,
-            rating: item.rating,
-            status: item.status,
-        })
-        .collect())
-}
-
 fn validate_gallery_query(query: &GalleryQuery) -> DomainResult<()> {
     if let Some(min_rating) = query.min_rating {
         validate_rating_range(min_rating, "min_rating", true)?;
@@ -317,7 +278,9 @@ fn single_album_filter_context<'a>(
     single_album_filter_id(album_filter).and_then(|_| album_contexts.first())
 }
 
-fn load_gallery_asset_views(connection: &Connection) -> DomainResult<Vec<GalleryAssetView>> {
+pub(super) fn load_gallery_asset_views(
+    connection: &Connection,
+) -> DomainResult<Vec<GalleryAssetView>> {
     let versions = load_latest_asset_versions(connection)?;
     let tree_summaries = load_asset_version_tree_summaries(connection)?;
     let events = load_gallery_events(connection)?;
@@ -1688,7 +1651,7 @@ fn sort_gallery_items(
     Ok(())
 }
 
-fn gallery_item_matches_text(item: &GalleryAssetView, needle: &str) -> bool {
+pub(super) fn gallery_item_matches_text(item: &GalleryAssetView, needle: &str) -> bool {
     item.title
         .as_deref()
         .unwrap_or_default()
@@ -1722,10 +1685,6 @@ fn gallery_item_matches_text(item: &GalleryAssetView, needle: &str) -> bool {
             .tags
             .iter()
             .any(|tag| tag.to_ascii_lowercase().contains(needle))
-}
-
-fn search_item_matches_text(item: &GalleryAssetView, needle: &str) -> bool {
-    gallery_item_matches_text(item, needle) || item.status.to_ascii_lowercase().contains(needle)
 }
 
 fn load_album_item_sort_orders(

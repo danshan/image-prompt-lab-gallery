@@ -226,6 +226,12 @@ Large files, long methods, and duplicated logic SHALL be split by ownership and 
 - **THEN** the resulting files have clear owners
 - **AND** tests move or remain according to those owners
 
+#### Scenario: Gallery read model is split incrementally
+
+- **WHEN** gallery read-model code is split
+- **THEN** search, gallery list, asset detail, version tree, album filter context, and file context concerns are separated in focused waves
+- **AND** each wave preserves public behavior and records remaining split targets
+
 ### Requirement: Persistence performance decisions use workload evidence
 
 Performance refactors for gallery, search, smart albums, version tree, and task queue SHALL use workload evidence before choosing a storage or indexing architecture.
