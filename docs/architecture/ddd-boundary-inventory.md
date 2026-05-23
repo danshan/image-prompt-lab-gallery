@@ -47,7 +47,6 @@ This is intentionally stricter for new files than for legacy files. It prevents 
 ## Next Refactor Targets
 
 1. Continue splitting gallery read-model implementation: asset detail, inspector detail, task origin, and file context remain in `library/gallery.rs`.
-2. Move remaining Tauri metadata command compatibility calls off direct legacy service calls.
 
 ## Runtime Adapter Review Notes
 
@@ -68,6 +67,7 @@ Daemon:
 Tauri:
 
 - Library command modules call `app.library_lifecycle()` for resource library lifecycle workflows.
+- Metadata tag mutation calls `app.assets()` for asset tag writes.
 - Album command modules call `app.albums()` for list, create, mutation, reorder, and smart album workflows.
 - Command modules continue to act as path validation, input mapping, application invocation, and view/error mapping adapters.
 - No new direct runtime `LocalLibraryService` usage is allowed outside the documented allowlist enforced by `scripts/check-architecture.sh`.

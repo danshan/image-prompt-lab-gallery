@@ -400,6 +400,12 @@ Asset metadata mutation SHALL preserve current library schema and compatibility 
 - **THEN** existing tag rows are reused by tag name
 - **AND** the asset-tag relation is upserted without changing the SQLite schema
 
+#### Scenario: Tauri tag add preserves storage semantics
+
+- **WHEN** a tag is added through the Tauri command adapter
+- **THEN** the command delegates to the asset application owner
+- **AND** existing tag storage and asset-tag upsert semantics are preserved
+
 ### Requirement: Persistence and query engine changes require a decision gate
 
 Resource library persistence or query engine changes SHALL pass a documented decision gate before implementation. The decision gate MUST compare local-first portability, transaction correctness, workload fit, backup/restore behavior, migration and rollback complexity, rebuild/repair story, desktop distribution cost, testability, and observability.

@@ -1,4 +1,5 @@
 use crate::*;
+use imglab_core::AddAssetTagRequest;
 
 #[tauri::command]
 pub(crate) fn update_asset_metadata(input: UpdateMetadataInput) -> Result<AssetView, CommandError> {
@@ -21,7 +22,11 @@ pub(crate) fn update_asset_metadata(input: UpdateMetadataInput) -> Result<AssetV
 #[tauri::command]
 pub(crate) fn add_tag_to_asset(input: AddTagInput) -> Result<(), CommandError> {
     desktop_app()
-        .library()
-        .add_tag_to_asset(&input.library_path, &AssetId(input.asset_id), &input.tag)
+        .assets()
+        .add_tag(AddAssetTagRequest {
+            library_path: input.library_path,
+            asset_id: AssetId(input.asset_id),
+            tag: input.tag,
+        })
         .map_err(Into::into)
 }
