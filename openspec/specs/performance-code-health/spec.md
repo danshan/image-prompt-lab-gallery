@@ -246,6 +246,13 @@ Large files, long methods, and duplicated logic SHALL be split by ownership and 
 - **THEN** album context loading, shared predicate application, smart album preview filtering, and album-order sorting SHOULD live in a focused owner
 - **AND** the refactor MUST preserve public Gallery query behavior
 
+#### Scenario: Gallery detail projection is separated
+
+- **GIVEN** asset detail and inspector views combine canonical metadata, version summaries, generation events, reference source, pending review state, and file integrity context
+- **WHEN** gallery detail code is refactored
+- **THEN** detail-specific projection helpers SHOULD live in a focused owner separate from gallery list card composition
+- **AND** the refactor MUST preserve runtime DTO shape, SQLite schema, and file integrity status semantics
+
 ### Requirement: Persistence performance decisions use workload evidence
 
 Performance refactors for gallery, search, smart albums, version tree, and task queue SHALL use workload evidence before choosing a storage or indexing architecture.
