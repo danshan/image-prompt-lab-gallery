@@ -29,7 +29,9 @@ fn health_and_capabilities_require_token() {
     );
     assert_eq!(health.status_code, 200);
     assert!(health.body.contains("\"apiVersion\":\"v1\""));
-    assert!(health.body.contains("\"schemaVersion\":6"));
+    assert!(health
+        .body
+        .contains(&format!("\"schemaVersion\":{}", imglab_core::CURRENT_SCHEMA_VERSION)));
     assert!(health.body.contains("\"provider\":\"codex-cli\""));
     assert!(health.body.contains("\"image_to_image\""));
 
