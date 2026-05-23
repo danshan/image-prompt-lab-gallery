@@ -65,6 +65,25 @@ scripts/sqlite-workload-smoke.sh /tmp/imglab-workload-smoke-10k.sqlite
 
 ## Baseline Results
 
+### Rust Read-Model Checkpoint
+
+Command:
+
+```bash
+cargo test -p imglab-core synthetic_gallery_search_checkpoint_10k_assets -- --ignored --nocapture
+```
+
+Observed on this machine:
+
+```text
+synthetic seed 10k assets: 654.425542ms
+synthetic gallery 10k assets: 3.853228291s
+synthetic search 10k assets: 4.045591792s
+synthetic album order 5k assets: 3.606798167s
+```
+
+Interpretation: SQLite itself is still viable, but Rust read-model assembly is the real next hardening target. The selected path remains SQLite authoritative storage plus query-shape/read-model refactors before introducing a supplemental engine.
+
 ### 1k Asset Smoke
 
 Command:

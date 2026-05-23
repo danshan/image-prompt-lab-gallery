@@ -25,17 +25,17 @@
 ## 4. Runtime and Frontend Ownership Cleanup
 
 - [x] 4.1a Move CLI search, rate, and album create/add commands to application use-case owners.
-- [ ] 4.1b Move remaining CLI tag and metadata review compatibility commands to application owners or document missing use-case gaps.
-- [ ] 4.1c Review daemon and Tauri command layers for adapter-only behavior after task transition cleanup.
+- [x] 4.1b Move remaining CLI tag and metadata review compatibility commands to application owners or document missing use-case gaps.
+- [x] 4.1c Review daemon and Tauri command layers for adapter-only behavior after task transition cleanup.
 - [x] 4.2 Move task transition and output-link rules toward core task/generation ownership where they currently live in daemon orchestration.
-- [ ] 4.3 Split `StudioAppController.tsx` responsibilities by workflow-owned controller boundaries.
+- [x] 4.3 Split `StudioAppController.tsx` responsibilities by workflow-owned controller boundaries.
 - [x] 4.4 Define refresh and polling policy for gallery, review, tasks, logs, and settings.
 
 ## 5. Tests, Guardrails, and Closeout
 
-- [ ] 5.1 Move new domain/application rule tests near owning modules.
-- [ ] 5.2 Keep large regression suites documented as compatibility or cross-context coverage.
-- [ ] 5.3 Validate public CLI, daemon, Tauri, desktop, and persistence behavior.
-- [ ] 5.4 Run `openspec validate systematic-ddd-architecture-refactor --strict`.
-- [ ] 5.5 Run `openspec validate --specs --strict`.
-- [ ] 5.6 Archive the change only after tasks and validation evidence are complete.
+- [x] 5.1 Move new domain/application rule tests near owning modules.
+- [x] 5.2 Keep large regression suites documented as compatibility or cross-context coverage.
+- [x] 5.3 Validate public CLI, daemon, Tauri, desktop, and persistence behavior.
+- [x] 5.4 Run `openspec validate systematic-ddd-architecture-refactor --strict`.
+- [x] 5.5 Run `openspec validate --specs --strict`.
+- [x] 5.6 Archive the change only after tasks and validation evidence are complete.

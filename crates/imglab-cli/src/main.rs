@@ -1,10 +1,10 @@
+use imglab_core::LibraryService;
 use imglab_core::{
     prepare_generation_request, AssetId, CreateLibraryRequest, CreateMetadataSuggestionRequest,
     DomainError, ExportLibraryRequest, GenerateImageRequest, GenerationOperation,
     GenerationRequestInput, ImportAssetRequest, LocalLibraryService, MetadataSuggestionId,
     RepairLibraryRequest, ReviewMetadataSuggestionRequest, SearchQuery,
 };
-use imglab_core::{LibraryService, MetadataReviewService};
 use imglab_provider_codex::CodexCliImageProvider;
 use serde_json::json;
 use std::path::PathBuf;
@@ -40,7 +40,7 @@ fn run(args: Vec<String>) -> Result<(), DomainError> {
         "tag" => tag(app.library(), &args[1..]),
         "rate" => rate(app.albums(), &args[1..]),
         "album" => album(app.library(), app.albums(), &args[1..]),
-        "suggestion" => suggestion(app.library(), &args[1..]),
+        "suggestion" => suggestion(app.library(), app.metadata_review(), &args[1..]),
         _ => Err(DomainError::InvalidGenerationParameters {
             message: format!("unsupported command: {command}"),
         }),
@@ -418,7 +418,13 @@ fn album(
     }
 }
 
-fn suggestion(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+fn suggestion(
+    library_service: &LocalLibraryService,
+    metadata_review: &imglab_core::application::use_cases::metadata_review::ReviewMetadataSuggestionUseCase<
+        LocalLibraryService,
+    >,
+    args: &[String],
+) -> Result<(), DomainError> {
     let Some(subcommand) = args.first().map(String::as_str) else {
         return Err(DomainError::InvalidGenerationParameters {
             message: "suggestion subcommand is required".to_string(),
@@ -428,8 +434,9 @@ fn suggestion(service: &LocalLibraryService, args: &[String]) -> Result<(), Doma
     match subcommand {
         "list" => {
             let library_path = required_option(args, "--library")?;
-            let library = service.open_library(&PathBuf::from(&library_path))?;
-            let suggestions = service.list_pending(&PathBuf::from(library_path), &library.id)?;
+            let library = library_service.open_library(&PathBuf::from(&library_path))?;
+            let suggestions =
+                metadata_review.list_pending(&PathBuf::from(library_path), &library.id)?;
             print_json(json!({
                 "suggestions": suggestions.into_iter().map(|suggestion| {
                     json!({
@@ -463,18 +470,19 @@ fn suggestion(service: &LocalLibraryService, args: &[String]) -> Result<(), Doma
                 return Ok(());
             }
 
-            let suggestion = service.create_suggestion(CreateMetadataSuggestionRequest {
-                library_path: PathBuf::from(library_path),
-                asset_id: AssetId(asset_id),
-                source: "cli".to_string(),
-                suggested_title: option_value(args, "--title"),
-                suggested_description: option_value(args, "--description"),
-                suggested_schema_prompt: option_value(args, "--schema-prompt"),
-                suggested_tags: tags,
-                suggested_category: option_value(args, "--category"),
-                confidence_json: option_value(args, "--confidence")
-                    .unwrap_or_else(|| "{}".to_string()),
-            })?;
+            let suggestion =
+                metadata_review.create_suggestion(CreateMetadataSuggestionRequest {
+                    library_path: PathBuf::from(library_path),
+                    asset_id: AssetId(asset_id),
+                    source: "cli".to_string(),
+                    suggested_title: option_value(args, "--title"),
+                    suggested_description: option_value(args, "--description"),
+                    suggested_schema_prompt: option_value(args, "--schema-prompt"),
+                    suggested_tags: tags,
+                    suggested_category: option_value(args, "--category"),
+                    confidence_json: option_value(args, "--confidence")
+                        .unwrap_or_else(|| "{}".to_string()),
+                })?;
             print_json(json!({"id": suggestion.id.0, "status": suggestion.status}));
             Ok(())
         }
@@ -495,7 +503,7 @@ fn suggestion(service: &LocalLibraryService, args: &[String]) -> Result<(), Doma
                 return Ok(());
             }
 
-            let asset = service.accept(ReviewMetadataSuggestionRequest {
+            let asset = metadata_review.accept(ReviewMetadataSuggestionRequest {
                 library_path: PathBuf::from(library_path),
                 suggestion_id: MetadataSuggestionId(suggestion_id),
                 title: option_value(args, "--title"),
@@ -521,7 +529,7 @@ fn suggestion(service: &LocalLibraryService, args: &[String]) -> Result<(), Doma
                 return Ok(());
             }
 
-            service.reject(
+            metadata_review.reject(
                 &PathBuf::from(library_path),
                 &MetadataSuggestionId(suggestion_id.clone()),
             )?;

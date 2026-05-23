@@ -95,10 +95,7 @@ impl DaemonState {
         &self,
         request: CreateMetadataSuggestionRequest,
     ) -> DomainResult<imglab_core::MetadataSuggestion> {
-        imglab_core::application::use_cases::metadata_review::CreateMetadataSuggestionUseCase::new(
-            self.app.library().clone(),
-        )
-        .execute(request)
+        self.app.metadata_review().create_suggestion(request)
     }
 
     pub(crate) fn open_library(&mut self, root_path: &Path) -> DomainResult<LibrarySummary> {
