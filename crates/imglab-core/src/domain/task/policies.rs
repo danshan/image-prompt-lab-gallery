@@ -13,6 +13,19 @@ pub struct FailedAttemptResolution {
     pub event_type: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CancelRequestResolution {
+    pub task_status: TaskStatus,
+    pub write_cancel_marker: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecoveryInterruptionResolution {
+    pub task_status: TaskStatus,
+    pub error_classification: TaskErrorClassification,
+    pub retryable: bool,
+}
+
 pub fn is_terminal_status(status: TaskStatus) -> bool {
     matches!(
         status,
@@ -52,6 +65,47 @@ pub fn resolve_successful_attempt(current_status: TaskStatus) -> SuccessfulAttem
 
 pub fn resolve_canceled_attempt_status() -> TaskStatus {
     TaskStatus::Canceled
+}
+
+pub fn resolve_cancel_request(current_status: TaskStatus) -> CancelRequestResolution {
+    match current_status {
+        TaskStatus::Running | TaskStatus::CancelRequested => CancelRequestResolution {
+            task_status: TaskStatus::CancelRequested,
+            write_cancel_marker: true,
+        },
+        TaskStatus::Queued | TaskStatus::RetryWaiting => CancelRequestResolution {
+            task_status: TaskStatus::Canceled,
+            write_cancel_marker: false,
+        },
+        status => CancelRequestResolution {
+            task_status: status,
+            write_cancel_marker: false,
+        },
+    }
+}
+
+pub fn resolve_recovered_running_with_outputs() -> TaskStatus {
+    TaskStatus::Completed
+}
+
+pub fn resolve_interrupted_recovery(
+    attempt_count: u32,
+    max_attempts: u32,
+) -> RecoveryInterruptionResolution {
+    let retryable = attempt_count < max_attempts;
+    RecoveryInterruptionResolution {
+        task_status: if retryable {
+            TaskStatus::InterruptedRetryable
+        } else {
+            TaskStatus::InterruptedFinal
+        },
+        error_classification: if retryable {
+            TaskErrorClassification::Transient
+        } else {
+            TaskErrorClassification::Final
+        },
+        retryable,
+    }
 }
 
 pub fn resolve_failed_attempt(
@@ -129,6 +183,51 @@ mod tests {
         assert_eq!(
             resolve_failed_attempt(TaskErrorClassification::Final, false).task_status,
             TaskStatus::FailedFinal
+        );
+    }
+
+    #[test]
+    fn cancel_request_policy_selects_status_and_marker_need() {
+        assert_eq!(
+            resolve_cancel_request(TaskStatus::Queued),
+            CancelRequestResolution {
+                task_status: TaskStatus::Canceled,
+                write_cancel_marker: false,
+            }
+        );
+        assert_eq!(
+            resolve_cancel_request(TaskStatus::Running),
+            CancelRequestResolution {
+                task_status: TaskStatus::CancelRequested,
+                write_cancel_marker: true,
+            }
+        );
+        assert_eq!(
+            resolve_cancel_request(TaskStatus::Completed),
+            CancelRequestResolution {
+                task_status: TaskStatus::Completed,
+                write_cancel_marker: false,
+            }
+        );
+    }
+
+    #[test]
+    fn interrupted_recovery_policy_selects_retryable_or_terminal_state() {
+        assert_eq!(
+            resolve_interrupted_recovery(1, 3),
+            RecoveryInterruptionResolution {
+                task_status: TaskStatus::InterruptedRetryable,
+                error_classification: TaskErrorClassification::Transient,
+                retryable: true,
+            }
+        );
+        assert_eq!(
+            resolve_interrupted_recovery(3, 3),
+            RecoveryInterruptionResolution {
+                task_status: TaskStatus::InterruptedFinal,
+                error_classification: TaskErrorClassification::Final,
+                retryable: false,
+            }
         );
     }
 }

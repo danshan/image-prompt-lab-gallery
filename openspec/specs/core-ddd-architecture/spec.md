@@ -200,6 +200,12 @@ Migrated write flows SHALL have one primary application use-case owner. Runtime 
 - **THEN** they SHOULD call the daemon task application owner
 - **AND** they SHOULD NOT use a generic concrete local-service accessor as the primary task entrypoint
 
+#### Scenario: Daemon task transition decisions use core policy
+
+- **WHEN** daemon recovery, cancel, successful attempt, failed attempt, or canceled attempt paths decide the next task status
+- **THEN** the status decision SHOULD come from the core task domain policy
+- **AND** daemon code SHOULD remain responsible for runtime IO, provider execution, loopback transport, and application owner invocation
+
 #### Scenario: Tauri album commands use album application owner
 
 - **WHEN** Tauri commands list or create albums for the selected library

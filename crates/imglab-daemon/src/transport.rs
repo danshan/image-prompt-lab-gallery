@@ -114,25 +114,23 @@ pub fn recover_open_libraries(
                                 ),
                                 payload_json: None,
                             })?;
-                        recovered.push(state.tasks().update_task_status(
-                            UpdateTaskStatusRequest {
-                                library_path: library_path.clone(),
-                                task_id: task.id.clone(),
-                                status: TaskStatus::Completed,
-                                next_retry_at: None,
-                                last_error_code: None,
-                                last_error_message: None,
-                                error_classification: None,
-                                wait_reason: None,
-                            },
-                        )?);
+                        recovered
+                            .push(state.tasks().update_task_status(UpdateTaskStatusRequest {
+                            library_path: library_path.clone(),
+                            task_id: task.id.clone(),
+                            status:
+                                imglab_core::domain::task::resolve_recovered_running_with_outputs(),
+                            next_retry_at: None,
+                            last_error_code: None,
+                            last_error_message: None,
+                            error_classification: None,
+                            wait_reason: None,
+                        })?);
                     } else {
-                        let retryable = task.attempt_count < retry_policy.max_attempts;
-                        let status = if retryable {
-                            TaskStatus::InterruptedRetryable
-                        } else {
-                            TaskStatus::InterruptedFinal
-                        };
+                        let resolution = imglab_core::domain::task::resolve_interrupted_recovery(
+                            task.attempt_count,
+                            retry_policy.max_attempts,
+                        );
                         state
                             .tasks()
                             .append_task_event(imglab_core::AppendTaskEventRequest {
@@ -140,23 +138,22 @@ pub fn recover_open_libraries(
                                 task_id: task.id.clone(),
                                 event_type: "recovery_interrupted".to_string(),
                                 message: Some("Task was running when daemon stopped".to_string()),
-                                payload_json: Some(format!("{{\"retryable\":{retryable}}}")),
+                                payload_json: Some(format!(
+                                    "{{\"retryable\":{}}}",
+                                    resolution.retryable
+                                )),
                             })?;
                         recovered.push(state.tasks().update_task_status(
                             UpdateTaskStatusRequest {
                                 library_path: library_path.clone(),
                                 task_id: task.id.clone(),
-                                status,
+                                status: resolution.task_status,
                                 next_retry_at: None,
                                 last_error_code: Some("DaemonInterrupted".to_string()),
                                 last_error_message: Some(
                                     "Task was running when daemon stopped".to_string(),
                                 ),
-                                error_classification: Some(if retryable {
-                                    TaskErrorClassification::Transient
-                                } else {
-                                    TaskErrorClassification::Final
-                                }),
+                                error_classification: Some(resolution.error_classification),
                                 wait_reason: None,
                             },
                         )?);
@@ -352,12 +349,8 @@ pub(crate) fn request_task_cancel(
     task_id: TaskId,
     detail: TaskDetail,
 ) -> DomainResult<TaskSummary> {
-    let next_status = match detail.task.status {
-        TaskStatus::Running | TaskStatus::CancelRequested => TaskStatus::CancelRequested,
-        TaskStatus::Queued | TaskStatus::RetryWaiting => TaskStatus::Canceled,
-        status => status,
-    };
-    if next_status == TaskStatus::CancelRequested {
+    let resolution = imglab_core::domain::task::resolve_cancel_request(detail.task.status);
+    if resolution.write_cancel_marker {
         if let Some(log_path) = detail
             .attempts
             .iter()
@@ -380,7 +373,7 @@ pub(crate) fn request_task_cancel(
     state.tasks().update_task_status(UpdateTaskStatusRequest {
         library_path,
         task_id,
-        status: next_status,
+        status: resolution.task_status,
         next_retry_at: None,
         last_error_code: None,
         last_error_message: None,

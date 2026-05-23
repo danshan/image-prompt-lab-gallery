@@ -54,6 +54,12 @@ Daemon task manager workflows SHALL route task operations through the applicatio
 
 系统 SHALL 使用明确 task state machine 管理 queued, running, retry waiting, failed, canceled, interrupted 和 completed 状态.
 
+#### Scenario: Daemon delegates task transition decisions
+
+- **WHEN** daemon recovery, cancel, successful attempt, failed attempt, or canceled attempt paths decide the next task status
+- **THEN** daemon SHOULD use the core task domain policy to decide the status
+- **AND** daemon MAY still own cancellation marker IO, retry timestamp calculation, event persistence orchestration, and HTTP response mapping
+
 #### Scenario: Task 成功完成
 
 - **WHEN** queued task 被 scheduler 领取并成功提交 output

@@ -24,7 +24,7 @@ The goal is not to pretend the legacy `library/*` surface has disappeared. The g
 | Gallery detail read model | `library::gallery_detail` behind `QueryGalleryUseCase` | Tauri gallery inspector/detail workflows | Focused read-model owner | Asset detail, inspector detail, canonical metadata projection, generation-event detail, reference source lookup, pending suggestion summaries, and file context integrity are separated from gallery list composition. |
 | Gallery task origin read model | `library::gallery_task_origin` behind `QueryGalleryUseCase` | Tauri gallery card workflows | Focused read-model owner | Task output joins, task storage parsing, operation parsing, and target lookup maps are separated from gallery card composition. |
 | Gallery card read model | `library::gallery_cards` behind `QueryGalleryUseCase` | Tauri gallery card workflows | Focused read-model owner | Latest-version lookup, generation-event summaries, version counts, tag aggregates, pending review counts, album memberships, task origins, version tree labels, and `GalleryAssetView` base DTO assembly are separated from query orchestration. |
-| Task create/list/detail/reorder/retry/duplicate/output/event | `application::use_cases::tasks::TaskUseCase` | daemon API, Tauri queue workflows | Migrated application owner with daemon orchestration concerns | Repository operations are wrapped by `TaskUseCase`; task transition and output-link policy still need stronger core ownership. |
+| Task create/list/detail/reorder/retry/duplicate/output/event | `application::use_cases::tasks::TaskUseCase` with `domain::task::policies` | daemon API, Tauri queue workflows | Migrated application owner with daemon orchestration concerns | Repository operations are wrapped by `TaskUseCase`; success, failure, cancel, and recovery transition decisions use domain task policies. Daemon still owns provider dispatch, retry timestamp calculation, cancellation marker IO, and log IO. |
 
 ## Explicitly Bounded Runtime Legacy Usage
 
@@ -64,7 +64,7 @@ Daemon:
 - Task queue routes use the application `TaskUseCase` through `DaemonState::tasks()`.
 - `DaemonState` no longer exposes a generic `service()` accessor for task compatibility paths.
 - Scheduler runtime code still owns provider dispatch, log IO, cancellation marker checks, and retry backoff timestamp calculation.
-- Task completion, cancel, and failure status decisions now use `domain::task::policies`.
+- Task completion, cancel, failure, and recovery status decisions now use `domain::task::policies`.
 - Metadata suggestion task creation now uses `app.metadata_review()` instead of constructing a use case inside daemon runtime.
 
 Tauri:
