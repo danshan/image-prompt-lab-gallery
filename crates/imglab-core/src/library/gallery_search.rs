@@ -1,4 +1,6 @@
-use super::{gallery::load_gallery_asset_views, gallery_filtering::gallery_item_matches_text};
+use super::{
+    gallery_cards::load_gallery_asset_views, gallery_filtering::gallery_item_matches_text,
+};
 use crate::{AssetSummary, DomainResult, GalleryAssetView, SearchQuery};
 use rusqlite::Connection;
 

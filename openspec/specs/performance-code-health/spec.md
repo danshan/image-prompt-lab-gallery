@@ -260,6 +260,13 @@ Large files, long methods, and duplicated logic SHALL be split by ownership and 
 - **THEN** task-specific SQL, parsing, and lookup maps SHOULD live in a focused owner separate from gallery card composition
 - **AND** the refactor MUST preserve gallery card task origin payloads and task origin precedence
 
+#### Scenario: Gallery card projection is separated
+
+- **GIVEN** gallery card list projection combines latest versions, generation events, tags, review counts, albums, task origins, and version tree labels
+- **WHEN** gallery card code is refactored
+- **THEN** card-specific SQL and DTO assembly SHOULD live in a focused owner separate from `GalleryReadService` orchestration
+- **AND** the refactor MUST preserve Gallery query public behavior
+
 ### Requirement: Persistence performance decisions use workload evidence
 
 Performance refactors for gallery, search, smart albums, version tree, and task queue SHALL use workload evidence before choosing a storage or indexing architecture.

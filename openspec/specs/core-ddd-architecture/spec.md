@@ -68,6 +68,12 @@ Define the DDD boundary architecture for `imglab-core` and the runtime integrati
 - **THEN** task output joins, task storage parsing, and target lookup maps SHOULD live in a focused gallery task origin read-model owner
 - **AND** gallery card composition SHOULD consume that owner without owning task SQL or task status parsing
 
+#### Scenario: Gallery card list read model has a focused owner
+
+- **WHEN** Gallery card list projection behavior changes
+- **THEN** latest-version lookup, generation-event summaries, aggregate counts, tags, albums, version tree labels, and card DTO assembly SHOULD live in a focused gallery card read-model owner
+- **AND** `GalleryReadService` SHOULD remain the runtime-facing query boundary that delegates card projection before filtering and sorting
+
 ### Requirement: Domain 内部保持低冗余和低复杂度
 
 每个 bounded context SHALL 在保持 DDD 边界的同时, 将 domain logic, policy, mapper, query 和 application orchestration 拆成可复用的低复杂度单元。实现 MUST 避免把旧的大文件或大函数平移为新的 context-local 大文件, MUST 避免跨 use case 复制同一业务规则。
