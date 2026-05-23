@@ -129,6 +129,12 @@ System SHALL complete the DDD boundary refactor in this change, covering core do
 - **THEN** remaining work may include future product capabilities
 - **AND** remaining work MUST NOT include unfinished core DDD boundary migration required by this proposal
 
+#### Scenario: Completion audit records final evidence
+
+- **WHEN** the DDD refactor is declared complete
+- **THEN** architecture documentation MUST map review findings, OpenSpec requirements, boundary inventory, and verification gates to current evidence
+- **AND** any residual work MUST be classified as optional future hardening, compatibility cleanup, or product capability rather than required DDD boundary migration
+
 ### Requirement: Architecture checks SHALL enforce dependency direction
 
 System SHALL include verification that prevents domain modules from depending on infrastructure or runtime modules, and prevents runtime layers from bypassing application/use case boundaries for migrated write flows.

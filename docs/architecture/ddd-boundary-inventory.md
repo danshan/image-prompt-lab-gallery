@@ -47,9 +47,9 @@ New runtime files must not introduce direct `LocalLibraryService` usage. If a fu
 
 This is intentionally stricter for new files than for legacy files. It prevents boundary drift while allowing the remaining transitional surfaces to be reduced incrementally.
 
-## Next Refactor Targets
+## Completion Audit
 
-1. Run a completion audit against the DDD review findings, OpenSpec specs, architecture inventory, and verification gates before declaring the refactor complete.
+The completion audit is recorded in `docs/architecture/ddd-refactor-completion-audit.md`. There are no remaining required DDD boundary migration targets in the current OpenSpec refactor scope. Future cleanup should be opened as a new change when it alters product behavior, public contracts, persistence semantics, or measured workload assumptions.
 
 ## Runtime Adapter Review Notes
 
