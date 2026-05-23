@@ -1569,9 +1569,9 @@ fn load_album_filter_context(
             params![album_id.0],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
-        .or_else(|error| match error {
-            rusqlite::Error::QueryReturnedNoRows => Err(unknown_album_error(album_id)),
-            other => Err(database_error(other)),
+        .map_err(|error| match error {
+            rusqlite::Error::QueryReturnedNoRows => unknown_album_error(album_id),
+            other => database_error(other),
         })?;
     if kind == "smart" {
         let query_json = smart_query_json.ok_or_else(|| DomainError::InvalidSmartAlbumQuery {

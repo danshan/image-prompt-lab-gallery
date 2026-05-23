@@ -154,14 +154,16 @@ where
             self.events
                 .record_generation_event(generation_event_request(
                     request,
-                    Some(reference_asset.id.clone()),
-                    None,
-                    Some(reference_version.id.clone()),
-                    None,
-                    None,
-                    "failed",
-                    Some(error.code().to_string()),
-                    Some(error.to_string()),
+                    GenerationEventDetails {
+                        asset_id: Some(reference_asset.id.clone()),
+                        output_version_id: None,
+                        input_asset_version_id: Some(reference_version.id.clone()),
+                        raw_request_json: None,
+                        raw_response_json: None,
+                        status: "failed",
+                        error_code: Some(error.code().to_string()),
+                        error_message: Some(error.to_string()),
+                    },
                 ))?;
         }
         Ok(())
@@ -254,14 +256,16 @@ where
             .events
             .record_generation_event(generation_event_request(
                 request,
-                Some(asset_id.clone()),
-                None,
-                event_input_version_id,
-                raw_request_json,
-                raw_response_json,
-                "completed",
-                None,
-                None,
+                GenerationEventDetails {
+                    asset_id: Some(asset_id.clone()),
+                    output_version_id: None,
+                    input_asset_version_id: event_input_version_id,
+                    raw_request_json,
+                    raw_response_json,
+                    status: "completed",
+                    error_code: None,
+                    error_message: None,
+                },
             ))?;
         self.assets
             .persist_asset_version(PersistAssetVersionRequest {
@@ -298,14 +302,16 @@ where
             .events
             .record_generation_event(generation_event_request(
                 request,
-                Some(asset.id.clone()),
-                Some(version.id.clone()),
-                event_input_version_id,
-                raw_request_json,
-                raw_response_json,
-                "completed",
-                None,
-                None,
+                GenerationEventDetails {
+                    asset_id: Some(asset.id.clone()),
+                    output_version_id: Some(version.id.clone()),
+                    input_asset_version_id: event_input_version_id,
+                    raw_request_json,
+                    raw_response_json,
+                    status: "completed",
+                    error_code: None,
+                    error_message: None,
+                },
             ))?;
         self.assets.mark_version_generated(
             &request.library_path,
@@ -345,33 +351,37 @@ struct ResolvedGenerationInput {
     event_input_version_id: Option<AssetVersionId>,
 }
 
-fn generation_event_request(
-    request: &GenerateImageRequest,
+struct GenerationEventDetails {
     asset_id: Option<AssetId>,
     output_version_id: Option<AssetVersionId>,
     input_asset_version_id: Option<AssetVersionId>,
     raw_request_json: Option<String>,
     raw_response_json: Option<String>,
-    status: &str,
+    status: &'static str,
     error_code: Option<String>,
     error_message: Option<String>,
+}
+
+fn generation_event_request(
+    request: &GenerateImageRequest,
+    details: GenerationEventDetails,
 ) -> CreateGenerationEventRequest {
     CreateGenerationEventRequest {
         library_path: request.library_path.clone(),
-        asset_id,
-        output_version_id,
+        asset_id: details.asset_id,
+        output_version_id: details.output_version_id,
         provider: request.parameters.provider.clone(),
         provider_model: request.parameters.model.clone(),
         operation_type: request.parameters.operation,
         prompt: request.parameters.prompt.clone(),
         negative_prompt: request.parameters.negative_prompt.clone(),
-        input_asset_version_id,
+        input_asset_version_id: details.input_asset_version_id,
         parameters_json: request.parameters.parameters_json.clone(),
-        raw_request_json,
-        raw_response_json,
-        status: status.to_string(),
-        error_code,
-        error_message,
+        raw_request_json: details.raw_request_json,
+        raw_response_json: details.raw_response_json,
+        status: details.status.to_string(),
+        error_code: details.error_code,
+        error_message: details.error_message,
     }
 }
 
