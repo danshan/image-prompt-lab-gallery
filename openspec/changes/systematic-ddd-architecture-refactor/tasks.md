@@ -2,10 +2,10 @@
 
 ## 1. Audit and Baseline
 
-- [ ] 1.1 Write `docs/architecture/ddd-systematic-code-review.md`.
-- [ ] 1.2 Record public contracts for CLI JSON, daemon API, Tauri commands, SQLite schema, `manifest.json`, managed file layout, and backup/restore behavior.
-- [ ] 1.3 Record file-size, dependency, query-path, polling, and direct legacy-service evidence.
-- [ ] 1.4 Run `scripts/check-architecture.sh` and record the result.
+- [x] 1.1 Write `docs/architecture/ddd-systematic-code-review.md`.
+- [x] 1.2 Record public contracts for CLI JSON, daemon API, Tauri commands, SQLite schema, `manifest.json`, managed file layout, and backup/restore behavior.
+- [x] 1.3 Record file-size, dependency, query-path, polling, and direct legacy-service evidence.
+- [x] 1.4 Run `scripts/check-architecture.sh` and record the result.
 
 ## 2. Core Boundary Consolidation
 
