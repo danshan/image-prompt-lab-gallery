@@ -16,11 +16,11 @@
 
 ## 3. Persistence, Search, and Read-Model Hardening
 
-- [ ] 3.1 Build or define a synthetic resource library fixture for target workload evaluation.
-- [ ] 3.2 Measure gallery, search, smart album, version tree, and task queue query paths.
-- [ ] 3.3 Compare SQLite tuning, SQLite FTS5/projection tables, Tantivy, DuckDB, and PostgreSQL against the documented decision criteria.
-- [ ] 3.4 Document the selected persistence/search path and migration constraints before implementation.
-- [ ] 3.5 Refactor read-model owners only after query evidence identifies the lowest-complexity path.
+- [x] 3.1 Build or define a synthetic resource library fixture for target workload evaluation.
+- [x] 3.2 Measure gallery, search, smart album, version tree, and task queue query paths.
+- [x] 3.3 Compare SQLite tuning, SQLite FTS5/projection tables, Tantivy, DuckDB, and PostgreSQL against the documented decision criteria.
+- [x] 3.4 Document the selected persistence/search path and migration constraints before implementation.
+- [x] 3.5 Refactor read-model owners only after query evidence identifies the lowest-complexity path.
 
 ## 4. Runtime and Frontend Ownership Cleanup
 
