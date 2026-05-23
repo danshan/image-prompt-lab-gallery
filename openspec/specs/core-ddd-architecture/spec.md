@@ -43,6 +43,13 @@ Define the DDD boundary architecture for `imglab-core` and the runtime integrati
 - **THEN** search-specific filtering and result mapping live in a focused search read-model owner
 - **AND** shared gallery card loading may remain shared until projection or query-shape hardening requires a deeper split
 
+#### Scenario: Gallery read-model owners are split by change reason
+
+- **GIVEN** gallery search, version tree, promoted source, lineage, album filter, and detail read behavior evolve for different reasons
+- **WHEN** the code is changed for one of these read-model concerns
+- **THEN** the implementation SHOULD route that concern through a focused owner module instead of expanding the monolithic gallery adapter
+- **AND** the gallery adapter MAY keep runtime-facing DTO composition while delegating specialized read-model algorithms to those owner modules
+
 ### Requirement: Domain 内部保持低冗余和低复杂度
 
 每个 bounded context SHALL 在保持 DDD 边界的同时, 将 domain logic, policy, mapper, query 和 application orchestration 拆成可复用的低复杂度单元。实现 MUST 避免把旧的大文件或大函数平移为新的 context-local 大文件, MUST 避免跨 use case 复制同一业务规则。

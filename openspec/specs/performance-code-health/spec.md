@@ -232,6 +232,13 @@ Large files, long methods, and duplicated logic SHALL be split by ownership and 
 - **THEN** search, gallery list, asset detail, version tree, album filter context, and file context concerns are separated in focused waves
 - **AND** each wave preserves public behavior and records remaining split targets
 
+#### Scenario: Version tree read model has a focused owner
+
+- **GIVEN** gallery list and asset detail views need version tree names, branch counts, promoted-source labels, and asset-scoped lineage
+- **WHEN** version tree read behavior changes
+- **THEN** the tree construction, degradation reporting, promoted-source lookup, and lineage traversal SHOULD live in a focused owner module
+- **AND** gallery list and asset detail orchestration SHOULD consume that owner without changing SQLite schema or runtime DTO payloads
+
 ### Requirement: Persistence performance decisions use workload evidence
 
 Performance refactors for gallery, search, smart albums, version tree, and task queue SHALL use workload evidence before choosing a storage or indexing architecture.
