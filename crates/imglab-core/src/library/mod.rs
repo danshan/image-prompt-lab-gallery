@@ -43,6 +43,7 @@ mod gallery;
 mod gallery_detail;
 mod gallery_filtering;
 mod gallery_search;
+mod gallery_task_origin;
 mod gallery_version_tree;
 mod maintenance;
 mod metadata;
