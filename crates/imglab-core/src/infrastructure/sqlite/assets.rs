@@ -5,10 +5,10 @@ use crate::library::{
     LocalLibraryService,
 };
 use crate::{
-    AssetId, AssetService, AssetSummary, AssetVersionId, CreateGenerationEventRequest,
-    DomainResult, GenerationEventId, GenerationEventSummary, PersistAssetVersionRequest,
-    PersistImportedAssetRequest, PromoteAssetVersionRequest, PromoteAssetVersionSummary,
-    VersionSummary,
+    AddAssetTagRequest, AssetId, AssetService, AssetSummary, AssetVersionId,
+    CreateGenerationEventRequest, DomainResult, GenerationEventId, GenerationEventSummary,
+    PersistAssetVersionRequest, PersistImportedAssetRequest, PromoteAssetVersionRequest,
+    PromoteAssetVersionSummary, VersionSummary,
 };
 use std::path::Path;
 
@@ -67,5 +67,14 @@ impl AssetRepository for LocalLibraryService {
         generation_event_id: &GenerationEventId,
     ) -> DomainResult<()> {
         mark_imported_version_as_generated(library_path, asset_id, version_id, generation_event_id)
+    }
+
+    fn add_tag_to_asset(&self, request: AddAssetTagRequest) -> DomainResult<()> {
+        LocalLibraryService::add_tag_to_asset(
+            self,
+            &request.library_path,
+            &request.asset_id,
+            &request.tag,
+        )
     }
 }

@@ -1,9 +1,9 @@
 use imglab_core::application::use_cases::library::LibraryUseCase;
 use imglab_core::{
-    prepare_generation_request, AssetId, CreateLibraryRequest, CreateMetadataSuggestionRequest,
-    DomainError, ExportLibraryRequest, GenerateImageRequest, GenerationOperation,
-    GenerationRequestInput, ImportAssetRequest, LocalLibraryService, MetadataSuggestionId,
-    RepairLibraryRequest, ReviewMetadataSuggestionRequest, SearchQuery,
+    prepare_generation_request, AddAssetTagRequest, AssetId, CreateLibraryRequest,
+    CreateMetadataSuggestionRequest, DomainError, ExportLibraryRequest, GenerateImageRequest,
+    GenerationOperation, GenerationRequestInput, ImportAssetRequest, LocalLibraryService,
+    MetadataSuggestionId, RepairLibraryRequest, ReviewMetadataSuggestionRequest, SearchQuery,
 };
 use imglab_provider_codex::CodexCliImageProvider;
 use serde_json::json;
@@ -37,7 +37,7 @@ fn run(args: Vec<String>) -> Result<(), DomainError> {
         "export" => export(app.library_lifecycle(), &args[1..]),
         "search" => search(app.library_lifecycle(), app.search(), &args[1..]),
         "generate" => generate(&args[1..]),
-        "tag" => tag(app.library(), &args[1..]),
+        "tag" => tag(app.assets(), &args[1..]),
         "rate" => rate(app.albums(), &args[1..]),
         "album" => album(app.library_lifecycle(), app.albums(), &args[1..]),
         "suggestion" => suggestion(app.library_lifecycle(), app.metadata_review(), &args[1..]),
@@ -347,7 +347,10 @@ fn rate(
     Ok(())
 }
 
-fn tag(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+fn tag(
+    assets: &imglab_core::infrastructure::composition::SqliteAssetUseCase,
+    args: &[String],
+) -> Result<(), DomainError> {
     let Some(subcommand) = args.first().map(String::as_str) else {
         return Err(DomainError::InvalidGenerationParameters {
             message: "tag subcommand is required".to_string(),
@@ -364,11 +367,11 @@ fn tag(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError
                 return Ok(());
             }
 
-            service.add_tag_to_asset(
-                &PathBuf::from(library_path),
-                &AssetId(asset_id.clone()),
-                &tag,
-            )?;
+            assets.add_tag(AddAssetTagRequest {
+                library_path: PathBuf::from(library_path),
+                asset_id: AssetId(asset_id.clone()),
+                tag: tag.clone(),
+            })?;
             print_json(json!({"asset_id": asset_id, "tag": tag}));
             Ok(())
         }

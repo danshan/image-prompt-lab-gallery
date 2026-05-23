@@ -390,6 +390,16 @@ Define local resource library layout, integrity checking, repair, import/export,
 - **AND** 创建新 asset 和 root version
 - **AND** root version 可被普通 Gallery 查询展示
 
+### Requirement: Asset metadata mutation preserves existing library storage
+
+Asset metadata mutation SHALL preserve current library schema and compatibility behavior unless an explicit migration is specified.
+
+#### Scenario: Tag add preserves storage semantics
+
+- **WHEN** a tag is added through the application owner
+- **THEN** existing tag rows are reused by tag name
+- **AND** the asset-tag relation is upserted without changing the SQLite schema
+
 ### Requirement: Persistence and query engine changes require a decision gate
 
 Resource library persistence or query engine changes SHALL pass a documented decision gate before implementation. The decision gate MUST compare local-first portability, transaction correctness, workload fit, backup/restore behavior, migration and rollback complexity, rebuild/repair story, desktop distribution cost, testability, and observability.

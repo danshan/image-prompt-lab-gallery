@@ -3,12 +3,13 @@ use crate::application::ports::{
     MetadataSuggestionRepository,
 };
 use crate::{
-    AssetId, AssetSummary, AssetVersionId, ConfidenceScoreView, CreateGenerationEventRequest,
-    CreateMetadataSuggestionRequest, DomainError, DomainResult, GeneratedImage, GenerationEventId,
-    GenerationEventSummary, GenerationOperation, GenerationParameters, GenerationResult,
-    ManagedFileImport, ManagedFileMetadata, MetadataSuggestion, MetadataSuggestionId,
-    PersistAssetVersionRequest, PersistImportedAssetRequest, PromoteAssetVersionRequest,
-    PromoteAssetVersionSummary, VersionSummary,
+    AddAssetTagRequest, AssetId, AssetSummary, AssetVersionId, ConfidenceScoreView,
+    CreateGenerationEventRequest, CreateMetadataSuggestionRequest, DomainError, DomainResult,
+    GeneratedImage, GenerationEventId, GenerationEventSummary, GenerationOperation,
+    GenerationParameters, GenerationResult, ManagedFileImport, ManagedFileMetadata,
+    MetadataSuggestion, MetadataSuggestionId, PersistAssetVersionRequest,
+    PersistImportedAssetRequest, PromoteAssetVersionRequest, PromoteAssetVersionSummary,
+    VersionSummary,
 };
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
@@ -113,6 +114,10 @@ impl AssetRepository for InMemoryAssetRepository {
         self.generated_marks
             .borrow_mut()
             .push(generation_event_id.clone());
+        Ok(())
+    }
+
+    fn add_tag_to_asset(&self, _request: AddAssetTagRequest) -> DomainResult<()> {
         Ok(())
     }
 }

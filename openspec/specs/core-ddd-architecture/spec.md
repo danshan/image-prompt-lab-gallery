@@ -176,6 +176,12 @@ Migrated write flows SHALL have one primary application use-case owner. Runtime 
 - **THEN** it delegates business behavior to the application/use-case boundary
 - **AND** it only performs input parsing, transport mapping, process execution, logging, or error mapping owned by that runtime
 
+#### Scenario: CLI tag mutation uses asset application owner
+
+- **WHEN** CLI adds a tag to an asset
+- **THEN** the CLI adapter MUST call an asset application owner
+- **AND** the CLI adapter MUST NOT call the concrete local service as the primary business entrypoint
+
 #### Scenario: Library lifecycle uses application owner
 
 - **WHEN** CLI, daemon, or Tauri code creates, opens, lists, repairs, exports, imports, renames, unregisters, checks, or summarizes a resource library

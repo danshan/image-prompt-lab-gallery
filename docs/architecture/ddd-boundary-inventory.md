@@ -11,7 +11,7 @@ The goal is not to pretend the legacy `library/*` surface has disappeared. The g
 | Flow | Primary owner | Runtime entrypoints | Current boundary state | Notes |
 | --- | --- | --- | --- | --- |
 | Library create/open/list/hide/rename/unregister/repair/export | `application::use_cases::library::LibraryUseCase` | CLI, Tauri, daemon open-library route | Migrated application owner with compatibility adapter | Runtime lifecycle calls now enter through `app.library_lifecycle()`. `LocalLibraryService` remains the SQLite/filesystem/registry adapter behind the `LibraryRepository` port. |
-| Asset import | `application::use_cases::assets::AssetUseCase` | CLI `import`, Tauri import command | Migrated application owner | Version metadata and managed-file import are already routed through the application owner in CLI. Runtime adapters should not allocate version numbers. |
+| Asset import/tag mutation | `application::use_cases::assets::AssetUseCase` | CLI `import` / `tag add`, Tauri import command | Migrated application owner | Version metadata, managed-file import, and tag mutation are routed through the application owner in CLI. Runtime adapters should not allocate version numbers or mutate tags through the concrete local service. |
 | Child version creation and promoted versions | `application::use_cases::assets::AssetUseCase` | Tauri/gallery workflows, generation follow-up paths | Migrated application owner | Same-asset parent validation and next-version policy belong to asset domain/application. |
 | Text-to-image and image-to-image generation | `application::use_cases::generation::GenerateImageUseCase` | CLI `generate`, daemon task execution | Migrated application owner with runtime provider dispatch | Provider process execution remains runtime/provider-owned. Version persistence, reference source behavior, and generation event persistence belong to application/domain. |
 | Metadata suggestion create | `application::use_cases::metadata_review::ReviewMetadataSuggestionUseCase` | CLI suggestion create, daemon metadata tasks, Tauri review flows | Migrated application owner | CLI and daemon now enter through `app.metadata_review()`. The standalone create use case remains compatible but should not be constructed ad hoc in runtime code. |
@@ -29,7 +29,7 @@ The following runtime files are allowed to mention `LocalLibraryService` during 
 
 | File | Current reason | Desired end state |
 | --- | --- | --- |
-| `crates/imglab-cli/src/main.rs` | CLI command helpers still use `LocalLibraryService` for tag compatibility. Library lifecycle, search, rating, album create/add, and metadata suggestion review now use application owners. | Move tag commands to a focused application owner while preserving CLI JSON. |
+| `crates/imglab-cli/src/main.rs` | CLI command helpers still mention `LocalLibraryService` as concrete generic type for application owners. Library lifecycle, assets, search, rating, album create/add, and metadata suggestion review now use application owners. | Replace concrete generic annotations with narrower type aliases or inferred helper boundaries when runtime wiring is further cleaned up. |
 | `crates/imglab-daemon/src/lib.rs` | Daemon prelude imports core compatibility types for route/runtime modules. | Replace broad prelude imports with focused application/interface-contract imports. |
 | `crates/imglab-daemon/src/runtime.rs` | `DaemonState` stores `SqliteImgLabApplication<FakeImageProvider>` and exposes a `service()` compatibility accessor for task compatibility paths. Library open now uses `library_lifecycle()`. | Replace remaining task compatibility calls with explicit task owners, then remove or narrow the generic service accessor. |
 
@@ -46,17 +46,16 @@ This is intentionally stricter for new files than for legacy files. It prevents 
 
 ## Next Refactor Targets
 
-1. Add a focused tag or metadata command use case, then move CLI/Tauri `tag add` off the direct service helper.
-2. Replace daemon `service()` accessor usage for task compatibility paths with explicit task owners.
-3. Move remaining Tauri album list/manual-create helpers off direct legacy service calls.
-4. Continue splitting gallery read-model implementation: asset detail, inspector detail, task origin, and file context remain in `library/gallery.rs`.
+1. Replace daemon `service()` accessor usage for task compatibility paths with explicit task owners.
+2. Move remaining Tauri album list/manual-create helpers off direct legacy service calls.
+3. Continue splitting gallery read-model implementation: asset detail, inspector detail, task origin, and file context remain in `library/gallery.rs`.
 
 ## Runtime Adapter Review Notes
 
 CLI:
 
-- Library lifecycle, search, rating, album create/add, and metadata suggestion review paths now route through application use-case owners.
-- Tag mutation remains a documented compatibility path until a focused tag use-case API covers its current CLI/Tauri shape.
+- Library lifecycle, asset import/tag mutation, search, rating, album create/add, and metadata suggestion review paths now route through application use-case owners.
+- Remaining `LocalLibraryService` mentions in CLI are concrete generic annotations for the SQLite-backed application owners, not direct business entrypoints.
 
 Daemon:
 

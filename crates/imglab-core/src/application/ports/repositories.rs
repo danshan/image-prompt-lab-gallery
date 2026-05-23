@@ -4,21 +4,22 @@ pub use crate::{
 };
 
 use crate::{
-    AlbumId, AlbumListItem, AlbumSummary, AppendTaskAttemptRequest, AppendTaskEventRequest,
-    AppendTaskOutputRequest, AssetDetailView, AssetId, AssetInspectorDetailView, AssetSummary,
-    AssetVersionId, BatchAddAssetsToAlbumRequest, BatchCreateTasksRequest,
-    BatchReviewMetadataSuggestionRequest, CompleteTaskAttemptRequest, ConfidenceScoreView,
-    CreateGenerationEventRequest, CreateLibraryRequest, CreateMetadataSuggestionRequest,
-    CreateSmartAlbumRequest, DiagnosticsOverviewView, DomainResult, ExportLibraryBackupRequest,
-    ExportLibraryRequest, ExportSummary, GalleryAssetView, GalleryQuery, GenerationEventId,
-    GenerationEventSummary, ImportLibraryBackupRequest, IntegrityIssue, LibraryBackupSummary,
-    LibraryId, LibraryStatusView, LibrarySummary, MetadataSuggestion, MetadataSuggestionId,
-    PersistAssetVersionRequest, PersistImportedAssetRequest, PromoteAssetVersionRequest,
-    PromoteAssetVersionSummary, RenameLibraryAliasRequest, ReorderAlbumItemsRequest,
-    ReorderAlbumsRequest, ReorderQueuedTasksRequest, RepairLibraryRequest, RepairSummary,
-    ReviewDraftDetailView, ReviewMetadataSuggestionRequest, SearchQuery, StudioOverviewView,
-    TaskAttempt, TaskDetail, TaskEvent, TaskId, TaskOutput, TaskOutputType, TaskSummary,
-    UpdateAssetMetadataRequest, UpdateTaskStatusRequest, VersionSummary,
+    AddAssetTagRequest, AlbumId, AlbumListItem, AlbumSummary, AppendTaskAttemptRequest,
+    AppendTaskEventRequest, AppendTaskOutputRequest, AssetDetailView, AssetId,
+    AssetInspectorDetailView, AssetSummary, AssetVersionId, BatchAddAssetsToAlbumRequest,
+    BatchCreateTasksRequest, BatchReviewMetadataSuggestionRequest, CompleteTaskAttemptRequest,
+    ConfidenceScoreView, CreateGenerationEventRequest, CreateLibraryRequest,
+    CreateMetadataSuggestionRequest, CreateSmartAlbumRequest, DiagnosticsOverviewView,
+    DomainResult, ExportLibraryBackupRequest, ExportLibraryRequest, ExportSummary,
+    GalleryAssetView, GalleryQuery, GenerationEventId, GenerationEventSummary,
+    ImportLibraryBackupRequest, IntegrityIssue, LibraryBackupSummary, LibraryId, LibraryStatusView,
+    LibrarySummary, MetadataSuggestion, MetadataSuggestionId, PersistAssetVersionRequest,
+    PersistImportedAssetRequest, PromoteAssetVersionRequest, PromoteAssetVersionSummary,
+    RenameLibraryAliasRequest, ReorderAlbumItemsRequest, ReorderAlbumsRequest,
+    ReorderQueuedTasksRequest, RepairLibraryRequest, RepairSummary, ReviewDraftDetailView,
+    ReviewMetadataSuggestionRequest, SearchQuery, StudioOverviewView, TaskAttempt, TaskDetail,
+    TaskEvent, TaskId, TaskOutput, TaskOutputType, TaskSummary, UpdateAssetMetadataRequest,
+    UpdateTaskStatusRequest, VersionSummary,
 };
 use std::path::Path;
 
@@ -79,6 +80,7 @@ pub trait AssetRepository {
         version_id: &AssetVersionId,
         generation_event_id: &GenerationEventId,
     ) -> DomainResult<()>;
+    fn add_tag_to_asset(&self, request: AddAssetTagRequest) -> DomainResult<()>;
 }
 
 pub trait GenerationEventRepository {
