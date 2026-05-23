@@ -25,7 +25,7 @@
 ## 4. Runtime and Frontend Ownership Cleanup
 
 - [ ] 4.1 Keep CLI, daemon, and Tauri command layers as adapters around application behavior.
-- [ ] 4.2 Move task transition and output-link rules toward core task/generation ownership where they currently live in daemon orchestration.
+- [x] 4.2 Move task transition and output-link rules toward core task/generation ownership where they currently live in daemon orchestration.
 - [ ] 4.3 Split `StudioAppController.tsx` responsibilities by workflow-owned controller boundaries.
 - [ ] 4.4 Define refresh and polling policy for gallery, review, tasks, logs, and settings.
 
