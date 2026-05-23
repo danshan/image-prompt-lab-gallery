@@ -1,4 +1,4 @@
-use super::gallery::load_gallery_asset_views;
+use super::{gallery::load_gallery_asset_views, gallery_filtering::gallery_item_matches_text};
 use crate::{AssetSummary, DomainResult, GalleryAssetView, SearchQuery};
 use rusqlite::Connection;
 
@@ -45,6 +45,5 @@ pub(super) fn search_assets(
 }
 
 fn search_item_matches_text(item: &GalleryAssetView, needle: &str) -> bool {
-    super::gallery::gallery_item_matches_text(item, needle)
-        || item.status.to_ascii_lowercase().contains(needle)
+    gallery_item_matches_text(item, needle) || item.status.to_ascii_lowercase().contains(needle)
 }

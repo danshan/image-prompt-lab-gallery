@@ -239,6 +239,13 @@ Large files, long methods, and duplicated logic SHALL be split by ownership and 
 - **THEN** the tree construction, degradation reporting, promoted-source lookup, and lineage traversal SHOULD live in a focused owner module
 - **AND** gallery list and asset detail orchestration SHOULD consume that owner without changing SQLite schema or runtime DTO payloads
 
+#### Scenario: Gallery filter owner is separated
+
+- **GIVEN** Gallery query and smart album preview share overlapping predicate semantics
+- **WHEN** gallery filtering code is refactored
+- **THEN** album context loading, shared predicate application, smart album preview filtering, and album-order sorting SHOULD live in a focused owner
+- **AND** the refactor MUST preserve public Gallery query behavior
+
 ### Requirement: Persistence performance decisions use workload evidence
 
 Performance refactors for gallery, search, smart albums, version tree, and task queue SHALL use workload evidence before choosing a storage or indexing architecture.
