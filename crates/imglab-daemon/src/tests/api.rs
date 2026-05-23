@@ -206,7 +206,7 @@ fn task_api_maps_errors_and_rejects_unowned_log_paths() {
     let library_id = create_open_library(&mut state, "task-errors-library");
     let library_path = state.library_path(&library_id).expect("library path");
     let created = state
-        .service()
+        .tasks()
         .create_tasks(BatchCreateTasksRequest {
             library_path: library_path.clone(),
             library_id: LibraryId(library_id),
@@ -227,7 +227,7 @@ fn task_api_maps_errors_and_rejects_unowned_log_paths() {
         .expect("create outside log dir");
     fs::write(&outside_log, "secret log").expect("write outside log");
     state
-        .service()
+        .tasks()
         .append_task_attempt(AppendTaskAttemptRequest {
             library_path,
             task_id: task_id.clone(),

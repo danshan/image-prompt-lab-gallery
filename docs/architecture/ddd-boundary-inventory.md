@@ -31,7 +31,7 @@ The following runtime files are allowed to mention `LocalLibraryService` during 
 | --- | --- | --- |
 | `crates/imglab-cli/src/main.rs` | CLI command helpers still mention `LocalLibraryService` as concrete generic type for application owners. Library lifecycle, assets, search, rating, album create/add, and metadata suggestion review now use application owners. | Replace concrete generic annotations with narrower type aliases or inferred helper boundaries when runtime wiring is further cleaned up. |
 | `crates/imglab-daemon/src/lib.rs` | Daemon prelude imports core compatibility types for route/runtime modules. | Replace broad prelude imports with focused application/interface-contract imports. |
-| `crates/imglab-daemon/src/runtime.rs` | `DaemonState` stores `SqliteImgLabApplication<FakeImageProvider>` and exposes a `service()` compatibility accessor for task compatibility paths. Library open now uses `library_lifecycle()`. | Replace remaining task compatibility calls with explicit task owners, then remove or narrow the generic service accessor. |
+| `crates/imglab-daemon/src/runtime.rs` | `DaemonState` stores `SqliteImgLabApplication<FakeImageProvider>` and exposes focused application owner accessors. Library open uses `library_lifecycle()` and task paths use `tasks()`. | Keep runtime accessors focused on application owners and remove future broad concrete-service entrypoints. |
 
 New runtime files must not introduce direct `LocalLibraryService` usage. If a future change needs an exception, it must update this inventory and explain why the use is compatibility or adapter-only.
 
@@ -46,9 +46,8 @@ This is intentionally stricter for new files than for legacy files. It prevents 
 
 ## Next Refactor Targets
 
-1. Replace daemon `service()` accessor usage for task compatibility paths with explicit task owners.
-2. Move remaining Tauri album list/manual-create helpers off direct legacy service calls.
-3. Continue splitting gallery read-model implementation: asset detail, inspector detail, task origin, and file context remain in `library/gallery.rs`.
+1. Move remaining Tauri album list/manual-create helpers off direct legacy service calls.
+2. Continue splitting gallery read-model implementation: asset detail, inspector detail, task origin, and file context remain in `library/gallery.rs`.
 
 ## Runtime Adapter Review Notes
 
@@ -61,6 +60,7 @@ Daemon:
 
 - Library open uses `DaemonState::library_lifecycle()`.
 - Task queue routes use the application `TaskUseCase` through `DaemonState::tasks()`.
+- `DaemonState` no longer exposes a generic `service()` accessor for task compatibility paths.
 - Scheduler runtime code still owns provider dispatch, log IO, cancellation marker checks, and retry backoff timestamp calculation.
 - Task completion, cancel, and failure status decisions now use `domain::task::policies`.
 - Metadata suggestion task creation now uses `app.metadata_review()` instead of constructing a use case inside daemon runtime.

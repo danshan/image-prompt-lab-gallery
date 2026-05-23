@@ -74,10 +74,6 @@ impl DaemonState {
         }
     }
 
-    pub(crate) fn service(&self) -> &LocalLibraryService {
-        self.app.library()
-    }
-
     pub(crate) fn library_lifecycle(
         &self,
     ) -> &imglab_core::application::use_cases::library::LibraryUseCase<LocalLibraryService> {

@@ -6,7 +6,7 @@ fn recovery_restores_retry_waiting_and_running_tasks() {
     let library_id = create_open_library(&mut state, "recovery-library");
     let library_path = state.library_path(&library_id).expect("library path");
     let created = state
-        .service()
+        .tasks()
         .create_tasks(BatchCreateTasksRequest {
             library_path: library_path.clone(),
             library_id: LibraryId(library_id),
@@ -56,7 +56,7 @@ fn recovery_restores_retry_waiting_and_running_tasks() {
     let committed = created[3].id.clone();
 
     state
-        .service()
+        .tasks()
         .update_task_status(UpdateTaskStatusRequest {
             library_path: library_path.clone(),
             task_id: expired.clone(),
@@ -69,7 +69,7 @@ fn recovery_restores_retry_waiting_and_running_tasks() {
         })
         .expect("set expired retry");
     state
-        .service()
+        .tasks()
         .update_task_status(UpdateTaskStatusRequest {
             library_path: library_path.clone(),
             task_id: future.clone(),
@@ -83,7 +83,7 @@ fn recovery_restores_retry_waiting_and_running_tasks() {
         .expect("set future retry");
     for task_id in [&interrupted, &committed] {
         state
-            .service()
+            .tasks()
             .append_task_attempt(imglab_core::AppendTaskAttemptRequest {
                 library_path: library_path.clone(),
                 task_id: task_id.clone(),
@@ -92,7 +92,7 @@ fn recovery_restores_retry_waiting_and_running_tasks() {
             })
             .expect("append attempt");
         state
-            .service()
+            .tasks()
             .update_task_status(UpdateTaskStatusRequest {
                 library_path: library_path.clone(),
                 task_id: task_id.clone(),
@@ -106,7 +106,7 @@ fn recovery_restores_retry_waiting_and_running_tasks() {
             .expect("set running");
     }
     state
-        .service()
+        .tasks()
         .append_task_output(imglab_core::AppendTaskOutputRequest {
             library_path: library_path.clone(),
             task_id: committed.clone(),
@@ -121,7 +121,7 @@ fn recovery_restores_retry_waiting_and_running_tasks() {
     assert_eq!(recovered.len(), 3);
     assert_eq!(
         state
-            .service()
+            .tasks()
             .get_task_detail(&library_path, &expired)
             .expect("expired detail")
             .task
@@ -130,7 +130,7 @@ fn recovery_restores_retry_waiting_and_running_tasks() {
     );
     assert_eq!(
         state
-            .service()
+            .tasks()
             .get_task_detail(&library_path, &future)
             .expect("future detail")
             .task
@@ -139,7 +139,7 @@ fn recovery_restores_retry_waiting_and_running_tasks() {
     );
     assert_eq!(
         state
-            .service()
+            .tasks()
             .get_task_detail(&library_path, &interrupted)
             .expect("interrupted detail")
             .task
@@ -147,7 +147,7 @@ fn recovery_restores_retry_waiting_and_running_tasks() {
         TaskStatus::InterruptedRetryable
     );
     let committed_detail = state
-        .service()
+        .tasks()
         .get_task_detail(&library_path, &committed)
         .expect("committed detail");
     assert_eq!(committed_detail.task.status, TaskStatus::Completed);
@@ -164,7 +164,7 @@ fn reopening_library_does_not_interrupt_live_running_tasks() {
     let library_id = create_open_library(&mut state, "reopen-running-library");
     let library_path = state.library_path(&library_id).expect("library path");
     let created = state
-        .service()
+        .tasks()
         .create_tasks(BatchCreateTasksRequest {
             library_path: library_path.clone(),
             library_id: LibraryId(library_id),
@@ -181,7 +181,7 @@ fn reopening_library_does_not_interrupt_live_running_tasks() {
         .expect("create task");
     let task_id = created[0].id.clone();
     state
-        .service()
+        .tasks()
         .append_task_attempt(imglab_core::AppendTaskAttemptRequest {
             library_path: library_path.clone(),
             task_id: task_id.clone(),
@@ -190,7 +190,7 @@ fn reopening_library_does_not_interrupt_live_running_tasks() {
         })
         .expect("append attempt");
     state
-        .service()
+        .tasks()
         .update_task_status(UpdateTaskStatusRequest {
             library_path: library_path.clone(),
             task_id: task_id.clone(),
@@ -206,7 +206,7 @@ fn reopening_library_does_not_interrupt_live_running_tasks() {
     state.open_library(&library_path).expect("reopen library");
 
     let detail = state
-        .service()
+        .tasks()
         .get_task_detail(&library_path, &task_id)
         .expect("detail");
     assert_eq!(detail.task.status, TaskStatus::Running);

@@ -2,7 +2,6 @@ use super::*;
 use imglab_core::interface_contracts::dto::{
     AppendTaskAttemptRequest, CreateLibraryRequest, CreateTaskInput,
 };
-use imglab_core::services::TaskService;
 use std::net::{Ipv4Addr, SocketAddrV4};
 
 fn test_root(name: &str) -> PathBuf {

@@ -36,7 +36,7 @@ fn scheduler_tick_executes_fake_image_task_and_links_outputs() {
 
     let library_path = state.library_path(&library_id).expect("library path");
     let detail = state
-        .service()
+        .tasks()
         .get_task_detail(&library_path, &TaskId(task_id.clone()))
         .expect("detail");
     assert_eq!(detail.attempts[0].status, "completed");
@@ -108,7 +108,7 @@ fn scheduler_tick_executes_metadata_field_task_and_records_output() {
 
     let library_path = state.library_path(&library_id).expect("library path");
     let detail = state
-        .service()
+        .tasks()
         .get_task_detail(&library_path, &TaskId(task_id.clone()))
         .expect("detail");
     let output = detail
@@ -177,7 +177,7 @@ fn scheduler_tick_executes_metadata_suggestion_task_for_generated_asset() {
 
     let library_path = state.library_path(&library_id).expect("library path");
     let image_detail = state
-        .service()
+        .tasks()
         .get_task_detail(&library_path, &TaskId(image_task_id))
         .expect("image detail");
     let asset_id = image_detail
@@ -229,7 +229,7 @@ fn scheduler_tick_executes_metadata_suggestion_task_for_generated_asset() {
     assert_eq!(task.status, TaskStatus::Completed);
 
     let detail = state
-        .service()
+        .tasks()
         .get_task_detail(&library_path, &TaskId(suggestion_task_id.clone()))
         .expect("suggestion detail");
     let output = detail
@@ -303,7 +303,7 @@ fn scheduler_tick_marks_transient_failure_retry_waiting() {
 
     let library_path = state.library_path(&library_id).expect("library path");
     let detail = state
-        .service()
+        .tasks()
         .get_task_detail(&library_path, &TaskId(task_id))
         .expect("detail");
     assert_eq!(detail.attempts[0].status, "failed");

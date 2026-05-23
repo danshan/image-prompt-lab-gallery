@@ -75,7 +75,7 @@ pub fn recover_open_libraries(
                         .is_none_or(|next_retry_at| next_retry_at <= now.as_str())
                     {
                         state
-                            .service()
+                            .tasks()
                             .append_task_event(imglab_core::AppendTaskEventRequest {
                                 library_path: library_path.clone(),
                                 task_id: task.id.clone(),
@@ -103,7 +103,7 @@ pub fn recover_open_libraries(
                     let detail = state.tasks().get_task_detail(&library_path, &task.id)?;
                     if !detail.outputs.is_empty() {
                         state
-                            .service()
+                            .tasks()
                             .append_task_event(imglab_core::AppendTaskEventRequest {
                                 library_path: library_path.clone(),
                                 task_id: task.id.clone(),
@@ -134,7 +134,7 @@ pub fn recover_open_libraries(
                             TaskStatus::InterruptedFinal
                         };
                         state
-                            .service()
+                            .tasks()
                             .append_task_event(imglab_core::AppendTaskEventRequest {
                                 library_path: library_path.clone(),
                                 task_id: task.id.clone(),
@@ -193,20 +193,18 @@ pub fn run_scheduler_tick(
     for wait_reason in decision.wait_reasons {
         if let Some(library_path) = task_libraries.get(&wait_reason.task_id.0) {
             let detail = state
-                .service()
+                .tasks()
                 .get_task_detail(library_path, &wait_reason.task_id)?;
-            state
-                .service()
-                .update_task_status(UpdateTaskStatusRequest {
-                    library_path: library_path.clone(),
-                    task_id: wait_reason.task_id,
-                    status: detail.task.status,
-                    next_retry_at: detail.task.next_retry_at,
-                    last_error_code: detail.task.last_error_code,
-                    last_error_message: detail.task.last_error_message,
-                    error_classification: detail.task.error_classification,
-                    wait_reason: Some(wait_reason.reason),
-                })?;
+            state.tasks().update_task_status(UpdateTaskStatusRequest {
+                library_path: library_path.clone(),
+                task_id: wait_reason.task_id,
+                status: detail.task.status,
+                next_retry_at: detail.task.next_retry_at,
+                last_error_code: detail.task.last_error_code,
+                last_error_message: detail.task.last_error_message,
+                error_classification: detail.task.error_classification,
+                wait_reason: Some(wait_reason.reason),
+            })?;
         }
     }
 
@@ -273,7 +271,7 @@ pub(crate) fn route_request(
             let input: ReorderTasksInput = parse_json_body(body)?;
             let library_path = state.library_path(&input.library_id)?;
             state
-                .service()
+                .tasks()
                 .reorder_queued_tasks(ReorderQueuedTasksRequest {
                     library_path,
                     task_ids: input.task_ids.into_iter().map(TaskId).collect(),
@@ -371,7 +369,7 @@ pub(crate) fn request_task_cancel(
         }
     }
     state
-        .service()
+        .tasks()
         .append_task_event(imglab_core::AppendTaskEventRequest {
             library_path: library_path.clone(),
             task_id: task_id.clone(),

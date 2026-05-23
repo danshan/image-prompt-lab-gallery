@@ -176,6 +176,12 @@ Migrated write flows SHALL have one primary application use-case owner. Runtime 
 - **THEN** it delegates business behavior to the application/use-case boundary
 - **AND** it only performs input parsing, transport mapping, process execution, logging, or error mapping owned by that runtime
 
+#### Scenario: Daemon task paths use task application owner
+
+- **WHEN** daemon transport, recovery, scheduler, or tests perform task repository operations
+- **THEN** they SHOULD call the daemon task application owner
+- **AND** they SHOULD NOT use a generic concrete local-service accessor as the primary task entrypoint
+
 #### Scenario: CLI tag mutation uses asset application owner
 
 - **WHEN** CLI adds a tag to an asset

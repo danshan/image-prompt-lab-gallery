@@ -40,6 +40,16 @@ Define local daemon task management, scheduling, retry, recovery, logs, and stru
 - **WHEN** task 成功创建 asset version, generation event, metadata suggestion 或 field result
 - **THEN** daemon 将 output link 写入 task outputs, 以便 Queue 和 Review Inbox 反向追踪来源 task
 
+### Requirement: Daemon task manager routes through application task owner
+
+Daemon task manager workflows SHALL route task operations through the application task owner while preserving loopback API behavior.
+
+#### Scenario: Task HTTP routes use task owner
+
+- **WHEN** daemon HTTP routes create, list, reorder, cancel, retry, duplicate, or inspect tasks
+- **THEN** task persistence operations SHOULD go through the task application owner
+- **AND** HTTP request parsing and response mapping remain daemon-owned
+
 ### Requirement: 支持 Task State Machine
 
 系统 SHALL 使用明确 task state machine 管理 queued, running, retry waiting, failed, canceled, interrupted 和 completed 状态.
@@ -222,4 +232,3 @@ Task status transition, retry classification, attempt lifecycle, event persisten
 - **WHEN** the daemon executes, retries, cancels, or completes a task
 - **THEN** state transition and output-link semantics are delegated to the core task/generation owner
 - **AND** daemon-specific code only handles runtime execution concerns
-

@@ -4,8 +4,7 @@ use imglab_core::{
     DomainResult, GenerationOperation, GenerationRequestInput, LibraryId, LibrarySummary,
     LocalLibraryService, ReorderQueuedTasksRequest, RetryPolicy, TaskAttempt, TaskDetail,
     TaskErrorClassification, TaskEvent, TaskId, TaskOutput, TaskOutputType, TaskSchedulerConfig,
-    TaskService, TaskStatus, TaskSummary, TaskType, UpdateTaskStatusRequest,
-    CURRENT_SCHEMA_VERSION,
+    TaskStatus, TaskSummary, TaskType, UpdateTaskStatusRequest, CURRENT_SCHEMA_VERSION,
 };
 use imglab_provider_codex::CodexCliImageProvider;
 use serde::{Deserialize, Serialize};
