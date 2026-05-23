@@ -1,13 +1,16 @@
 use super::{
-    database_error, operation_from_str, operation_to_str, storage::timestamp_string,
+    database_error, operation_from_str, operation_to_str,
+    storage::{file_digest, timestamp_string},
     LocalLibraryService,
 };
+use crate::application::ports::ManagedFileStore;
 use crate::application::use_cases::assets::{CreateChildVersionUseCase, ImportAssetUseCase};
 use crate::{
     version_name, AssetId, AssetService, AssetSummary, AssetVersionId, CreateChildVersionRequest,
     CreateGenerationEventRequest, DomainError, DomainResult, GenerationEventId,
     GenerationEventSummary, ImportAssetRequest, LineageEntry, PersistAssetVersionRequest,
-    PersistImportedAssetRequest, VersionSummary,
+    PersistImportedAssetRequest, PromoteAssetVersionRequest, PromoteAssetVersionSummary,
+    PromotedSourceView, VersionSummary,
 };
 use rusqlite::{params, Connection};
 use std::path::{Path, PathBuf};
@@ -26,6 +29,13 @@ impl AssetService for LocalLibraryService {
         request: CreateChildVersionRequest,
     ) -> DomainResult<VersionSummary> {
         CreateChildVersionUseCase::new(self.clone(), self.clone()).execute(request)
+    }
+
+    fn promote_version_as_asset(
+        &self,
+        request: PromoteAssetVersionRequest,
+    ) -> DomainResult<PromoteAssetVersionSummary> {
+        promote_version_as_asset(self, request)
     }
 
     fn record_generation_event(
@@ -109,6 +119,146 @@ impl AssetService for LocalLibraryService {
 
         Ok(lineage)
     }
+}
+
+pub(crate) fn promote_version_as_asset(
+    service: &LocalLibraryService,
+    request: PromoteAssetVersionRequest,
+) -> DomainResult<PromoteAssetVersionSummary> {
+    let source = {
+        let connection = LocalLibraryService::open_library_database(&request.library_path)?;
+        let version = load_version(&connection, &request.source_version_id)?;
+        let asset = load_asset_summary(&connection, &version.asset_id)?;
+        if asset.status == "reference" {
+            return Err(DomainError::InvalidAssetReference {
+                id: version.asset_id.0,
+            });
+        }
+        (asset, version)
+    };
+
+    let source_path = request.library_path.join(&source.1.file_path);
+    let digest = file_digest(&source_path, &source.1.checksum_algorithm)?;
+    if digest != source.1.checksum {
+        return Err(DomainError::FileIntegrityMismatch {
+            version_id: source.1.id.0,
+            message: "source version checksum does not match before promote".to_string(),
+        });
+    }
+
+    let imported = service.import_original(
+        &request.library_path,
+        &source_path,
+        Some(&source.1.mime_type),
+    )?;
+    persist_promoted_asset(request, source.0, source.1, imported)
+}
+
+fn persist_promoted_asset(
+    request: PromoteAssetVersionRequest,
+    source_asset: AssetSummary,
+    source_version: VersionSummary,
+    imported: crate::ManagedFileImport,
+) -> DomainResult<PromoteAssetVersionSummary> {
+    let manifest = LocalLibraryService::read_manifest(&request.library_path)?;
+    let connection = LocalLibraryService::open_library_database(&request.library_path)?;
+    let asset_id = AssetId(Uuid::new_v4().to_string());
+    let source_id = Uuid::new_v4().to_string();
+    let now = timestamp_string();
+    let file = imported.metadata;
+
+    let transaction = connection.unchecked_transaction().map_err(database_error)?;
+    transaction
+        .execute(
+            "
+            INSERT INTO assets (
+                id, library_id, media_type, title, description, schema_prompt, category,
+                rating, status, created_at, updated_at, captured_at
+            )
+            VALUES (?1, ?2, ?3, NULL, NULL, NULL, NULL, NULL, ?4, ?5, ?5, NULL)
+            ",
+            params![
+                asset_id.0.as_str(),
+                manifest.id,
+                file.mime_type,
+                "imported",
+                now
+            ],
+        )
+        .map_err(database_error)?;
+    transaction
+        .execute(
+            "
+            INSERT INTO asset_versions (
+                id, asset_id, parent_version_id, generation_event_id,
+                file_path, sha256, checksum_algorithm, checksum, width, height, mime_type,
+                version_number, version_label, created_at
+            )
+            VALUES (?1, ?2, NULL, NULL, ?3, ?4, ?5, ?4, ?6, ?7, ?8, 1, ?9, ?10)
+            ",
+            params![
+                imported.version_id.0.as_str(),
+                asset_id.0.as_str(),
+                file.file_path.to_string_lossy(),
+                file.checksum,
+                file.checksum_algorithm,
+                file.width,
+                file.height,
+                file.mime_type,
+                "promoted",
+                now
+            ],
+        )
+        .map_err(database_error)?;
+    transaction
+        .execute(
+            "
+            INSERT INTO asset_version_sources (
+                id, target_version_id, source_asset_id, source_version_id, source_kind, created_at
+            )
+            VALUES (?1, ?2, ?3, ?4, 'promoted_from', ?5)
+            ",
+            params![
+                source_id,
+                imported.version_id.0.as_str(),
+                source_asset.id.0.as_str(),
+                source_version.id.0.as_str(),
+                now
+            ],
+        )
+        .map_err(database_error)?;
+    transaction.commit().map_err(database_error)?;
+
+    let version = VersionSummary {
+        id: imported.version_id,
+        asset_id: asset_id.clone(),
+        parent_version_id: None,
+        generation_event_id: None,
+        version_number: 1,
+        version_name: version_name(1),
+        file_path: file.file_path,
+        checksum_algorithm: file.checksum_algorithm,
+        checksum: file.checksum,
+        mime_type: file.mime_type,
+    };
+    Ok(PromoteAssetVersionSummary {
+        asset: AssetSummary {
+            id: asset_id,
+            title: None,
+            category: None,
+            rating: None,
+            status: "imported".to_string(),
+        },
+        promoted_from: PromotedSourceView {
+            source_asset_id: source_asset.id,
+            source_asset_title: source_asset.title,
+            source_version_id: source_version.id,
+            source_version_number: source_version.version_number,
+            source_version_name: source_version.version_name,
+            source_version_tree_name: None,
+        },
+        version,
+    })
 }
 
 pub(crate) fn import_asset_with_status(

@@ -19,6 +19,7 @@ import {
   clearCurationStateForLibrarySwitch,
   clearLibraryWorkspaceState,
   clearSelectionForLibrarySwitch,
+  collectExpandableVersionIds,
   completeDetailLoad,
   completeReviewFieldGeneration,
   countActiveTasks,
@@ -29,7 +30,9 @@ import {
   failReviewFieldGeneration,
   failDetailLoad,
   filterAlbumAddCandidates,
+  flattenVisibleVersionTree,
   formatAspectRatio,
+  formatVersionTreeSummary,
   galleryAlbumFilterIds,
   addReviewFormTag,
   isReviewFieldGenerating,
@@ -719,4 +722,39 @@ test("formatAspectRatio returns unavailable for missing or invalid dimensions", 
   assert.equal(formatAspectRatio(1024, null), "Unavailable");
   assert.equal(formatAspectRatio(0, 1024), "Unavailable");
   assert.equal(formatAspectRatio(1024, -1), "Unavailable");
+});
+
+test("version tree helpers flatten visible nodes and summarize branches", () => {
+  const tree = [
+    {
+      versionId: "root",
+      children: [
+        {
+          versionId: "child-a",
+          children: [{ versionId: "grandchild", children: [] }],
+        },
+        { versionId: "child-b", children: [] },
+      ],
+    },
+  ];
+
+  assert.deepEqual(collectExpandableVersionIds(tree), ["root", "child-a"]);
+  assert.deepEqual(
+    flattenVisibleVersionTree(tree, new Set(["root"])).map((entry) => ({
+      id: entry.node.versionId,
+      depth: entry.depth,
+      parentId: entry.parentId,
+    })),
+    [
+      { id: "root", depth: 0, parentId: null },
+      { id: "child-a", depth: 1, parentId: "root" },
+      { id: "child-b", depth: 1, parentId: "root" },
+    ],
+  );
+  assert.deepEqual(
+    flattenVisibleVersionTree(tree, new Set(["root", "child-a"])).map((entry) => entry.node.versionId),
+    ["root", "child-a", "grandchild", "child-b"],
+  );
+  assert.equal(formatVersionTreeSummary({ versionCount: 4, versionTreeBranchCount: 2 }), "4 versions / 2 branches");
+  assert.equal(formatVersionTreeSummary({ versionCount: 1, versionTreeBranchCount: 0 }), "1 version");
 });

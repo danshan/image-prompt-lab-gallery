@@ -1,7 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
+  collectExpandableVersionIds,
+  flattenVisibleVersionTree,
   formatAspectRatio,
   type DetailLoadState,
+  type VisibleVersionTreeNode,
 } from "../../workflows/gallery";
 import { Icon } from "../../../studio-icons";
 import {
@@ -48,6 +51,7 @@ import type {
   TaskDraft,
   TaskPanel,
   UpdateState,
+  VersionTreeNode,
   View,
 } from "../../types";
 export function Inspector({
@@ -63,6 +67,7 @@ export function Inspector({
   onPreviewImage,
   onGenerateFromReference,
   onGenerateVariation,
+  onPromoteVersion,
 }: {
   asset: GalleryAsset | null;
   detailState: DetailLoadState<AssetDetail>;
@@ -76,6 +81,7 @@ export function Inspector({
   onPreviewImage: (image: LightboxImage) => void;
   onGenerateFromReference: (reference: ReferenceSource) => void;
   onGenerateVariation: (versionId?: string | null) => void;
+  onPromoteVersion: (versionId?: string | null) => void;
 }) {
   const detail = detailState.detail;
   const [tagInput, setTagInput] = useState("");
@@ -133,17 +139,34 @@ export function Inspector({
       </aside>
     );
   }
+  const focusedVersion =
+    detail.focusedVersion ??
+    detail.versions.find((version) => version.id === detail.focusedVersionId) ??
+    detail.versions.find((version) => version.id === detail.currentVersionId) ??
+    detail.versions[0] ??
+    null;
+  const previewPath = focusedVersion?.filePath ?? asset.imagePath;
+  const previewLabel =
+    detail.focusedVersionTreeName ??
+    focusedVersion?.versionName ??
+    asset.title ??
+    "Generated image";
   return (
     <aside className="inspector">
       <button className="inspector-close" onClick={onClose}>Close</button>
       <section className="inspector-hero">
-        {asset.imagePath ? (
+        {previewPath ? (
           <button
             className="inspector-thumbnail-button"
             aria-label="Open full image preview"
-            onClick={() => onPreviewImage({ path: asset.imagePath!, label: asset.title ?? "Generated image" })}
+            onClick={() => onPreviewImage({ path: previewPath, label: previewLabel })}
           >
-            <Thumbnail asset={asset} index={0} />
+            <img
+              alt={previewLabel}
+              src={convertImagePath(previewPath)}
+              loading="lazy"
+              decoding="async"
+            />
           </button>
         ) : (
           <Thumbnail asset={asset} index={0} />
@@ -270,6 +293,7 @@ export function Inspector({
           onPreviewImage={onPreviewImage}
           onGenerateFromReference={onGenerateFromReference}
           onGenerateVariation={onGenerateVariation}
+          onPromoteVersion={onPromoteVersion}
         />
       </InspectorSection>
       <InspectorSection title="File">
@@ -297,38 +321,143 @@ function VersionLineagePanel({
   onPreviewImage,
   onGenerateFromReference,
   onGenerateVariation,
+  onPromoteVersion,
 }: {
   detail: AssetDetail;
   onSelectVersion: (versionId: string) => void;
   onPreviewImage: (image: LightboxImage) => void;
   onGenerateFromReference: (reference: ReferenceSource) => void;
   onGenerateVariation: (versionId?: string | null) => void;
+  onPromoteVersion: (versionId?: string | null) => void;
 }) {
-  const current =
+  const focused =
+    detail.focusedVersion ??
+    detail.versions.find((version) => version.id === detail.focusedVersionId) ??
     detail.versions.find((version) => version.id === detail.currentVersionId) ??
     detail.lineage[0]?.version ??
     detail.versions[0] ??
     null;
   const lineage = detail.lineage.length > 0 ? detail.lineage : detail.versions.map((version) => ({ version, generationEvent: null }));
   const eventByVersionId = new Map(lineage.map((entry) => [entry.version.id, entry.generationEvent]));
+  const treeNodes = detail.versionTree ?? [];
+  const defaultExpanded = useMemo(() => collectExpandableVersionIds(treeNodes), [treeNodes]);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set(defaultExpanded));
+  const [activeNodeId, setActiveNodeId] = useState<string | null>(focused?.id ?? null);
+  useEffect(() => {
+    setExpandedIds(new Set(defaultExpanded));
+  }, [defaultExpanded]);
+  useEffect(() => {
+    setActiveNodeId(focused?.id ?? null);
+  }, [focused?.id]);
+  const visibleNodes = useMemo(
+    () => flattenVisibleVersionTree(treeNodes, expandedIds),
+    [treeNodes, expandedIds],
+  );
+  const focusedTreeName =
+    detail.focusedVersionTreeName ??
+    visibleNodes.find((entry) => entry.node.versionId === focused?.id)?.node.treeName ??
+    focused?.versionName ??
+    null;
+  const selectVersion = (versionId: string) => {
+    setActiveNodeId(versionId);
+    onSelectVersion(versionId);
+  };
+  const toggleExpanded = (versionId: string, expand?: boolean) => {
+    setExpandedIds((current) => {
+      const next = new Set(current);
+      if (expand ?? !next.has(versionId)) {
+        next.add(versionId);
+      } else {
+        next.delete(versionId);
+      }
+      return next;
+    });
+  };
   return (
     <div className="version-lineage-panel">
       <div className="version-current-card">
-        <span className="version-current-kicker">Current version</span>
-        <strong>{current?.versionName ?? formatVersionName(current?.id ?? detail.id)}</strong>
+        <span className="version-current-kicker">Focused version</span>
+        <strong>{focusedTreeName ?? formatVersionName(focused?.id ?? detail.id)}</strong>
         <div className="version-current-meta">
           <span>{detail.versions.length} version{detail.versions.length === 1 ? "" : "s"}</span>
           <span>{lineage[0]?.generationEvent?.operationType ? formatOperation(lineage[0].generationEvent.operationType) : "Asset lineage"}</span>
         </div>
       </div>
 
-      <div className="version-browser" aria-label="Asset versions">
-        {detail.versions.map((version) => {
-          const selected = version.id === detail.currentVersionId;
+      {treeNodes.length > 0 ? (
+        <div
+          className="version-tree"
+          role="tree"
+          tabIndex={0}
+          aria-label="Asset version tree"
+          aria-activedescendant={activeNodeId ? `version-tree-${activeNodeId}` : undefined}
+          onKeyDown={(event) => {
+            if (visibleNodes.length === 0) {
+              return;
+            }
+            const currentIndex = Math.max(
+              0,
+              visibleNodes.findIndex((entry) => entry.node.versionId === activeNodeId),
+            );
+            const current = visibleNodes[currentIndex];
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              setActiveNodeId(visibleNodes[Math.min(currentIndex + 1, visibleNodes.length - 1)].node.versionId);
+            } else if (event.key === "ArrowUp") {
+              event.preventDefault();
+              setActiveNodeId(visibleNodes[Math.max(currentIndex - 1, 0)].node.versionId);
+            } else if (event.key === "Enter" && activeNodeId) {
+              event.preventDefault();
+              selectVersion(activeNodeId);
+            } else if (event.key === "ArrowRight" && current?.node.children.length) {
+              event.preventDefault();
+              toggleExpanded(current.node.versionId, true);
+            } else if (event.key === "ArrowLeft" && current) {
+              event.preventDefault();
+              if (expandedIds.has(current.node.versionId) && current.node.children.length) {
+                toggleExpanded(current.node.versionId, false);
+              } else if (current.parentId) {
+                setActiveNodeId(current.parentId);
+              }
+            }
+          }}
+        >
+          {visibleNodes.map(({ node, depth }) => {
+            const selected = node.versionId === focused?.id;
+            const active = node.versionId === activeNodeId;
+            const expanded = expandedIds.has(node.versionId);
+            return (
+              <button
+                id={`version-tree-${node.versionId}`}
+                className={[
+                  "version-tree-node",
+                  selected ? "selected" : "",
+                  active ? "active" : "",
+                ].filter(Boolean).join(" ")}
+                key={node.versionId}
+                role="treeitem"
+                aria-selected={selected}
+                aria-expanded={node.children.length > 0 ? expanded : undefined}
+                style={{ paddingLeft: `${8 + depth * 18}px` }}
+                onClick={() => selectVersion(node.versionId)}
+              >
+                <span className="version-tree-toggle" aria-hidden="true">
+                  {node.children.length > 0 ? (expanded ? "v" : ">") : ""}
+                </span>
+                <span className="version-tree-label">{node.treeName}</span>
+                <small>{node.provider ?? node.versionName}</small>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="version-browser" aria-label="Asset versions">
+          {detail.versions.map((version) => {
+            const selected = version.id === focused?.id;
           const event = eventByVersionId.get(version.id) ?? null;
           return (
             <article className={selected ? "version-browser-row selected" : "version-browser-row"} key={version.id}>
-              <button className="version-browser-main" onClick={() => onSelectVersion(version.id)}>
+              <button className="version-browser-main" onClick={() => selectVersion(version.id)}>
                 <span className="version-thumb">
                   <img
                     alt={version.versionName ?? formatVersionName(version.id)}
@@ -347,8 +476,17 @@ function VersionLineagePanel({
               </button>
             </article>
           );
-        })}
-      </div>
+          })}
+        </div>
+      )}
+
+      {detail.versionTreeIssues?.length ? (
+        <div className="version-tree-issues">
+          {detail.versionTreeIssues.map((issue) => (
+            <small key={`${issue.kind}-${issue.versionId ?? issue.parentVersionId ?? "asset"}`}>{issue.message}</small>
+          ))}
+        </div>
+      ) : null}
 
       {detail.sourceReference ? (
         <div className="version-current-card reference-source-card">
@@ -385,6 +523,17 @@ function VersionLineagePanel({
         </div>
       ) : null}
 
+      {detail.promotedFrom ? (
+        <div className="version-current-card promoted-source-card">
+          <span className="version-current-kicker">Promoted from</span>
+          <strong>{detail.promotedFrom.sourceAssetTitle ?? shortIdentifier(detail.promotedFrom.sourceAssetId)}</strong>
+          <div className="version-current-meta">
+            <span>{detail.promotedFrom.sourceVersionTreeName ?? detail.promotedFrom.sourceVersionName}</span>
+            <span>{shortIdentifier(detail.promotedFrom.sourceVersionId)}</span>
+          </div>
+        </div>
+      ) : null}
+
       <div className="lineage-timeline" aria-label="Version lineage">
         {lineage.length === 0 ? (
           <p>No lineage available.</p>
@@ -406,9 +555,13 @@ function VersionLineagePanel({
         )}
       </div>
 
-      <button className="variation-button" onClick={() => onGenerateVariation(current?.id ?? detail.currentVersionId)}>
+      <button className="variation-button" onClick={() => onGenerateVariation(focused?.id ?? detail.focusedVersionId ?? detail.currentVersionId)}>
         <Icon name="plus" />
         <span>Generate variation</span>
+      </button>
+      <button className="variation-button secondary" onClick={() => onPromoteVersion(focused?.id ?? detail.focusedVersionId ?? detail.currentVersionId)}>
+        <Icon name="image" />
+        <span>Promote as new asset</span>
       </button>
     </div>
   );

@@ -1,12 +1,14 @@
 use crate::application::ports::AssetRepository;
 use crate::library::{
     import_asset_with_status, list_versions_for_asset, load_version,
-    mark_imported_version_as_generated, persist_asset_version, LocalLibraryService,
+    mark_imported_version_as_generated, persist_asset_version, promote_version_as_asset,
+    LocalLibraryService,
 };
 use crate::{
     AssetId, AssetService, AssetSummary, AssetVersionId, CreateGenerationEventRequest,
     DomainResult, GenerationEventId, GenerationEventSummary, PersistAssetVersionRequest,
-    PersistImportedAssetRequest, VersionSummary,
+    PersistImportedAssetRequest, PromoteAssetVersionRequest, PromoteAssetVersionSummary,
+    VersionSummary,
 };
 use std::path::Path;
 
@@ -41,6 +43,13 @@ impl AssetRepository for LocalLibraryService {
         request: PersistAssetVersionRequest,
     ) -> DomainResult<VersionSummary> {
         persist_asset_version(request)
+    }
+
+    fn promote_version_as_asset(
+        &self,
+        request: PromoteAssetVersionRequest,
+    ) -> DomainResult<PromoteAssetVersionSummary> {
+        promote_version_as_asset(self, request)
     }
 
     fn record_generation_event(

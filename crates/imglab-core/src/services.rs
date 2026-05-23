@@ -36,6 +36,10 @@ pub trait AssetService {
         &self,
         request: CreateChildVersionRequest,
     ) -> DomainResult<VersionSummary>;
+    fn promote_version_as_asset(
+        &self,
+        request: PromoteAssetVersionRequest,
+    ) -> DomainResult<PromoteAssetVersionSummary>;
     fn record_generation_event(
         &self,
         request: CreateGenerationEventRequest,

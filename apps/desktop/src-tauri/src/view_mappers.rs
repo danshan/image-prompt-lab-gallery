@@ -134,6 +134,7 @@ pub(crate) fn gallery_asset_view(
         current_version_id: summary.current_version_id.map(|id| id.0),
         current_version_number: summary.current_version_number,
         current_version_name: summary.current_version_name,
+        current_version_tree_name: summary.current_version_tree_name,
         image_path: summary
             .image_path
             .map(|path| absolutize_library_path(library_path, path)),
@@ -141,6 +142,7 @@ pub(crate) fn gallery_asset_view(
         height: summary.height,
         version_label: summary.version_label,
         version_count: summary.version_count,
+        version_tree_branch_count: summary.version_tree_branch_count,
         task_origin: summary.task_origin.map(task_origin_view),
         albums: summary
             .albums
@@ -317,10 +319,25 @@ pub(crate) fn asset_detail_view(
         current_version_id: summary.current_version_id.map(|id| id.0),
         current_version_number: summary.current_version_number,
         current_version_name: summary.current_version_name,
+        focused_version_id: summary.focused_version_id.map(|id| id.0),
+        focused_version_tree_name: summary.focused_version_tree_name,
+        focused_version: summary
+            .focused_version
+            .map(|version| version_view_with_library_path(library_path, version)),
         versions: summary
             .versions
             .into_iter()
             .map(|version| version_view_with_library_path(library_path, version))
+            .collect(),
+        version_tree: summary
+            .version_tree
+            .into_iter()
+            .map(|node| version_tree_node_view(node, library_path))
+            .collect(),
+        version_tree_issues: summary
+            .version_tree_issues
+            .into_iter()
+            .map(version_tree_issue_view)
             .collect(),
         lineage: summary
             .lineage
@@ -333,6 +350,7 @@ pub(crate) fn asset_detail_view(
         source_reference: summary
             .source_reference
             .map(|source| reference_source_view(source, library_path)),
+        promoted_from: summary.promoted_from.map(promoted_source_view),
         file: summary.file.map(|file| FileContextView {
             filename: file.filename,
             relative_location: file.relative_location,
@@ -344,6 +362,59 @@ pub(crate) fn asset_detail_view(
             checksum: file.checksum,
             integrity_status: file.integrity_status,
         }),
+    }
+}
+
+fn version_tree_node_view(
+    summary: imglab_core::VersionTreeNode,
+    library_path: &Path,
+) -> VersionTreeNodeView {
+    VersionTreeNodeView {
+        version_id: summary.version_id.0,
+        parent_version_id: summary.parent_version_id.map(|id| id.0),
+        tree_name: summary.tree_name,
+        version_number: summary.version_number,
+        version_name: summary.version_name,
+        file_path: absolutize_library_path(library_path, summary.file_path),
+        created_at: summary.created_at,
+        provider: summary.provider,
+        model_label: summary.model_label,
+        generation_status: summary.generation_status,
+        children: summary
+            .children
+            .into_iter()
+            .map(|child| version_tree_node_view(child, library_path))
+            .collect(),
+    }
+}
+
+fn version_tree_issue_view(summary: imglab_core::VersionTreeIssue) -> VersionTreeIssueView {
+    VersionTreeIssueView {
+        kind: summary.kind,
+        version_id: summary.version_id.map(|id| id.0),
+        parent_version_id: summary.parent_version_id.map(|id| id.0),
+        message: summary.message,
+    }
+}
+
+fn promoted_source_view(summary: imglab_core::PromotedSourceView) -> PromotedSourceView {
+    PromotedSourceView {
+        source_asset_id: summary.source_asset_id.0,
+        source_asset_title: summary.source_asset_title,
+        source_version_id: summary.source_version_id.0,
+        source_version_number: summary.source_version_number,
+        source_version_name: summary.source_version_name,
+        source_version_tree_name: summary.source_version_tree_name,
+    }
+}
+
+pub(crate) fn promote_asset_version_view(
+    summary: imglab_core::PromoteAssetVersionSummary,
+) -> PromoteAssetVersionView {
+    PromoteAssetVersionView {
+        asset: asset_view(summary.asset),
+        version: version_view(summary.version),
+        promoted_from: promoted_source_view(summary.promoted_from),
     }
 }
 

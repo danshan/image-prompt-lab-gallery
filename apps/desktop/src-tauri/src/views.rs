@@ -144,11 +144,13 @@ pub(crate) struct GalleryAssetView {
     pub(crate) current_version_id: Option<String>,
     pub(crate) current_version_number: Option<u32>,
     pub(crate) current_version_name: Option<String>,
+    pub(crate) current_version_tree_name: Option<String>,
     pub(crate) image_path: Option<PathBuf>,
     pub(crate) width: Option<u32>,
     pub(crate) height: Option<u32>,
     pub(crate) version_label: Option<String>,
     pub(crate) version_count: u32,
+    pub(crate) version_tree_branch_count: u32,
     pub(crate) task_origin: Option<TaskOriginView>,
     pub(crate) albums: Vec<AlbumView>,
     pub(crate) album_context: Option<AlbumView>,
@@ -198,6 +200,50 @@ pub(crate) struct ReferenceSourceView {
 pub(crate) struct LineageEntryView {
     pub(crate) version: VersionView,
     pub(crate) generation_event: Option<GenerationEventView>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct VersionTreeNodeView {
+    pub(crate) version_id: String,
+    pub(crate) parent_version_id: Option<String>,
+    pub(crate) tree_name: String,
+    pub(crate) version_number: u32,
+    pub(crate) version_name: String,
+    pub(crate) file_path: PathBuf,
+    pub(crate) created_at: String,
+    pub(crate) provider: Option<String>,
+    pub(crate) model_label: Option<String>,
+    pub(crate) generation_status: Option<String>,
+    pub(crate) children: Vec<VersionTreeNodeView>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct VersionTreeIssueView {
+    pub(crate) kind: String,
+    pub(crate) version_id: Option<String>,
+    pub(crate) parent_version_id: Option<String>,
+    pub(crate) message: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PromotedSourceView {
+    pub(crate) source_asset_id: String,
+    pub(crate) source_asset_title: Option<String>,
+    pub(crate) source_version_id: String,
+    pub(crate) source_version_number: u32,
+    pub(crate) source_version_name: String,
+    pub(crate) source_version_tree_name: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PromoteAssetVersionView {
+    pub(crate) asset: AssetView,
+    pub(crate) version: VersionView,
+    pub(crate) promoted_from: PromotedSourceView,
 }
 
 #[derive(Debug, Serialize)]
@@ -269,9 +315,15 @@ pub(crate) struct AssetDetailView {
     pub(crate) current_version_id: Option<String>,
     pub(crate) current_version_number: Option<u32>,
     pub(crate) current_version_name: Option<String>,
+    pub(crate) focused_version_id: Option<String>,
+    pub(crate) focused_version_tree_name: Option<String>,
+    pub(crate) focused_version: Option<VersionView>,
     pub(crate) versions: Vec<VersionView>,
+    pub(crate) version_tree: Vec<VersionTreeNodeView>,
+    pub(crate) version_tree_issues: Vec<VersionTreeIssueView>,
     pub(crate) lineage: Vec<LineageEntryView>,
     pub(crate) source_reference: Option<ReferenceSourceView>,
+    pub(crate) promoted_from: Option<PromotedSourceView>,
     pub(crate) file: Option<FileContextView>,
 }
 
@@ -466,6 +518,13 @@ pub(crate) struct AssetDetailInput {
     pub(crate) library_path: PathBuf,
     pub(crate) asset_id: String,
     pub(crate) current_version_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PromoteAssetVersionInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) source_version_id: String,
 }
 
 #[derive(Debug, Deserialize)]

@@ -81,6 +81,7 @@ pub fn run() {
             commands::gallery::query_gallery,
             commands::gallery::get_asset_detail,
             commands::gallery::get_asset_inspector_detail,
+            commands::gallery::promote_asset_version,
             commands::generation::generate_image,
             commands::daemon::daemon_health,
             commands::daemon::enqueue_generation_tasks,

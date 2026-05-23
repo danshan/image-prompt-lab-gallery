@@ -3,7 +3,7 @@ import { Icon } from "../../../studio-icons";
 import { convertImagePath } from "../../tauri-adapter";
 import { StarRatingDisplay } from "../../components/rating";
 import { thumbnailImageStyle, thumbnailStyle } from "../../utils";
-import { toggleGalleryTag, type GalleryQueryState } from "../../workflows/gallery";
+import { formatVersionTreeSummary, toggleGalleryTag, type GalleryQueryState } from "../../workflows/gallery";
 import type { GalleryAsset, LightboxImage } from "../../types";
 
 export function GalleryWorkspace({
@@ -78,7 +78,7 @@ export function GalleryWorkspace({
               />
               <span className="asset-title-row">
                 <span className="asset-title">{asset.title ?? "Untitled"}</span>
-                <span>{asset.currentVersionName ?? asset.versionLabel ?? "v1"}</span>
+                <span>{asset.currentVersionTreeName ?? asset.currentVersionName ?? asset.versionLabel ?? "v1"}</span>
               </span>
             </div>
             <span className="asset-card-meta">
@@ -92,7 +92,7 @@ export function GalleryWorkspace({
             </span>
             <span className="asset-card-footer">
               {asset.reviewPendingCount > 0 ? <span className="review-badge">Review pending</span> : <span />}
-              <span>{asset.versionCount} version{asset.versionCount === 1 ? "" : "s"}</span>
+              <span>{formatVersionTreeSummary(asset)}</span>
             </span>
             <span className="asset-card-actions">
               <button

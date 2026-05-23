@@ -401,6 +401,7 @@ mod tests {
     use crate::{
         ConfidenceScoreView, GeneratedImage, GenerationEventId, GenerationEventSummary,
         ManagedFileImport, ManagedFileMetadata, MetadataSuggestion, MetadataSuggestionId,
+        PromoteAssetVersionRequest, PromoteAssetVersionSummary,
     };
     use std::cell::RefCell;
     use std::path::PathBuf;
@@ -479,6 +480,13 @@ mod tests {
             version.generation_event_id = request.generation_event_id.clone();
             self.persisted_versions.borrow_mut().push(request);
             Ok(version)
+        }
+
+        fn promote_version_as_asset(
+            &self,
+            _request: PromoteAssetVersionRequest,
+        ) -> DomainResult<PromoteAssetVersionSummary> {
+            unimplemented!("generation use case does not promote versions")
         }
 
         fn record_generation_event(

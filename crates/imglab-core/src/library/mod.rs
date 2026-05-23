@@ -27,7 +27,7 @@ mod albums;
 mod assets;
 pub(crate) use assets::{
     import_asset_with_status, list_versions_for_asset, load_version,
-    mark_imported_version_as_generated, persist_asset_version,
+    mark_imported_version_as_generated, persist_asset_version, promote_version_as_asset,
 };
 mod backup;
 use assets::ensure_asset_exists;

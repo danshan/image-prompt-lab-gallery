@@ -13,11 +13,12 @@ use crate::{
     ExportSummary, GalleryAssetView, GalleryQuery, GenerationEventId, GenerationEventSummary,
     ImportLibraryBackupRequest, IntegrityIssue, LibraryBackupSummary, LibraryId, LibraryStatusView,
     LibrarySummary, MetadataSuggestion, MetadataSuggestionId, PersistAssetVersionRequest,
-    PersistImportedAssetRequest, RenameLibraryAliasRequest, ReorderAlbumItemsRequest,
-    ReorderAlbumsRequest, ReorderQueuedTasksRequest, RepairLibraryRequest, RepairSummary,
-    ReviewDraftDetailView, ReviewMetadataSuggestionRequest, SearchQuery, StudioOverviewView,
-    TaskAttempt, TaskDetail, TaskEvent, TaskId, TaskOutput, TaskOutputType, TaskSummary,
-    UpdateAssetMetadataRequest, UpdateTaskStatusRequest, VersionSummary,
+    PersistImportedAssetRequest, PromoteAssetVersionRequest, PromoteAssetVersionSummary,
+    RenameLibraryAliasRequest, ReorderAlbumItemsRequest, ReorderAlbumsRequest,
+    ReorderQueuedTasksRequest, RepairLibraryRequest, RepairSummary, ReviewDraftDetailView,
+    ReviewMetadataSuggestionRequest, SearchQuery, StudioOverviewView, TaskAttempt, TaskDetail,
+    TaskEvent, TaskId, TaskOutput, TaskOutputType, TaskSummary, UpdateAssetMetadataRequest,
+    UpdateTaskStatusRequest, VersionSummary,
 };
 use std::path::Path;
 
@@ -61,6 +62,10 @@ pub trait AssetRepository {
         &self,
         request: PersistAssetVersionRequest,
     ) -> DomainResult<VersionSummary>;
+    fn promote_version_as_asset(
+        &self,
+        request: PromoteAssetVersionRequest,
+    ) -> DomainResult<PromoteAssetVersionSummary>;
     fn record_generation_event(
         &self,
         request: CreateGenerationEventRequest,

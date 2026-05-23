@@ -7,7 +7,8 @@ use crate::{
     CreateMetadataSuggestionRequest, DomainError, DomainResult, GeneratedImage, GenerationEventId,
     GenerationEventSummary, GenerationOperation, GenerationParameters, GenerationResult,
     ManagedFileImport, ManagedFileMetadata, MetadataSuggestion, MetadataSuggestionId,
-    PersistAssetVersionRequest, PersistImportedAssetRequest, VersionSummary,
+    PersistAssetVersionRequest, PersistImportedAssetRequest, PromoteAssetVersionRequest,
+    PromoteAssetVersionSummary, VersionSummary,
 };
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
@@ -86,6 +87,13 @@ impl AssetRepository for InMemoryAssetRepository {
         version.parent_version_id = request.parent_version_id;
         version.generation_event_id = request.generation_event_id;
         Ok(version)
+    }
+
+    fn promote_version_as_asset(
+        &self,
+        _request: PromoteAssetVersionRequest,
+    ) -> DomainResult<PromoteAssetVersionSummary> {
+        unimplemented!("promote workflow is covered by repository integration tests")
     }
 
     fn record_generation_event(

@@ -61,11 +61,13 @@ export type GalleryAsset = {
   currentVersionId: string | null;
   currentVersionNumber?: number | null;
   currentVersionName?: string | null;
+  currentVersionTreeName?: string | null;
   imagePath: string | null;
   width: number | null;
   height: number | null;
   versionLabel: string | null;
   versionCount: number;
+  versionTreeBranchCount?: number;
   albums: Album[];
   albumContext: Album | null;
   createdAt: string;
@@ -113,6 +115,42 @@ export type GenerationEvent = {
 export type LineageEntry = {
   version: Version;
   generationEvent: GenerationEvent | null;
+};
+
+export type VersionTreeNode = {
+  versionId: string;
+  parentVersionId: string | null;
+  treeName: string;
+  versionNumber: number;
+  versionName: string;
+  filePath: string;
+  createdAt: string;
+  provider: string | null;
+  modelLabel: string | null;
+  generationStatus: string | null;
+  children: VersionTreeNode[];
+};
+
+export type VersionTreeIssue = {
+  kind: string;
+  versionId: string | null;
+  parentVersionId: string | null;
+  message: string;
+};
+
+export type PromotedSource = {
+  sourceAssetId: string;
+  sourceAssetTitle: string | null;
+  sourceVersionId: string;
+  sourceVersionNumber: number;
+  sourceVersionName: string;
+  sourceVersionTreeName: string | null;
+};
+
+export type PromoteAssetVersionResult = {
+  asset: AssetView;
+  version: Version;
+  promotedFrom: PromotedSource;
 };
 
 export type ReferenceSource = {
@@ -182,9 +220,15 @@ export type AssetDetail = {
   currentVersionId: string | null;
   currentVersionNumber: number | null;
   currentVersionName: string | null;
+  focusedVersionId?: string | null;
+  focusedVersionTreeName?: string | null;
+  focusedVersion?: Version | null;
   versions: Version[];
+  versionTree?: VersionTreeNode[];
+  versionTreeIssues?: VersionTreeIssue[];
   lineage: LineageEntry[];
   sourceReference?: ReferenceSource | null;
+  promotedFrom?: PromotedSource | null;
   file: FileContext | null;
 };
 

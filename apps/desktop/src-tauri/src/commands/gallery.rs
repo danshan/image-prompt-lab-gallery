@@ -72,3 +72,17 @@ pub(crate) fn get_asset_inspector_detail(
         .map(|detail| asset_inspector_detail_view(detail, &input.library_path))
         .map_err(Into::into)
 }
+
+#[tauri::command]
+pub(crate) fn promote_asset_version(
+    input: PromoteAssetVersionInput,
+) -> Result<PromoteAssetVersionView, CommandError> {
+    desktop_app()
+        .assets()
+        .promote_version_as_asset(imglab_core::PromoteAssetVersionRequest {
+            library_path: input.library_path,
+            source_version_id: imglab_core::AssetVersionId(input.source_version_id),
+        })
+        .map(promote_asset_version_view)
+        .map_err(Into::into)
+}

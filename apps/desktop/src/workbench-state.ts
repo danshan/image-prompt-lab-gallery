@@ -30,6 +30,14 @@ export {
   type ReviewStatusFilter,
 } from "./app/workflows/gallery/state.js";
 export {
+  collectExpandableVersionIds,
+  flattenVisibleVersionTree,
+  formatVersionTreeSummary,
+  type VersionTreeNodeState,
+  type VersionTreeSummaryState,
+  type VisibleVersionTreeNode,
+} from "./app/workflows/gallery/version-tree.js";
+export {
   albumContentsQuery,
   clearAlbumQuery,
   clearSelectedAlbumState,

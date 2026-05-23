@@ -2,6 +2,14 @@ export { useGallerySelectionActions } from "./controller";
 export { useGalleryDerivedState } from "./derived";
 export { galleryQueryInput } from "./query";
 export {
+  collectExpandableVersionIds,
+  flattenVisibleVersionTree,
+  formatVersionTreeSummary,
+  type VersionTreeNodeState,
+  type VersionTreeSummaryState,
+  type VisibleVersionTreeNode,
+} from "./version-tree";
+export {
   defaultGalleryQuery,
   applyGalleryQuery,
   beginDetailLoad,

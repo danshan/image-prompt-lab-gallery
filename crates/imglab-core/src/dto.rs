@@ -382,6 +382,19 @@ pub struct CreateChildVersionRequest {
 }
 
 #[derive(Debug, Clone)]
+pub struct PromoteAssetVersionRequest {
+    pub library_path: PathBuf,
+    pub source_version_id: AssetVersionId,
+}
+
+#[derive(Debug, Clone)]
+pub struct PromoteAssetVersionSummary {
+    pub asset: AssetSummary,
+    pub version: VersionSummary,
+    pub promoted_from: PromotedSourceView,
+}
+
+#[derive(Debug, Clone)]
 pub struct ManagedFileMetadata {
     pub file_path: PathBuf,
     pub checksum_algorithm: String,
@@ -423,6 +436,39 @@ pub struct PersistImportedAssetRequest {
 pub struct LineageEntry {
     pub version: VersionSummary,
     pub generation_event: Option<GenerationEventSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VersionTreeNode {
+    pub version_id: AssetVersionId,
+    pub parent_version_id: Option<AssetVersionId>,
+    pub tree_name: String,
+    pub version_number: u32,
+    pub version_name: String,
+    pub file_path: PathBuf,
+    pub created_at: String,
+    pub provider: Option<String>,
+    pub model_label: Option<String>,
+    pub generation_status: Option<String>,
+    pub children: Vec<VersionTreeNode>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VersionTreeIssue {
+    pub kind: String,
+    pub version_id: Option<AssetVersionId>,
+    pub parent_version_id: Option<AssetVersionId>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromotedSourceView {
+    pub source_asset_id: AssetId,
+    pub source_asset_title: Option<String>,
+    pub source_version_id: AssetVersionId,
+    pub source_version_number: u32,
+    pub source_version_name: String,
+    pub source_version_tree_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -516,11 +562,13 @@ pub struct GalleryAssetView {
     pub current_version_id: Option<AssetVersionId>,
     pub current_version_number: Option<u32>,
     pub current_version_name: Option<String>,
+    pub current_version_tree_name: Option<String>,
     pub image_path: Option<PathBuf>,
     pub width: Option<u32>,
     pub height: Option<u32>,
     pub version_label: Option<String>,
     pub version_count: u32,
+    pub version_tree_branch_count: u32,
     pub task_origin: Option<TaskOriginView>,
     pub albums: Vec<AlbumMembershipView>,
     pub album_context: Option<AlbumMembershipView>,
@@ -616,9 +664,15 @@ pub struct AssetDetailView {
     pub current_version_id: Option<AssetVersionId>,
     pub current_version_number: Option<u32>,
     pub current_version_name: Option<String>,
+    pub focused_version_id: Option<AssetVersionId>,
+    pub focused_version_tree_name: Option<String>,
+    pub focused_version: Option<VersionSummary>,
     pub versions: Vec<VersionSummary>,
+    pub version_tree: Vec<VersionTreeNode>,
+    pub version_tree_issues: Vec<VersionTreeIssue>,
     pub lineage: Vec<LineageEntry>,
     pub source_reference: Option<ReferenceSourceView>,
+    pub promoted_from: Option<PromotedSourceView>,
     pub file: Option<FileContextView>,
 }
 

@@ -2785,6 +2785,331 @@ fn smart_album_uses_shared_gallery_filters() {
 }
 
 #[test]
+fn asset_detail_builds_version_tree_with_path_labels_and_gallery_summary() {
+    let root = test_root("version-tree-labels");
+    let registry = test_root("version-tree-labels-registry").join("registry.sqlite");
+    let source_dir = test_root("version-tree-labels-source");
+    fs::create_dir_all(&source_dir).expect("create source dir");
+    let source = source_dir.join("root.png");
+    let child_a_source = source_dir.join("child-a.png");
+    let child_b_source = source_dir.join("child-b.png");
+    let grandchild_source = source_dir.join("grandchild.png");
+    fs::write(&source, png_bytes(10, 10)).expect("write root");
+    fs::write(&child_a_source, png_bytes(11, 11)).expect("write child a");
+    fs::write(&child_b_source, png_bytes(12, 12)).expect("write child b");
+    fs::write(&grandchild_source, png_bytes(13, 13)).expect("write grandchild");
+
+    let service = LocalLibraryService::new(registry);
+    service
+        .create_library(CreateLibraryRequest {
+            root_path: root.clone(),
+            name: "Version Tree".to_string(),
+        })
+        .expect("create library");
+    let (asset, root_version) = service
+        .import_asset(ImportAssetRequest {
+            library_path: root.clone(),
+            source_path: source,
+        })
+        .expect("import root");
+    let child_a = service
+        .create_child_version(CreateChildVersionRequest {
+            library_path: root.clone(),
+            asset_id: asset.id.clone(),
+            parent_version_id: root_version.id.clone(),
+            generation_event_id: None,
+            source_path: child_a_source,
+            mime_type: "image/png".to_string(),
+            version_label: Some("child-a".to_string()),
+        })
+        .expect("create child a");
+    let child_b = service
+        .create_child_version(CreateChildVersionRequest {
+            library_path: root.clone(),
+            asset_id: asset.id.clone(),
+            parent_version_id: root_version.id.clone(),
+            generation_event_id: None,
+            source_path: child_b_source,
+            mime_type: "image/png".to_string(),
+            version_label: Some("child-b".to_string()),
+        })
+        .expect("create child b");
+    let grandchild = service
+        .create_child_version(CreateChildVersionRequest {
+            library_path: root.clone(),
+            asset_id: asset.id.clone(),
+            parent_version_id: child_a.id.clone(),
+            generation_event_id: None,
+            source_path: grandchild_source,
+            mime_type: "image/png".to_string(),
+            version_label: Some("grandchild".to_string()),
+        })
+        .expect("create grandchild");
+
+    let detail = service
+        .get_asset_detail(&root, &asset.id, Some(&grandchild.id))
+        .expect("asset detail");
+
+    assert_eq!(detail.focused_version_id, Some(grandchild.id.clone()));
+    assert_eq!(detail.focused_version_tree_name.as_deref(), Some("v1.1.1"));
+    assert_eq!(detail.version_tree.len(), 1);
+    assert_eq!(detail.version_tree[0].tree_name, "v1");
+    assert_eq!(detail.version_tree[0].children.len(), 2);
+    assert_eq!(detail.version_tree[0].children[0].version_id, child_a.id);
+    assert_eq!(detail.version_tree[0].children[0].tree_name, "v1.1");
+    assert_eq!(
+        detail.version_tree[0].children[0].children[0].tree_name,
+        "v1.1.1"
+    );
+    assert_eq!(detail.version_tree[0].children[1].version_id, child_b.id);
+    assert_eq!(detail.version_tree[0].children[1].tree_name, "v1.2");
+    assert!(detail.version_tree_issues.is_empty());
+
+    let gallery = service
+        .query_gallery(&root, GalleryQuery::default())
+        .expect("query gallery");
+    assert_eq!(gallery[0].version_count, 4);
+    assert_eq!(gallery[0].version_tree_branch_count, 2);
+    assert!(gallery[0].current_version_tree_name.is_some());
+}
+
+#[test]
+fn asset_detail_reports_degraded_version_tree_states() {
+    let root = test_root("version-tree-degraded");
+    let registry = test_root("version-tree-degraded-registry").join("registry.sqlite");
+    let source_dir = test_root("version-tree-degraded-source");
+    fs::create_dir_all(&source_dir).expect("create source dir");
+    let source_a = source_dir.join("a.png");
+    let child_source = source_dir.join("child.png");
+    let source_b = source_dir.join("b.png");
+    fs::write(&source_a, png_bytes(10, 10)).expect("write a");
+    fs::write(&child_source, png_bytes(11, 11)).expect("write child");
+    fs::write(&source_b, png_bytes(12, 12)).expect("write b");
+
+    let service = LocalLibraryService::new(registry);
+    service
+        .create_library(CreateLibraryRequest {
+            root_path: root.clone(),
+            name: "Degraded Tree".to_string(),
+        })
+        .expect("create library");
+    let (asset_a, root_a) = service
+        .import_asset(ImportAssetRequest {
+            library_path: root.clone(),
+            source_path: source_a,
+        })
+        .expect("import a");
+    let child = service
+        .create_child_version(CreateChildVersionRequest {
+            library_path: root.clone(),
+            asset_id: asset_a.id.clone(),
+            parent_version_id: root_a.id.clone(),
+            generation_event_id: None,
+            source_path: child_source,
+            mime_type: "image/png".to_string(),
+            version_label: Some("child".to_string()),
+        })
+        .expect("create child");
+    let (_, root_b) = service
+        .import_asset(ImportAssetRequest {
+            library_path: root.clone(),
+            source_path: source_b,
+        })
+        .expect("import b");
+    let connection = Connection::open(LocalLibraryService::database_path(&root)).expect("open db");
+
+    connection
+        .execute(
+            "UPDATE asset_versions SET parent_version_id = ?1 WHERE id = ?2",
+            params!["missing-version", child.id.0],
+        )
+        .expect("set missing parent");
+    let detail = service
+        .get_asset_detail(&root, &asset_a.id, Some(&child.id))
+        .expect("missing parent detail");
+    assert!(detail
+        .version_tree_issues
+        .iter()
+        .any(|issue| issue.kind == "missing_parent"));
+
+    connection
+        .execute(
+            "UPDATE asset_versions SET parent_version_id = ?1 WHERE id = ?2",
+            params![root_b.id.0, child.id.0],
+        )
+        .expect("set cross asset parent");
+    let detail = service
+        .get_asset_detail(&root, &asset_a.id, Some(&child.id))
+        .expect("cross asset detail");
+    assert!(detail
+        .version_tree_issues
+        .iter()
+        .any(|issue| issue.kind == "cross_asset_parent"));
+
+    connection
+        .execute(
+            "UPDATE asset_versions SET parent_version_id = ?1 WHERE id = ?2",
+            params![child.id.0, root_a.id.0],
+        )
+        .expect("set cycle root");
+    connection
+        .execute(
+            "UPDATE asset_versions SET parent_version_id = ?1 WHERE id = ?2",
+            params![root_a.id.0, child.id.0],
+        )
+        .expect("set cycle child");
+    let detail = service
+        .get_asset_detail(&root, &asset_a.id, Some(&child.id))
+        .expect("cycle detail");
+    assert!(detail
+        .version_tree_issues
+        .iter()
+        .any(|issue| issue.kind == "cycle"));
+}
+
+#[test]
+fn promoted_source_schema_migration_is_idempotent() {
+    let root = test_root("promoted-source-schema");
+    let registry = test_root("promoted-source-schema-registry").join("registry.sqlite");
+    let service = LocalLibraryService::new(registry);
+    service
+        .create_library(CreateLibraryRequest {
+            root_path: root.clone(),
+            name: "Promoted Source Schema".to_string(),
+        })
+        .expect("create library");
+    let connection = Connection::open(LocalLibraryService::database_path(&root)).expect("open db");
+
+    migrate_library_database(&connection).expect("migrate once");
+    migrate_library_database(&connection).expect("migrate twice");
+
+    let table_count: u32 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'asset_version_sources'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("query table count");
+    assert_eq!(table_count, 1);
+}
+
+#[test]
+fn promote_version_creates_new_asset_root_and_promoted_source_detail() {
+    let root = test_root("promote-version");
+    let registry = test_root("promote-version-registry").join("registry.sqlite");
+    let source_dir = test_root("promote-version-source");
+    fs::create_dir_all(&source_dir).expect("create source dir");
+    let source = source_dir.join("root.png");
+    let child_source = source_dir.join("child.png");
+    fs::write(&source, png_bytes(10, 10)).expect("write root");
+    fs::write(&child_source, png_bytes(11, 11)).expect("write child");
+
+    let service = LocalLibraryService::new(registry);
+    service
+        .create_library(CreateLibraryRequest {
+            root_path: root.clone(),
+            name: "Promote Version".to_string(),
+        })
+        .expect("create library");
+    let (asset, root_version) = service
+        .import_asset(ImportAssetRequest {
+            library_path: root.clone(),
+            source_path: source,
+        })
+        .expect("import root");
+    let child = service
+        .create_child_version(CreateChildVersionRequest {
+            library_path: root.clone(),
+            asset_id: asset.id.clone(),
+            parent_version_id: root_version.id,
+            generation_event_id: None,
+            source_path: child_source,
+            mime_type: "image/png".to_string(),
+            version_label: Some("child".to_string()),
+        })
+        .expect("create child");
+
+    let promoted = service
+        .promote_version_as_asset(crate::PromoteAssetVersionRequest {
+            library_path: root.clone(),
+            source_version_id: child.id.clone(),
+        })
+        .expect("promote version");
+    assert_ne!(promoted.asset.id, asset.id);
+    assert_eq!(promoted.version.version_number, 1);
+    assert!(promoted.version.parent_version_id.is_none());
+
+    let detail = service
+        .get_asset_detail(&root, &promoted.asset.id, Some(&promoted.version.id))
+        .expect("promoted detail");
+    let promoted_from = detail.promoted_from.expect("promoted source");
+    assert_eq!(promoted_from.source_asset_id, asset.id);
+    assert_eq!(promoted_from.source_version_id, child.id);
+    assert_eq!(
+        promoted_from.source_version_tree_name.as_deref(),
+        Some("v1.1")
+    );
+}
+
+#[test]
+fn promote_version_rejects_missing_or_checksum_mismatched_source_without_gallery_asset() {
+    let root = test_root("promote-version-errors");
+    let registry = test_root("promote-version-errors-registry").join("registry.sqlite");
+    let source_dir = test_root("promote-version-errors-source");
+    fs::create_dir_all(&source_dir).expect("create source dir");
+    let source = source_dir.join("source.png");
+    fs::write(&source, png_bytes(10, 10)).expect("write source");
+
+    let service = LocalLibraryService::new(registry);
+    service
+        .create_library(CreateLibraryRequest {
+            root_path: root.clone(),
+            name: "Promote Version Errors".to_string(),
+        })
+        .expect("create library");
+    let (_, version) = service
+        .import_asset(ImportAssetRequest {
+            library_path: root.clone(),
+            source_path: source,
+        })
+        .expect("import source");
+    let initial_count = service
+        .query_gallery(&root, GalleryQuery::default())
+        .expect("initial gallery")
+        .len();
+    fs::remove_file(root.join(&version.file_path)).expect("remove managed file");
+
+    service
+        .promote_version_as_asset(crate::PromoteAssetVersionRequest {
+            library_path: root.clone(),
+            source_version_id: version.id.clone(),
+        })
+        .expect_err("missing source should fail");
+    assert_eq!(
+        service
+            .query_gallery(&root, GalleryQuery::default())
+            .expect("gallery after missing")
+            .len(),
+        initial_count
+    );
+
+    fs::write(root.join(&version.file_path), b"changed bytes").expect("rewrite managed file");
+    service
+        .promote_version_as_asset(crate::PromoteAssetVersionRequest {
+            library_path: root.clone(),
+            source_version_id: version.id,
+        })
+        .expect_err("checksum mismatch should fail");
+    assert_eq!(
+        service
+            .query_gallery(&root, GalleryQuery::default())
+            .expect("gallery after checksum mismatch")
+            .len(),
+        initial_count
+    );
+}
+
+#[test]
 fn batch_review_rolls_back_and_confidence_normalizes() {
     let root = test_root("batch-review");
     let registry = test_root("batch-review-registry").join("registry.sqlite");

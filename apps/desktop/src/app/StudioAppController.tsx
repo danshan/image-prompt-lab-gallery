@@ -137,6 +137,7 @@ import type {
   LibraryBackup,
   LibraryStatus,
   LightboxImage,
+  PromoteAssetVersionResult,
   ProviderHealth,
   ReferenceSource,
   Suggestion,
@@ -405,6 +406,8 @@ export function StudioAppController() {
     setRecoverableError,
     refreshGallery,
     refreshSuggestions,
+    detailState,
+    loadAssetDetail,
   });
 
 
@@ -1134,6 +1137,33 @@ export function StudioAppController() {
     }
   }
 
+  async function promoteFocusedVersionAsAsset(versionId: string | null | undefined) {
+    if (!library || !versionId) {
+      setRecoverableError("Select an asset version before promoting it.");
+      return;
+    }
+    if (!runningInTauri) {
+      setRecoverableError("Promote as new asset requires a real library.");
+      return;
+    }
+    try {
+      const promoted = await invokeCommand<PromoteAssetVersionResult>("promote_asset_version", {
+        input: {
+          libraryPath: library.rootPath,
+          sourceVersionId: versionId,
+        },
+      });
+      await refreshGallery();
+      setSelectedAssetId(promoted.asset.id);
+      await loadAssetDetail(promoted.asset.id, promoted.version.id);
+      setInspectorOpen(true);
+      setStatus("Version promoted as new asset");
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
   const detail = detailState.detail;
   const composerInputVersion =
     composerInputVersionId && detail
@@ -1375,9 +1405,17 @@ export function StudioAppController() {
           onPreviewImage={setLightboxImage}
           onGenerateFromReference={openComposerForReferenceGeneration}
           onGenerateVariation={(versionId) => {
-            versionId = versionId ?? detail?.currentVersionId ?? detail?.lineage[0]?.version.id ?? detail?.versions[0]?.id ?? selectedAsset?.currentVersionId ?? null;
+            versionId =
+              versionId ??
+              detail?.focusedVersionId ??
+              detail?.currentVersionId ??
+              detail?.lineage[0]?.version.id ??
+              detail?.versions[0]?.id ??
+              selectedAsset?.currentVersionId ??
+              null;
             openComposerForVersionGeneration(versionId);
           }}
+          onPromoteVersion={(versionId) => void promoteFocusedVersionAsAsset(versionId)}
         />
       </>
   );

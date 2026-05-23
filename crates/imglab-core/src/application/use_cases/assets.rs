@@ -2,7 +2,8 @@ use crate::application::ports::{AssetRepository, ManagedFileStore};
 use crate::domain::asset::{ensure_same_asset_parent, next_version_number};
 use crate::{
     AssetSummary, CreateChildVersionRequest, DomainResult, ImportAssetRequest,
-    PersistAssetVersionRequest, PersistImportedAssetRequest, VersionSummary,
+    PersistAssetVersionRequest, PersistImportedAssetRequest, PromoteAssetVersionRequest,
+    PromoteAssetVersionSummary, VersionSummary,
 };
 
 pub struct AssetUseCase<R, F> {
@@ -33,6 +34,13 @@ where
         request: CreateChildVersionRequest,
     ) -> DomainResult<VersionSummary> {
         CreateChildVersionUseCase::new(self.repository.clone(), self.files.clone()).execute(request)
+    }
+
+    pub fn promote_version_as_asset(
+        &self,
+        request: PromoteAssetVersionRequest,
+    ) -> DomainResult<PromoteAssetVersionSummary> {
+        self.repository.promote_version_as_asset(request)
     }
 }
 
@@ -121,7 +129,7 @@ mod tests {
     use crate::{
         AssetId, AssetVersionId, CreateGenerationEventRequest, GenerationEventSummary,
         GenerationOperation, ImportAssetRequest, ManagedFileImport, ManagedFileMetadata,
-        PersistAssetVersionRequest,
+        PersistAssetVersionRequest, PromoteAssetVersionSummary,
     };
     use std::cell::RefCell;
     use std::path::PathBuf;
@@ -166,6 +174,13 @@ mod tests {
             let version_number = request.version_number;
             self.persisted_versions.borrow_mut().push(request);
             Ok(version_summary(version_number))
+        }
+
+        fn promote_version_as_asset(
+            &self,
+            _request: PromoteAssetVersionRequest,
+        ) -> DomainResult<PromoteAssetVersionSummary> {
+            unimplemented!("promote use case is delegated to repository integration tests")
         }
 
         fn record_generation_event(

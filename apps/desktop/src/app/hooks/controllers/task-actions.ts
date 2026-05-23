@@ -23,6 +23,7 @@ import {
   taskActionKey,
 } from "../../workflows/tasks/state";
 import type {
+  AssetDetail,
   DaemonTask,
   DaemonTaskDetail,
   Library,
@@ -63,6 +64,8 @@ export function useTaskGenerationActions({
   setRecoverableError,
   refreshGallery,
   refreshSuggestions,
+  detailState,
+  loadAssetDetail,
 }: {
   runningInTauri: boolean;
   library: Library | null;
@@ -94,6 +97,8 @@ export function useTaskGenerationActions({
   setRecoverableError: Dispatch<SetStateAction<string | null>>;
   refreshGallery: () => Promise<void>;
   refreshSuggestions: () => Promise<void>;
+  detailState: { detail: AssetDetail | null };
+  loadAssetDetail: (assetId: string, versionId: string | null) => Promise<void>;
 }) {
   async function refreshDaemonHealth() {
     if (!runningInTauri) {
@@ -130,7 +135,8 @@ export function useTaskGenerationActions({
       const nextCompletedKeys = nextTasks
         .filter((task) => task.status === "completed")
         .map((task) => completedTaskKey(task));
-      const hasNewCompletedTask = nextCompletedKeys.some((key) => !completedTaskKeysRef.current.has(key));
+      const previousCompletedKeys = completedTaskKeysRef.current;
+      const hasNewCompletedTask = nextCompletedKeys.some((key) => !previousCompletedKeys.has(key));
       completedTaskKeysRef.current = new Set(nextCompletedKeys);
       setTasks(nextTasks);
       setSelectedTaskId((current) => {
@@ -142,8 +148,11 @@ export function useTaskGenerationActions({
       setDaemonOnline(true);
       setRecoverableError(null);
       if (hasNewCompletedTask) {
-        void refreshGallery();
-        void refreshSuggestions();
+        const newCompletedTasks = nextTasks.filter(
+          (task) => task.status === "completed" && !previousCompletedKeys.has(completedTaskKey(task)),
+        );
+        await Promise.all([refreshGallery(), refreshSuggestions()]);
+        await focusCompletedGenerationOutput(newCompletedTasks);
       }
       return nextTasks;
     } catch (error) {
@@ -172,6 +181,36 @@ export function useTaskGenerationActions({
     } catch (error) {
       setTaskDetail(null);
       setRecoverableError(errorMessage(error));
+    }
+  }
+
+  async function focusCompletedGenerationOutput(completedTasks: DaemonTask[]) {
+    const selectedDetail = detailState.detail;
+    if (!runningInTauri || !selectedDetail) {
+      return;
+    }
+    const selectedVersionIds = new Set([
+      selectedDetail.focusedVersionId,
+      selectedDetail.currentVersionId,
+      ...selectedDetail.versions.map((version) => version.id),
+    ].filter((id): id is string => Boolean(id)));
+
+    for (const task of completedTasks) {
+      const inputVersionId = typeof task.input?.inputVersionId === "string" ? task.input.inputVersionId : null;
+      if (!inputVersionId || !selectedVersionIds.has(inputVersionId)) {
+        continue;
+      }
+      const detail = await invokeCommand<DaemonTaskDetail>("get_daemon_task_detail", {
+        input: { taskId: task.id },
+      });
+      setTaskDetail(detail);
+      const outputVersion = detail.outputs.find((output) => output.outputType === "asset_version");
+      if (!outputVersion) {
+        continue;
+      }
+      const outputAsset = detail.outputs.find((output) => output.outputType === "asset");
+      await loadAssetDetail(outputAsset?.targetId ?? selectedDetail.id, outputVersion.targetId);
+      break;
     }
   }
 

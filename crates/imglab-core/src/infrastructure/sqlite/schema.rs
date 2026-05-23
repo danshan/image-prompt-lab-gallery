@@ -7,7 +7,7 @@ fn database_error(error: rusqlite::Error) -> DomainError {
     }
 }
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 6;
+pub const CURRENT_SCHEMA_VERSION: u32 = 7;
 
 pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
     let user_version: u32 = connection
@@ -196,6 +196,25 @@ pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
 
             CREATE INDEX IF NOT EXISTS idx_task_outputs_task
                 ON task_outputs(task_id);
+
+            CREATE TABLE IF NOT EXISTS asset_version_sources (
+                id TEXT PRIMARY KEY,
+                target_version_id TEXT NOT NULL,
+                source_asset_id TEXT NOT NULL,
+                source_version_id TEXT NOT NULL,
+                source_kind TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(target_version_id, source_kind),
+                FOREIGN KEY(target_version_id) REFERENCES asset_versions(id),
+                FOREIGN KEY(source_asset_id) REFERENCES assets(id),
+                FOREIGN KEY(source_version_id) REFERENCES asset_versions(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_asset_version_sources_target
+                ON asset_version_sources(target_version_id);
+
+            CREATE INDEX IF NOT EXISTS idx_asset_version_sources_source
+                ON asset_version_sources(source_version_id);
 
             CREATE INDEX IF NOT EXISTS idx_assets_library_id
                 ON assets(library_id);
