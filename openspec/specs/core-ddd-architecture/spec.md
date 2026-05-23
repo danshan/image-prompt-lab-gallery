@@ -2,9 +2,7 @@
 
 ## Purpose
 Define the DDD boundary architecture for `imglab-core` and the runtime integration rules that keep domain logic independent from infrastructure, runtime views, and compatibility shims.
-
 ## Requirements
-
 ### Requirement: Core 使用 DDD 分层
 
 `imglab-core` SHALL 按 DDD 边界组织主要业务代码, 至少包含 domain, application, ports, infrastructure 和 interface contracts 责任区。Domain 层 MUST 不依赖 SQLite, filesystem IO, daemon, Tauri, CLI 或 frontend view 类型。
@@ -27,7 +25,7 @@ Define the DDD boundary architecture for `imglab-core` and the runtime integrati
 
 ### Requirement: Bounded Context 拥有自己的语言模型
 
-系统 SHALL 为 resource library, asset/version, generation, metadata review, albums/search 和 task manager 建立清晰 bounded context。每个 bounded context MUST 拥有自己的 aggregate, command, query/read model 和 repository port 边界, 不得继续把所有业务结构集中在单个 shared DTO namespace 中作为主要模型。
+系统 SHALL 为 resource library, asset/version, generation, metadata review, albums/search 和 task manager 建立清晰 bounded context。每个 bounded context MUST 拥有自己的 aggregate, command, query/read model 和 repository port 边界, 不得继续把所有业务结构集中在单个 shared DTO namespace 中作为主要模型。Search read-model behavior SHOULD be separated from gallery list/detail behavior once both are migrated behind application/query owners.
 
 #### Scenario: Asset Version 语言模型独立
 
@@ -38,6 +36,43 @@ Define the DDD boundary architecture for `imglab-core` and the runtime integrati
 
 - **WHEN** task manager 代码被重构
 - **THEN** task status, attempt, event, output link 和 scheduler policy 的模型位于 task bounded context 或 application task modules 中
+
+#### Scenario: Search read model has a focused owner
+
+- **WHEN** search behavior is migrated from a shared gallery compatibility module
+- **THEN** search-specific filtering and result mapping live in a focused search read-model owner
+- **AND** shared gallery card loading may remain shared until projection or query-shape hardening requires a deeper split
+
+#### Scenario: Gallery read-model owners are split by change reason
+
+- **GIVEN** gallery search, version tree, promoted source, lineage, album filter, and detail read behavior evolve for different reasons
+- **WHEN** the code is changed for one of these read-model concerns
+- **THEN** the implementation SHOULD route that concern through a focused owner module instead of expanding the monolithic gallery adapter
+- **AND** the gallery adapter MAY keep runtime-facing DTO composition while delegating specialized read-model algorithms to those owner modules
+
+#### Scenario: Gallery filter read model has a focused owner
+
+- **WHEN** gallery filter, smart album preview, album filter validation, or album-order sort behavior changes
+- **THEN** the shared predicate and album-context behavior SHOULD live in a focused owner module
+- **AND** search and gallery list behavior MAY reuse the shared predicate without depending on monolithic gallery adapter internals
+
+#### Scenario: Gallery detail read model has a focused owner
+
+- **WHEN** asset detail or inspector detail projection behavior changes
+- **THEN** canonical metadata, version summaries, generation-event detail, reference source, pending suggestions, and file context SHOULD be composed by a focused gallery detail read-model owner
+- **AND** `GalleryReadService` SHOULD remain the runtime-facing query boundary that delegates detail projection to that owner
+
+#### Scenario: Gallery task origin read model has a focused owner
+
+- **WHEN** Gallery card task origin projection behavior changes
+- **THEN** task output joins, task storage parsing, and target lookup maps SHOULD live in a focused gallery task origin read-model owner
+- **AND** gallery card composition SHOULD consume that owner without owning task SQL or task status parsing
+
+#### Scenario: Gallery card list read model has a focused owner
+
+- **WHEN** Gallery card list projection behavior changes
+- **THEN** latest-version lookup, generation-event summaries, aggregate counts, tags, albums, version tree labels, and card DTO assembly SHOULD live in a focused gallery card read-model owner
+- **AND** `GalleryReadService` SHOULD remain the runtime-facing query boundary that delegates card projection before filtering and sorting
 
 ### Requirement: Domain 内部保持低冗余和低复杂度
 
@@ -148,3 +183,59 @@ CLI JSON, daemon HTTP view, Tauri command view 和 desktop frontend adapter payl
 - **WHEN** desktop workflow ownership cleanup is complete
 - **THEN** desktop source modules import workflow-owned state, query, derived-state and controller modules directly
 - **AND** the legacy `workbench-state` barrel remains only for compatibility tests or explicitly documented transitional use
+
+### Requirement: Migrated behavior has one primary application owner
+
+Migrated write flows SHALL have one primary application use-case owner. Runtime adapters and legacy compatibility services MUST NOT reimplement business decisions for version allocation, lineage, reference source classification, generation operation inference, task transition, metadata review lifecycle, or resource library lifecycle behavior.
+
+#### Scenario: Runtime adapter delegates migrated behavior
+
+- **WHEN** CLI, daemon, or Tauri code performs a migrated write flow
+- **THEN** it delegates business behavior to the application/use-case boundary
+- **AND** it only performs input parsing, transport mapping, process execution, logging, or error mapping owned by that runtime
+
+#### Scenario: Daemon task paths use task application owner
+
+- **WHEN** daemon transport, recovery, scheduler, or tests perform task repository operations
+- **THEN** they SHOULD call the daemon task application owner
+- **AND** they SHOULD NOT use a generic concrete local-service accessor as the primary task entrypoint
+
+#### Scenario: Daemon task transition decisions use core policy
+
+- **WHEN** daemon recovery, cancel, successful attempt, failed attempt, or canceled attempt paths decide the next task status
+- **THEN** the status decision SHOULD come from the core task domain policy
+- **AND** daemon code SHOULD remain responsible for runtime IO, provider execution, loopback transport, and application owner invocation
+
+#### Scenario: Tauri album commands use album application owner
+
+- **WHEN** Tauri commands list or create albums for the selected library
+- **THEN** they MUST call the album application owner
+- **AND** they MUST NOT call the concrete library compatibility service as the primary album entrypoint
+
+#### Scenario: CLI tag mutation uses asset application owner
+
+- **WHEN** CLI adds a tag to an asset
+- **THEN** the CLI adapter MUST call an asset application owner
+- **AND** the CLI adapter MUST NOT call the concrete local service as the primary business entrypoint
+
+#### Scenario: Tauri tag mutation uses asset application owner
+
+- **WHEN** Tauri adds a tag to an asset
+- **THEN** the Tauri command adapter MUST call the asset application owner
+- **AND** it MUST NOT call the concrete library compatibility service as the primary tag mutation entrypoint
+
+#### Scenario: Library lifecycle uses application owner
+
+- **WHEN** CLI, daemon, or Tauri code creates, opens, lists, repairs, exports, imports, renames, unregisters, checks, or summarizes a resource library
+- **THEN** it calls a library lifecycle application owner
+- **AND** the legacy local service remains an adapter or explicitly documented compatibility surface
+
+### Requirement: Legacy service usage is explicitly bounded
+
+Legacy `library/*` service usage SHALL be documented as compatibility, infrastructure adapter, or transitional surface. New business rules MUST be added to domain/application owners.
+
+#### Scenario: New behavior does not enter legacy service first
+
+- **WHEN** a new business rule is added for an existing bounded context
+- **THEN** the rule is implemented in the owning domain/application module
+- **AND** legacy service code delegates to that owner or remains an adapter

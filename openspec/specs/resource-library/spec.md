@@ -4,7 +4,7 @@ Define local resource library layout, integrity checking, repair, import/export,
 ## Requirements
 ### Requirement: 创建受管理资源库
 
-系统 SHALL 支持在指定本地路径创建一个受管理资源库, 包含 `manifest.json`, `library.sqlite`, `originals`, `derivatives`, `sidecars`, `exports` 和 `trash`.
+系统 SHALL 支持在指定本地路径创建一个受管理资源库, 包含 `manifest.json`, `library.sqlite`, `originals`, `derivatives`, `sidecars`, `exports` 和 `trash`. Runtime adapters MUST call the library lifecycle application owner for this workflow.
 
 #### Scenario: 创建新资源库
 
@@ -13,7 +13,7 @@ Define local resource library layout, integrity checking, repair, import/export,
 
 ### Requirement: 打开和校验资源库
 
-系统 SHALL 在打开资源库时校验 manifest, schema version 和必要目录, 并拒绝打开不兼容或损坏的资源库.
+系统 SHALL 在打开资源库时校验 manifest, schema version 和必要目录, 并拒绝打开不兼容或损坏的资源库. Runtime adapters MUST call the library lifecycle application owner for this workflow.
 
 #### Scenario: 打开 schema 不兼容的资源库
 
@@ -22,7 +22,7 @@ Define local resource library layout, integrity checking, repair, import/export,
 
 ### Requirement: 管理资源库 registry
 
-系统 SHALL 维护本机 app-level registry, 记录最近打开的资源库, display name, root path, hidden 状态和 last opened time. 系统 SHALL 支持按本机 alias 重命名 registry display name, 并支持取消注册资源库. 取消注册 MUST 从默认 registry 列表中移除资源库, 但不得删除资源库目录或 SQLite 数据. 新 Settings UI MUST NOT 暴露 hide 功能; hidden 状态仅作为既有 registry 数据兼容语义保留.
+系统 SHALL 维护本机 app-level registry, 记录最近打开的资源库, display name, root path, hidden 状态和 last opened time. 系统 SHALL 支持按本机 alias 重命名 registry display name, 并支持取消注册资源库. 取消注册 MUST 从默认 registry 列表中移除资源库, 但不得删除资源库目录或 SQLite 数据. 新 Settings UI MUST NOT 暴露 hide 功能; hidden 状态仅作为既有 registry 数据兼容语义保留. Runtime adapters MUST call the library lifecycle application owner for registry lifecycle workflows.
 
 #### Scenario: 隐藏资源库
 
@@ -389,3 +389,34 @@ Define local resource library layout, integrity checking, repair, import/export,
 - **THEN** 系统复制 source file 到新的 managed version path
 - **AND** 创建新 asset 和 root version
 - **AND** root version 可被普通 Gallery 查询展示
+
+### Requirement: Asset metadata mutation preserves existing library storage
+
+Asset metadata mutation SHALL preserve current library schema and compatibility behavior unless an explicit migration is specified.
+
+#### Scenario: Tag add preserves storage semantics
+
+- **WHEN** a tag is added through the application owner
+- **THEN** existing tag rows are reused by tag name
+- **AND** the asset-tag relation is upserted without changing the SQLite schema
+
+#### Scenario: Tauri tag add preserves storage semantics
+
+- **WHEN** a tag is added through the Tauri command adapter
+- **THEN** the command delegates to the asset application owner
+- **AND** existing tag storage and asset-tag upsert semantics are preserved
+
+### Requirement: Persistence and query engine changes require a decision gate
+
+Resource library persistence or query engine changes SHALL pass a documented decision gate before implementation. The decision gate MUST compare local-first portability, transaction correctness, workload fit, backup/restore behavior, migration and rollback complexity, rebuild/repair story, desktop distribution cost, testability, and observability.
+
+#### Scenario: SQLite remains sufficient
+
+- **WHEN** tuned SQLite meets target gallery, search, smart album, version tree, and task queue workloads
+- **THEN** SQLite remains the primary resource library store
+- **AND** any supplemental index is deferred or scoped with a rebuild/repair plan
+
+#### Scenario: Supplemental index is selected
+
+- **WHEN** FTS5, projection tables, Tantivy, DuckDB, PostgreSQL, or another engine is selected
+- **THEN** the design records migration, rollback, backup/restore, rebuild, repair, and compatibility behavior before implementation

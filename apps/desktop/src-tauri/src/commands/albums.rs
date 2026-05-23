@@ -3,7 +3,7 @@ use crate::*;
 #[tauri::command]
 pub(crate) fn list_albums(library_path: PathBuf) -> Result<Vec<AlbumListItemView>, CommandError> {
     desktop_app()
-        .library()
+        .albums()
         .list_albums_in_library(&library_path)
         .map(|albums| albums.into_iter().map(album_list_item_view).collect())
         .map_err(Into::into)
@@ -12,7 +12,7 @@ pub(crate) fn list_albums(library_path: PathBuf) -> Result<Vec<AlbumListItemView
 #[tauri::command]
 pub(crate) fn create_manual_album(input: CreateAlbumInput) -> Result<AlbumView, CommandError> {
     desktop_app()
-        .library()
+        .albums()
         .create_manual_album_in_library(&input.library_path, &input.name)
         .map(album_view)
         .map_err(Into::into)

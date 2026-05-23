@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   applyGalleryQuery,
   beginDetailLoad,
@@ -12,7 +12,6 @@ import {
 } from "./workflows/gallery";
 import {
   clearCurationStateForLibrarySwitch,
-  createReviewFormState,
   type ReviewFieldName,
   type ReviewFormState,
 } from "./workflows/review";
@@ -33,6 +32,7 @@ import {
   useTaskGenerationActions,
   useTaskGenerationControllerState,
 } from "./hooks/controllers";
+import { useStudioRefreshPolicy } from "./hooks/controllers/refresh-policy";
 import {
   compareTaskOrder,
   completedTaskKey,
@@ -113,13 +113,7 @@ import {
   useLibrarySettingsControllerState,
   type SettingsSection,
 } from "./workflows/settings";
-import {
-  GALLERY_REFRESH_DEBOUNCE_MS,
-  METADATA_POLL_INTERVAL_MS,
-  TASK_QUEUE_BACKGROUND_POLL_INTERVAL_MS,
-  TASK_QUEUE_POLL_INTERVAL_MS,
-  initialUpdateState,
-} from "./types";
+import { initialUpdateState } from "./types";
 import type {
   Album,
   AlbumListItem,
@@ -487,109 +481,43 @@ export function StudioAppController() {
     setActiveTaskPanel("detail");
   };
 
-  useEffect(() => {
-    if (runningInTauri) {
-      void refreshLibraries();
-      void checkForAppUpdate({ silent: true });
-    }
-  }, [runningInTauri]);
-
-  useEffect(() => {
-    if (!runningInTauri || !library) {
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      void refreshGallery();
-    }, GALLERY_REFRESH_DEBOUNCE_MS);
-    return () => window.clearTimeout(timer);
-  }, [runningInTauri, library?.rootPath, query]);
-
-  useEffect(() => {
-    void refreshSelectedAlbumContents();
-  }, [runningInTauri, library?.rootPath, selectedAlbumId, selectedAlbum?.kind, albums]);
-
-  useEffect(() => {
-    if (!albumAddDrawerOpen) {
-      return;
-    }
-    void refreshAlbumAddCandidates();
-  }, [runningInTauri, library?.rootPath, albumAddDrawerOpen, albumAddQuery, selectedAlbumId]);
-
-  useEffect(() => {
-    return () => {
-      for (const timer of metadataPollTimeoutsRef.current) {
-        window.clearTimeout(timer);
-      }
-      metadataPollTimeoutsRef.current.clear();
-    };
-  }, [library?.rootPath]);
-
-  useEffect(() => {
-    if (runningInTauri && library) {
-      completedTaskKeysRef.current = new Set();
-      void refreshAlbums();
-      void refreshSuggestions();
-      void refreshDaemonHealth();
-      void refreshTasks();
-    }
-  }, [runningInTauri, library?.rootPath]);
-
-  useEffect(() => {
-    if (!runningInTauri || !library) {
-      return;
-    }
-    const showLoading = activeView === "queue";
-    const intervalMs = showLoading ? TASK_QUEUE_POLL_INTERVAL_MS : TASK_QUEUE_BACKGROUND_POLL_INTERVAL_MS;
-
-    void refreshTasks({ showLoading });
-    const timer = window.setInterval(() => {
-      void refreshTasks({ showLoading });
-      if (showLoading && selectedTaskId) {
-        void loadTaskDetail(selectedTaskId);
-      }
-    }, intervalMs);
-    return () => window.clearInterval(timer);
-  }, [runningInTauri, library?.rootPath, activeView, selectedTaskId]);
-
-  useEffect(() => {
-    if (!selectedTaskId) {
-      setTaskDetail(null);
-      return;
-    }
-    void loadTaskDetail(selectedTaskId);
-  }, [selectedTaskId]);
-
-  useEffect(() => {
-    if (activeView === "settings") {
-      void refreshAppLogs();
-    }
-  }, [activeView, runningInTauri]);
-
-  useEffect(() => {
-    if (!selectedSuggestion) {
-      setSelectedSuggestionId(null);
-      setReviewForm(null);
-      setSuggestionHistory([]);
-      return;
-    }
-    if (reviewForm?.suggestionId !== selectedSuggestion.id) {
-      setSelectedSuggestionId(selectedSuggestion.id);
-      setReviewForm(createReviewFormState(selectedSuggestion));
-    }
-    void refreshSuggestionHistory(selectedSuggestion);
-  }, [selectedSuggestion?.id]);
-
-  useEffect(() => {
-    if (!selectedAsset) {
-      setDetailState({ assetId: null, detail: null, loading: false, error: null });
-      return;
-    }
-    if (runningInTauri && library) {
-      void loadAssetDetail(selectedAsset.id, selectedAsset.currentVersionId);
-    } else {
-      loadPreviewAssetDetail(selectedAsset);
-    }
-  }, [runningInTauri, library?.rootPath, selectedAsset?.id, selectedAsset?.currentVersionId]);
+  useStudioRefreshPolicy({
+    runningInTauri,
+    library,
+    activeView,
+    selectedTaskId,
+    selectedSuggestion,
+    selectedAsset,
+    albumAddDrawerOpen,
+    albumAddQuery,
+    galleryQuery: query,
+    selectedAlbumId,
+    selectedAlbumKind: selectedAlbum?.kind,
+    albums,
+    reviewFormSuggestionId: reviewForm?.suggestionId ?? null,
+    selectedAssetCurrentVersionId: selectedAsset?.currentVersionId,
+    metadataPollTimeoutsRef,
+    completedTaskKeysRef,
+    refreshLibraries,
+    checkForAppUpdate,
+    refreshGallery,
+    refreshSelectedAlbumContents,
+    refreshAlbumAddCandidates,
+    refreshAlbums,
+    refreshSuggestions,
+    refreshDaemonHealth,
+    refreshTasks,
+    loadTaskDetail,
+    refreshAppLogs,
+    refreshSuggestionHistory,
+    loadAssetDetail,
+    loadPreviewAssetDetail,
+    setTaskDetail,
+    setSelectedSuggestionId,
+    setReviewForm,
+    setSuggestionHistory,
+    setDetailState,
+  });
 
   async function refreshAlbums() {
     if (!runningInTauri || !library) {

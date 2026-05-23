@@ -129,6 +129,12 @@ System SHALL complete the DDD boundary refactor in this change, covering core do
 - **THEN** remaining work may include future product capabilities
 - **AND** remaining work MUST NOT include unfinished core DDD boundary migration required by this proposal
 
+#### Scenario: Completion audit records final evidence
+
+- **WHEN** the DDD refactor is declared complete
+- **THEN** architecture documentation MUST map review findings, OpenSpec requirements, boundary inventory, and verification gates to current evidence
+- **AND** any residual work MUST be classified as optional future hardening, compatibility cleanup, or product capability rather than required DDD boundary migration
+
 ### Requirement: Architecture checks SHALL enforce dependency direction
 
 System SHALL include verification that prevents domain modules from depending on infrastructure or runtime modules, and prevents runtime layers from bypassing application/use case boundaries for migrated write flows.
@@ -206,3 +212,72 @@ System SHALL add or relocate tests so new or migrated domain rules, application 
 - **WHEN** a legacy large test file remains after the refactor
 - **THEN** verification notes identify it as compatibility or cross-context regression coverage
 - **AND** newly migrated reusable rules are still covered by owner-local focused tests
+
+### Requirement: Systematic review findings are tracked to implementation tasks
+
+Architecture review findings SHALL be recorded with severity, area, evidence, impact, recommendation, and validation. High and critical findings MUST map to OpenSpec tasks or be explicitly deferred with rationale.
+
+#### Scenario: Finding maps to task
+
+- **WHEN** a review finding is marked High or Critical
+- **THEN** the finding has a corresponding task, validation item, or explicit deferred decision
+
+### Requirement: Hotspot refactors are ownership-based
+
+Large files, long methods, and duplicated logic SHALL be split by ownership and change reason rather than arbitrary line count.
+
+#### Scenario: Large owner is refactored
+
+- **WHEN** a hotspot file such as a large controller, read model, repository, or regression suite is refactored
+- **THEN** the resulting files have clear owners
+- **AND** tests move or remain according to those owners
+
+#### Scenario: Gallery read model is split incrementally
+
+- **WHEN** gallery read-model code is split
+- **THEN** search, gallery list, asset detail, version tree, album filter context, and file context concerns are separated in focused waves
+- **AND** each wave preserves public behavior and records remaining split targets
+
+#### Scenario: Version tree read model has a focused owner
+
+- **GIVEN** gallery list and asset detail views need version tree names, branch counts, promoted-source labels, and asset-scoped lineage
+- **WHEN** version tree read behavior changes
+- **THEN** the tree construction, degradation reporting, promoted-source lookup, and lineage traversal SHOULD live in a focused owner module
+- **AND** gallery list and asset detail orchestration SHOULD consume that owner without changing SQLite schema or runtime DTO payloads
+
+#### Scenario: Gallery filter owner is separated
+
+- **GIVEN** Gallery query and smart album preview share overlapping predicate semantics
+- **WHEN** gallery filtering code is refactored
+- **THEN** album context loading, shared predicate application, smart album preview filtering, and album-order sorting SHOULD live in a focused owner
+- **AND** the refactor MUST preserve public Gallery query behavior
+
+#### Scenario: Gallery detail projection is separated
+
+- **GIVEN** asset detail and inspector views combine canonical metadata, version summaries, generation events, reference source, pending review state, and file integrity context
+- **WHEN** gallery detail code is refactored
+- **THEN** detail-specific projection helpers SHOULD live in a focused owner separate from gallery list card composition
+- **AND** the refactor MUST preserve runtime DTO shape, SQLite schema, and file integrity status semantics
+
+#### Scenario: Gallery task origin projection is separated
+
+- **GIVEN** gallery cards need task origin information from task outputs and task rows
+- **WHEN** gallery task origin code is refactored
+- **THEN** task-specific SQL, parsing, and lookup maps SHOULD live in a focused owner separate from gallery card composition
+- **AND** the refactor MUST preserve gallery card task origin payloads and task origin precedence
+
+#### Scenario: Gallery card projection is separated
+
+- **GIVEN** gallery card list projection combines latest versions, generation events, tags, review counts, albums, task origins, and version tree labels
+- **WHEN** gallery card code is refactored
+- **THEN** card-specific SQL and DTO assembly SHOULD live in a focused owner separate from `GalleryReadService` orchestration
+- **AND** the refactor MUST preserve Gallery query public behavior
+
+### Requirement: Persistence performance decisions use workload evidence
+
+Performance refactors for gallery, search, smart albums, version tree, and task queue SHALL use workload evidence before choosing a storage or indexing architecture.
+
+#### Scenario: Query engine decision is evidence-based
+
+- **WHEN** implementation proposes SQLite tuning, FTS5/projection tables, Tantivy, DuckDB, or PostgreSQL
+- **THEN** the proposal includes workload evidence, migration impact, and backup/restore implications

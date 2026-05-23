@@ -1,10 +1,10 @@
+use imglab_core::application::use_cases::library::LibraryUseCase;
 use imglab_core::{
-    prepare_generation_request, AssetId, CreateLibraryRequest, CreateMetadataSuggestionRequest,
-    DomainError, ExportLibraryRequest, GenerateImageRequest, GenerationOperation,
-    GenerationRequestInput, ImportAssetRequest, LocalLibraryService, MetadataSuggestionId,
-    RepairLibraryRequest, ReviewMetadataSuggestionRequest, SearchQuery,
+    prepare_generation_request, AddAssetTagRequest, AssetId, CreateLibraryRequest,
+    CreateMetadataSuggestionRequest, DomainError, ExportLibraryRequest, GenerateImageRequest,
+    GenerationOperation, GenerationRequestInput, ImportAssetRequest, LocalLibraryService,
+    MetadataSuggestionId, RepairLibraryRequest, ReviewMetadataSuggestionRequest, SearchQuery,
 };
-use imglab_core::{AlbumService, LibraryService, MetadataReviewService, SearchService};
 use imglab_provider_codex::CodexCliImageProvider;
 use serde_json::json;
 use std::path::PathBuf;
@@ -31,23 +31,23 @@ fn run(args: Vec<String>) -> Result<(), DomainError> {
             print_help();
             Ok(())
         }
-        "init" => init(app.library(), &args[1..]),
-        "library" => library(app.library(), &args[1..]),
+        "init" => init(app.library_lifecycle(), &args[1..]),
+        "library" => library(app.library_lifecycle(), &args[1..]),
         "import" => import(app.assets(), &args[1..]),
-        "export" => export(app.library(), &args[1..]),
-        "search" => search(app.library(), &args[1..]),
+        "export" => export(app.library_lifecycle(), &args[1..]),
+        "search" => search(app.library_lifecycle(), app.search(), &args[1..]),
         "generate" => generate(&args[1..]),
-        "tag" => tag(app.library(), &args[1..]),
-        "rate" => rate(app.library(), &args[1..]),
-        "album" => album(app.library(), &args[1..]),
-        "suggestion" => suggestion(app.library(), &args[1..]),
+        "tag" => tag(app.assets(), &args[1..]),
+        "rate" => rate(app.albums(), &args[1..]),
+        "album" => album(app.library_lifecycle(), app.albums(), &args[1..]),
+        "suggestion" => suggestion(app.library_lifecycle(), app.metadata_review(), &args[1..]),
         _ => Err(DomainError::InvalidGenerationParameters {
             message: format!("unsupported command: {command}"),
         }),
     }
 }
 
-fn init(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+fn init(service: &LibraryUseCase<LocalLibraryService>, args: &[String]) -> Result<(), DomainError> {
     let path = positional(args, 0, "library path")?;
     let name = option_value(args, "--name").unwrap_or_else(|| "Image Prompt Lab".to_string());
     let dry_run = has_flag(args, "--dry-run");
@@ -70,7 +70,10 @@ fn init(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainErro
     Ok(())
 }
 
-fn library(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+fn library(
+    service: &LibraryUseCase<LocalLibraryService>,
+    args: &[String],
+) -> Result<(), DomainError> {
     let Some(subcommand) = args.first().map(String::as_str) else {
         return Err(DomainError::InvalidGenerationParameters {
             message: "library subcommand is required".to_string(),
@@ -174,7 +177,10 @@ fn import(
     Ok(())
 }
 
-fn export(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+fn export(
+    service: &LibraryUseCase<LocalLibraryService>,
+    args: &[String],
+) -> Result<(), DomainError> {
     let library_path = required_option(args, "--library")?;
     let output_path = required_option(args, "--out")?;
     let album_id = option_value(args, "--album").map(imglab_core::AlbumId);
@@ -199,11 +205,15 @@ fn export(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainEr
     Ok(())
 }
 
-fn search(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+fn search(
+    library_service: &LibraryUseCase<LocalLibraryService>,
+    search: &imglab_core::application::use_cases::albums::SearchUseCase<LocalLibraryService>,
+    args: &[String],
+) -> Result<(), DomainError> {
     let library_path = required_option(args, "--library")?;
     let query_text = option_value(args, "--query");
-    let library = service.open_library(&PathBuf::from(library_path))?;
-    let results = service.search(
+    let library = library_service.open_library(&PathBuf::from(library_path))?;
+    let results = search.execute(
         &library.id,
         SearchQuery {
             text: query_text,
@@ -307,7 +317,10 @@ where
     Ok(())
 }
 
-fn rate(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+fn rate(
+    albums: &imglab_core::application::use_cases::albums::AlbumUseCase<LocalLibraryService>,
+    args: &[String],
+) -> Result<(), DomainError> {
     let library_path = required_option(args, "--library")?;
     let asset_id = positional(args, 0, "asset id")?;
     let rating = positional(args, 1, "rating")?
@@ -320,7 +333,7 @@ fn rate(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainErro
         return Ok(());
     }
 
-    let asset = service.update_asset_metadata(imglab_core::UpdateAssetMetadataRequest {
+    let asset = albums.update_asset_metadata(imglab_core::UpdateAssetMetadataRequest {
         library_path: PathBuf::from(library_path),
         asset_id: imglab_core::AssetId(asset_id),
         title: None,
@@ -334,7 +347,10 @@ fn rate(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainErro
     Ok(())
 }
 
-fn tag(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+fn tag(
+    assets: &imglab_core::infrastructure::composition::SqliteAssetUseCase,
+    args: &[String],
+) -> Result<(), DomainError> {
     let Some(subcommand) = args.first().map(String::as_str) else {
         return Err(DomainError::InvalidGenerationParameters {
             message: "tag subcommand is required".to_string(),
@@ -351,11 +367,11 @@ fn tag(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError
                 return Ok(());
             }
 
-            service.add_tag_to_asset(
-                &PathBuf::from(library_path),
-                &AssetId(asset_id.clone()),
-                &tag,
-            )?;
+            assets.add_tag(AddAssetTagRequest {
+                library_path: PathBuf::from(library_path),
+                asset_id: AssetId(asset_id.clone()),
+                tag: tag.clone(),
+            })?;
             print_json(json!({"asset_id": asset_id, "tag": tag}));
             Ok(())
         }
@@ -365,7 +381,11 @@ fn tag(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError
     }
 }
 
-fn album(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+fn album(
+    library_service: &LibraryUseCase<LocalLibraryService>,
+    albums: &imglab_core::application::use_cases::albums::AlbumUseCase<LocalLibraryService>,
+    args: &[String],
+) -> Result<(), DomainError> {
     let Some(subcommand) = args.first().map(String::as_str) else {
         return Err(DomainError::InvalidGenerationParameters {
             message: "album subcommand is required".to_string(),
@@ -376,13 +396,13 @@ fn album(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainErr
         "create" => {
             let library_path = required_option(args, "--library")?;
             let name = positional(&args[1..], 0, "album name")?;
-            let library = service.open_library(&PathBuf::from(library_path))?;
+            let library = library_service.open_library(&PathBuf::from(library_path))?;
             if has_flag(args, "--dry-run") {
                 print_json(json!({"dry_run": true, "name": name}));
                 return Ok(());
             }
 
-            let album = service.create_manual_album(&library.id, &name)?;
+            let album = albums.create_manual_album(&library.id, &name)?;
             print_json(json!({"id": album.id.0, "name": album.name, "kind": "manual"}));
             Ok(())
         }
@@ -394,7 +414,7 @@ fn album(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainErr
                 return Ok(());
             }
 
-            service.add_asset(
+            albums.add_asset(
                 &imglab_core::AlbumId(album_id.clone()),
                 &AssetId(asset_id.clone()),
             )?;
@@ -407,7 +427,13 @@ fn album(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainErr
     }
 }
 
-fn suggestion(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+fn suggestion(
+    library_service: &LibraryUseCase<LocalLibraryService>,
+    metadata_review: &imglab_core::application::use_cases::metadata_review::ReviewMetadataSuggestionUseCase<
+        LocalLibraryService,
+    >,
+    args: &[String],
+) -> Result<(), DomainError> {
     let Some(subcommand) = args.first().map(String::as_str) else {
         return Err(DomainError::InvalidGenerationParameters {
             message: "suggestion subcommand is required".to_string(),
@@ -417,8 +443,9 @@ fn suggestion(service: &LocalLibraryService, args: &[String]) -> Result<(), Doma
     match subcommand {
         "list" => {
             let library_path = required_option(args, "--library")?;
-            let library = service.open_library(&PathBuf::from(&library_path))?;
-            let suggestions = service.list_pending(&PathBuf::from(library_path), &library.id)?;
+            let library = library_service.open_library(&PathBuf::from(&library_path))?;
+            let suggestions =
+                metadata_review.list_pending(&PathBuf::from(library_path), &library.id)?;
             print_json(json!({
                 "suggestions": suggestions.into_iter().map(|suggestion| {
                     json!({
@@ -452,18 +479,19 @@ fn suggestion(service: &LocalLibraryService, args: &[String]) -> Result<(), Doma
                 return Ok(());
             }
 
-            let suggestion = service.create_suggestion(CreateMetadataSuggestionRequest {
-                library_path: PathBuf::from(library_path),
-                asset_id: AssetId(asset_id),
-                source: "cli".to_string(),
-                suggested_title: option_value(args, "--title"),
-                suggested_description: option_value(args, "--description"),
-                suggested_schema_prompt: option_value(args, "--schema-prompt"),
-                suggested_tags: tags,
-                suggested_category: option_value(args, "--category"),
-                confidence_json: option_value(args, "--confidence")
-                    .unwrap_or_else(|| "{}".to_string()),
-            })?;
+            let suggestion =
+                metadata_review.create_suggestion(CreateMetadataSuggestionRequest {
+                    library_path: PathBuf::from(library_path),
+                    asset_id: AssetId(asset_id),
+                    source: "cli".to_string(),
+                    suggested_title: option_value(args, "--title"),
+                    suggested_description: option_value(args, "--description"),
+                    suggested_schema_prompt: option_value(args, "--schema-prompt"),
+                    suggested_tags: tags,
+                    suggested_category: option_value(args, "--category"),
+                    confidence_json: option_value(args, "--confidence")
+                        .unwrap_or_else(|| "{}".to_string()),
+                })?;
             print_json(json!({"id": suggestion.id.0, "status": suggestion.status}));
             Ok(())
         }
@@ -484,7 +512,7 @@ fn suggestion(service: &LocalLibraryService, args: &[String]) -> Result<(), Doma
                 return Ok(());
             }
 
-            let asset = service.accept(ReviewMetadataSuggestionRequest {
+            let asset = metadata_review.accept(ReviewMetadataSuggestionRequest {
                 library_path: PathBuf::from(library_path),
                 suggestion_id: MetadataSuggestionId(suggestion_id),
                 title: option_value(args, "--title"),
@@ -510,7 +538,7 @@ fn suggestion(service: &LocalLibraryService, args: &[String]) -> Result<(), Doma
                 return Ok(());
             }
 
-            service.reject(
+            metadata_review.reject(
                 &PathBuf::from(library_path),
                 &MetadataSuggestionId(suggestion_id.clone()),
             )?;

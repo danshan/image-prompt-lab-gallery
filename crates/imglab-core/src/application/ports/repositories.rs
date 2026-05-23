@@ -4,13 +4,14 @@ pub use crate::{
 };
 
 use crate::{
-    AlbumId, AlbumListItem, AlbumSummary, AppendTaskAttemptRequest, AppendTaskEventRequest,
-    AppendTaskOutputRequest, AssetDetailView, AssetId, AssetInspectorDetailView, AssetSummary,
-    AssetVersionId, BatchAddAssetsToAlbumRequest, BatchCreateTasksRequest,
-    BatchReviewMetadataSuggestionRequest, CompleteTaskAttemptRequest, ConfidenceScoreView,
-    CreateGenerationEventRequest, CreateLibraryRequest, CreateMetadataSuggestionRequest,
-    CreateSmartAlbumRequest, DomainResult, ExportLibraryBackupRequest, ExportLibraryRequest,
-    ExportSummary, GalleryAssetView, GalleryQuery, GenerationEventId, GenerationEventSummary,
+    AddAssetTagRequest, AlbumId, AlbumListItem, AlbumSummary, AppendTaskAttemptRequest,
+    AppendTaskEventRequest, AppendTaskOutputRequest, AssetDetailView, AssetId,
+    AssetInspectorDetailView, AssetSummary, AssetVersionId, BatchAddAssetsToAlbumRequest,
+    BatchCreateTasksRequest, BatchReviewMetadataSuggestionRequest, CompleteTaskAttemptRequest,
+    ConfidenceScoreView, CreateGenerationEventRequest, CreateLibraryRequest,
+    CreateMetadataSuggestionRequest, CreateSmartAlbumRequest, DiagnosticsOverviewView,
+    DomainResult, ExportLibraryBackupRequest, ExportLibraryRequest, ExportSummary,
+    GalleryAssetView, GalleryQuery, GenerationEventId, GenerationEventSummary,
     ImportLibraryBackupRequest, IntegrityIssue, LibraryBackupSummary, LibraryId, LibraryStatusView,
     LibrarySummary, MetadataSuggestion, MetadataSuggestionId, PersistAssetVersionRequest,
     PersistImportedAssetRequest, PromoteAssetVersionRequest, PromoteAssetVersionSummary,
@@ -26,6 +27,7 @@ pub trait LibraryRepository {
     fn create_library(&self, request: CreateLibraryRequest) -> DomainResult<LibrarySummary>;
     fn open_library(&self, root_path: &Path) -> DomainResult<LibrarySummary>;
     fn list_libraries(&self, include_hidden: bool) -> DomainResult<Vec<LibrarySummary>>;
+    fn hide_library(&self, library_id: &LibraryId) -> DomainResult<()>;
     fn rename_library_alias(
         &self,
         request: RenameLibraryAliasRequest,
@@ -41,6 +43,7 @@ pub trait LibraryRepository {
     fn check_integrity(&self, root_path: &Path) -> DomainResult<Vec<IntegrityIssue>>;
     fn library_status(&self, root_path: &Path) -> DomainResult<LibraryStatusView>;
     fn studio_overview(&self, root_path: &Path) -> DomainResult<StudioOverviewView>;
+    fn diagnostics_overview(&self, root_path: &Path) -> DomainResult<DiagnosticsOverviewView>;
 }
 
 pub trait AssetRepository {
@@ -77,6 +80,7 @@ pub trait AssetRepository {
         version_id: &AssetVersionId,
         generation_event_id: &GenerationEventId,
     ) -> DomainResult<()>;
+    fn add_tag_to_asset(&self, request: AddAssetTagRequest) -> DomainResult<()>;
 }
 
 pub trait GenerationEventRepository {
@@ -143,8 +147,14 @@ pub trait MetadataSuggestionRepository {
 
 pub trait AlbumRepository {
     fn list_albums(&self, library_id: &LibraryId) -> DomainResult<Vec<AlbumListItem>>;
+    fn list_albums_in_library(&self, library_path: &Path) -> DomainResult<Vec<AlbumListItem>>;
     fn create_manual_album(&self, library_id: &LibraryId, name: &str)
         -> DomainResult<AlbumSummary>;
+    fn create_manual_album_in_library(
+        &self,
+        library_path: &Path,
+        name: &str,
+    ) -> DomainResult<AlbumSummary>;
     fn create_smart_album(&self, request: CreateSmartAlbumRequest) -> DomainResult<AlbumSummary>;
     fn add_asset(&self, album_id: &AlbumId, asset_id: &AssetId) -> DomainResult<()>;
     fn batch_add_assets(&self, request: BatchAddAssetsToAlbumRequest) -> DomainResult<()>;

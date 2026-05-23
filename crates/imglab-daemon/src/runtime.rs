@@ -74,8 +74,10 @@ impl DaemonState {
         }
     }
 
-    pub(crate) fn service(&self) -> &LocalLibraryService {
-        self.app.library()
+    pub(crate) fn library_lifecycle(
+        &self,
+    ) -> &imglab_core::application::use_cases::library::LibraryUseCase<LocalLibraryService> {
+        self.app.library_lifecycle()
     }
 
     pub(crate) fn tasks(
@@ -95,14 +97,11 @@ impl DaemonState {
         &self,
         request: CreateMetadataSuggestionRequest,
     ) -> DomainResult<imglab_core::MetadataSuggestion> {
-        imglab_core::application::use_cases::metadata_review::CreateMetadataSuggestionUseCase::new(
-            self.app.library().clone(),
-        )
-        .execute(request)
+        self.app.metadata_review().create_suggestion(request)
     }
 
     pub(crate) fn open_library(&mut self, root_path: &Path) -> DomainResult<LibrarySummary> {
-        let library = self.service().open_library(root_path)?;
+        let library = self.library_lifecycle().open_library(root_path)?;
         let should_recover = !self.recovered_libraries.contains(&library.id.0);
         self.opened_libraries
             .insert(library.id.0.clone(), library.root_path.clone());

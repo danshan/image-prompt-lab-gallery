@@ -9,7 +9,7 @@ pub(crate) fn health() -> &'static str {
 pub(crate) fn create_library(input: CreateLibraryInput) -> Result<LibraryView, CommandError> {
     let root_path = normalize_library_root_path(input.root_path)?;
     desktop_app()
-        .library()
+        .library_lifecycle()
         .create_library(CreateLibraryRequest {
             root_path,
             name: input.name,
@@ -21,7 +21,7 @@ pub(crate) fn create_library(input: CreateLibraryInput) -> Result<LibraryView, C
 #[tauri::command]
 pub(crate) fn list_libraries(include_hidden: bool) -> Result<Vec<LibraryView>, CommandError> {
     desktop_app()
-        .library()
+        .library_lifecycle()
         .list_libraries(include_hidden)
         .map(|libraries| libraries.into_iter().map(library_view).collect())
         .map_err(Into::into)
@@ -31,7 +31,7 @@ pub(crate) fn list_libraries(include_hidden: bool) -> Result<Vec<LibraryView>, C
 pub(crate) fn open_library(root_path: PathBuf) -> Result<LibraryView, CommandError> {
     let root_path = normalize_library_root_path(root_path)?;
     desktop_app()
-        .library()
+        .library_lifecycle()
         .open_library(&root_path)
         .map(library_view)
         .map_err(Into::into)
@@ -41,7 +41,7 @@ pub(crate) fn open_library(root_path: PathBuf) -> Result<LibraryView, CommandErr
 pub(crate) fn library_status(root_path: PathBuf) -> Result<LibraryStatusView, CommandError> {
     let root_path = normalize_library_root_path(root_path)?;
     desktop_app()
-        .library()
+        .library_lifecycle()
         .library_status(&root_path)
         .map(library_status_view)
         .map_err(Into::into)
@@ -51,7 +51,7 @@ pub(crate) fn library_status(root_path: PathBuf) -> Result<LibraryStatusView, Co
 pub(crate) fn studio_overview(root_path: PathBuf) -> Result<StudioOverviewView, CommandError> {
     let root_path = normalize_library_root_path(root_path)?;
     desktop_app()
-        .library()
+        .library_lifecycle()
         .studio_overview(&root_path)
         .map(studio_overview_view)
         .map_err(Into::into)
@@ -63,7 +63,7 @@ pub(crate) fn diagnostics_overview(
 ) -> Result<DiagnosticsOverviewView, CommandError> {
     let root_path = normalize_library_root_path(root_path)?;
     desktop_app()
-        .library()
+        .library_lifecycle()
         .diagnostics_overview(&root_path)
         .map(diagnostics_overview_view)
         .map_err(Into::into)
@@ -72,7 +72,7 @@ pub(crate) fn diagnostics_overview(
 #[tauri::command]
 pub(crate) fn repair_library(input: RepairLibraryInput) -> Result<RepairSummaryView, CommandError> {
     desktop_app()
-        .library()
+        .library_lifecycle()
         .repair_library(RepairLibraryRequest {
             library_path: input.library_path,
             dry_run: input.dry_run,
@@ -84,7 +84,7 @@ pub(crate) fn repair_library(input: RepairLibraryInput) -> Result<RepairSummaryV
 #[tauri::command]
 pub(crate) fn hide_library(library_id: String) -> Result<(), CommandError> {
     desktop_app()
-        .library()
+        .library_lifecycle()
         .hide_library(&LibraryId(library_id))
         .map_err(Into::into)
 }
@@ -94,7 +94,7 @@ pub(crate) fn rename_library_alias(
     input: RenameLibraryAliasInput,
 ) -> Result<LibraryView, CommandError> {
     desktop_app()
-        .library()
+        .library_lifecycle()
         .rename_library_alias(RenameLibraryAliasRequest {
             library_id: LibraryId(input.library_id),
             alias: input.alias,
@@ -106,7 +106,7 @@ pub(crate) fn rename_library_alias(
 #[tauri::command]
 pub(crate) fn unregister_library(library_id: String) -> Result<(), CommandError> {
     desktop_app()
-        .library()
+        .library_lifecycle()
         .unregister_library(&LibraryId(library_id))
         .map_err(Into::into)
 }
@@ -128,7 +128,7 @@ pub(crate) fn import_asset(
 #[tauri::command]
 pub(crate) fn export_library(input: ExportLibraryInput) -> Result<serde_json::Value, CommandError> {
     desktop_app()
-        .library()
+        .library_lifecycle()
         .export_library(ExportLibraryRequest {
             library_path: input.library_path,
             output_path: input.output_path,
@@ -149,7 +149,7 @@ pub(crate) fn export_library_backup_zip(
 ) -> Result<(), CommandError> {
     let library_path = normalize_library_root_path(input.library_path)?;
     desktop_app()
-        .library()
+        .library_lifecycle()
         .export_library_backup_zip(ExportLibraryBackupRequest {
             library_path,
             output_zip_path: input.output_zip_path,
@@ -163,7 +163,7 @@ pub(crate) fn import_library_backup_zip(
 ) -> Result<LibraryBackupView, CommandError> {
     let destination_path = normalize_library_root_path(input.destination_path)?;
     desktop_app()
-        .library()
+        .library_lifecycle()
         .import_library_backup_zip(ImportLibraryBackupRequest {
             zip_path: input.zip_path,
             destination_path,

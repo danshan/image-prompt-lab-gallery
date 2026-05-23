@@ -422,20 +422,20 @@ pub(crate) fn complete_successful_attempt(
             error_classification: None,
         })?;
     let current = state.tasks().get_task_detail(library_path, task_id)?.task;
-    let completed_status = if current.status == TaskStatus::CancelRequested {
+    let resolution = imglab_core::domain::task::resolve_successful_attempt(current.status);
+    if let (Some(event_type), Some(message)) =
+        (resolution.extra_event_type, resolution.extra_event_message)
+    {
         state
             .tasks()
             .append_task_event(imglab_core::AppendTaskEventRequest {
                 library_path: library_path.to_path_buf(),
                 task_id: task_id.clone(),
-                event_type: "completed_after_cancel_requested".to_string(),
-                message: Some("Task completed after cancel was requested".to_string()),
+                event_type: event_type.to_string(),
+                message: Some(message.to_string()),
                 payload_json: None,
             })?;
-        TaskStatus::Completed
-    } else {
-        TaskStatus::Completed
-    };
+    }
     append_log(log_path, "attempt completed\n")?;
     state
         .tasks()
@@ -449,7 +449,7 @@ pub(crate) fn complete_successful_attempt(
     state.tasks().update_task_status(UpdateTaskStatusRequest {
         library_path: library_path.to_path_buf(),
         task_id: task_id.clone(),
-        status: completed_status,
+        status: resolution.task_status,
         next_retry_at: None,
         last_error_code: None,
         last_error_message: None,
@@ -489,7 +489,7 @@ pub(crate) fn complete_canceled_attempt(
     state.tasks().update_task_status(UpdateTaskStatusRequest {
         library_path: library_path.to_path_buf(),
         task_id: task_id.clone(),
-        status: TaskStatus::Canceled,
+        status: imglab_core::domain::task::resolve_canceled_attempt_status(),
         next_retry_at: None,
         last_error_code: Some("Canceled".to_string()),
         last_error_message: Some("Task canceled by user".to_string()),
@@ -510,13 +510,8 @@ pub(crate) fn complete_failed_attempt(
     let classification = classify_task_error(&error);
     let detail = state.tasks().get_task_detail(library_path, task_id)?;
     let should_retry = retry_policy.should_auto_retry(classification, detail.task.attempt_count);
-    let status = if should_retry {
-        TaskStatus::RetryWaiting
-    } else if classification == TaskErrorClassification::RetryableManual {
-        TaskStatus::FailedRetryable
-    } else {
-        TaskStatus::FailedFinal
-    };
+    let resolution =
+        imglab_core::domain::task::resolve_failed_attempt(classification, should_retry);
     let next_retry_at = should_retry.then(|| {
         unix_timestamp_string(retry_policy.backoff_delay_seconds(detail.task.attempt_count))
     });
@@ -537,11 +532,7 @@ pub(crate) fn complete_failed_attempt(
         .append_task_event(imglab_core::AppendTaskEventRequest {
             library_path: library_path.to_path_buf(),
             task_id: task_id.clone(),
-            event_type: if should_retry {
-                "retry_scheduled".to_string()
-            } else {
-                "attempt_failed".to_string()
-            },
+            event_type: resolution.event_type.to_string(),
             message: Some(error.to_string()),
             payload_json: next_retry_at
                 .as_ref()
@@ -550,7 +541,7 @@ pub(crate) fn complete_failed_attempt(
     state.tasks().update_task_status(UpdateTaskStatusRequest {
         library_path: library_path.to_path_buf(),
         task_id: task_id.clone(),
-        status,
+        status: resolution.task_status,
         next_retry_at,
         last_error_code: Some(error.code().to_string()),
         last_error_message: Some(error.to_string()),

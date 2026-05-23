@@ -409,9 +409,9 @@ fn generation_confidence_json(parameters: &GenerationParameters) -> String {
 mod tests {
     use super::*;
     use crate::{
-        ConfidenceScoreView, GeneratedImage, GenerationEventId, GenerationEventSummary,
-        ManagedFileImport, ManagedFileMetadata, MetadataSuggestion, MetadataSuggestionId,
-        PromoteAssetVersionRequest, PromoteAssetVersionSummary,
+        AddAssetTagRequest, ConfidenceScoreView, GeneratedImage, GenerationEventId,
+        GenerationEventSummary, ManagedFileImport, ManagedFileMetadata, MetadataSuggestion,
+        MetadataSuggestionId, PromoteAssetVersionRequest, PromoteAssetVersionSummary,
     };
     use std::cell::RefCell;
     use std::path::PathBuf;
@@ -516,6 +516,10 @@ mod tests {
             self.generated_marks
                 .borrow_mut()
                 .push(generation_event_id.clone());
+            Ok(())
+        }
+
+        fn add_tag_to_asset(&self, _request: AddAssetTagRequest) -> DomainResult<()> {
             Ok(())
         }
     }

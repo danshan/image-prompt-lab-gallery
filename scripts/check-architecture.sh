@@ -40,6 +40,37 @@ if [[ -n "$runtime_rule_violations" ]]; then
   exit 1
 fi
 
+runtime_legacy_service_usage="$(rg -n 'LocalLibraryService' "${RUNTIME_DIRS[@]}" || true)"
+runtime_legacy_service_violations=""
+allowed_runtime_legacy_service_files=(
+  "$ROOT_DIR/crates/imglab-cli/src/main.rs"
+  "$ROOT_DIR/crates/imglab-daemon/src/lib.rs"
+  "$ROOT_DIR/crates/imglab-daemon/src/runtime.rs"
+)
+
+if [[ -n "$runtime_legacy_service_usage" ]]; then
+  while IFS= read -r line; do
+    file="${line%%:*}"
+    allowed="false"
+    for allowed_file in "${allowed_runtime_legacy_service_files[@]}"; do
+      if [[ "$file" == "$allowed_file" ]]; then
+        allowed="true"
+        break
+      fi
+    done
+    if [[ "$allowed" != "true" ]]; then
+      runtime_legacy_service_violations+="$line"$'\n'
+    fi
+  done <<< "$runtime_legacy_service_usage"
+fi
+
+if [[ -n "$runtime_legacy_service_violations" ]]; then
+  echo "Runtime modules introduced direct LocalLibraryService usage outside the documented compatibility allowlist:" >&2
+  echo "$runtime_legacy_service_violations" >&2
+  echo "Update application/use-case wiring instead, or document a bounded compatibility exception in docs/architecture/ddd-boundary-inventory.md and scripts/check-architecture.sh." >&2
+  exit 1
+fi
+
 desktop_state_violations="$(rg -n 'from "(\./|\.\./|\.\./\.\./|\.\./\.\./\.\./)?workbench-state(\.js)?("|$)' "$DESKTOP_SRC_DIR" || true)"
 
 if [[ -n "$desktop_state_violations" ]]; then

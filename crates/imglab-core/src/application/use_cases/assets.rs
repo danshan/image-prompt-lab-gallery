@@ -1,7 +1,7 @@
 use crate::application::ports::{AssetRepository, ManagedFileStore};
 use crate::domain::asset::{ensure_same_asset_parent, next_version_number};
 use crate::{
-    AssetSummary, CreateChildVersionRequest, DomainResult, ImportAssetRequest,
+    AddAssetTagRequest, AssetSummary, CreateChildVersionRequest, DomainResult, ImportAssetRequest,
     PersistAssetVersionRequest, PersistImportedAssetRequest, PromoteAssetVersionRequest,
     PromoteAssetVersionSummary, VersionSummary,
 };
@@ -41,6 +41,15 @@ where
         request: PromoteAssetVersionRequest,
     ) -> DomainResult<PromoteAssetVersionSummary> {
         self.repository.promote_version_as_asset(request)
+    }
+}
+
+impl<R, F> AssetUseCase<R, F>
+where
+    R: AssetRepository,
+{
+    pub fn add_tag(&self, request: AddAssetTagRequest) -> DomainResult<()> {
+        self.repository.add_tag_to_asset(request)
     }
 }
 
@@ -138,6 +147,7 @@ mod tests {
     struct FakeAssetRepository {
         persisted_versions: RefCell<Vec<PersistAssetVersionRequest>>,
         existing_versions: RefCell<Vec<VersionSummary>>,
+        added_tags: RefCell<Vec<AddAssetTagRequest>>,
     }
 
     impl AssetRepository for FakeAssetRepository {
@@ -211,6 +221,11 @@ mod tests {
             _version_id: &AssetVersionId,
             _generation_event_id: &crate::GenerationEventId,
         ) -> DomainResult<()> {
+            Ok(())
+        }
+
+        fn add_tag_to_asset(&self, request: AddAssetTagRequest) -> DomainResult<()> {
+            self.added_tags.borrow_mut().push(request);
             Ok(())
         }
     }
@@ -337,6 +352,24 @@ mod tests {
             Some(AssetVersionId("version-1".to_string()))
         );
         assert_eq!(persisted[0].file.mime_type, "image/png");
+    }
+
+    #[test]
+    fn asset_use_case_delegates_tag_mutation_to_repository_port() {
+        let use_case = AssetUseCase::new(FakeAssetRepository::default(), FakeFileStore::default());
+
+        use_case
+            .add_tag(AddAssetTagRequest {
+                library_path: PathBuf::from("/tmp/library"),
+                asset_id: AssetId("asset-1".to_string()),
+                tag: "favorite".to_string(),
+            })
+            .expect("tag add");
+
+        let tags = use_case.repository.added_tags.borrow();
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].asset_id, AssetId("asset-1".to_string()));
+        assert_eq!(tags[0].tag, "favorite");
     }
 
     #[test]

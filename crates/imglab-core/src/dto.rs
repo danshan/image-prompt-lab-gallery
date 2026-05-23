@@ -891,6 +891,13 @@ pub struct UpdateAssetMetadataRequest {
     pub status: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct AddAssetTagRequest {
+    pub library_path: PathBuf,
+    pub asset_id: AssetId,
+    pub tag: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AlbumKind {
     Manual,
