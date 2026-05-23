@@ -182,6 +182,12 @@ Migrated write flows SHALL have one primary application use-case owner. Runtime 
 - **THEN** they SHOULD call the daemon task application owner
 - **AND** they SHOULD NOT use a generic concrete local-service accessor as the primary task entrypoint
 
+#### Scenario: Tauri album commands use album application owner
+
+- **WHEN** Tauri commands list or create albums for the selected library
+- **THEN** they MUST call the album application owner
+- **AND** they MUST NOT call the concrete library compatibility service as the primary album entrypoint
+
 #### Scenario: CLI tag mutation uses asset application owner
 
 - **WHEN** CLI adds a tag to an asset

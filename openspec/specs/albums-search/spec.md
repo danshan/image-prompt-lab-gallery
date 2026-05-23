@@ -269,3 +269,13 @@ Albums workspace SHALL 覆盖 album list, album detail, smart builder 和 album-
 #### Scenario: Album Detail Error
 - **WHEN** album detail 或 album-scoped query 加载失败
 - **THEN** Albums workspace 保留 album list context, 展示可恢复错误和 retry 操作
+
+### Requirement: Album workflows keep one runtime owner
+
+Album workflows SHALL route runtime mutations and read commands through the album application owner where an application boundary exists.
+
+#### Scenario: Desktop album list and create use application owner
+
+- **WHEN** desktop requests album list or manual album creation
+- **THEN** the Tauri command adapter SHOULD call the album application owner
+- **AND** command view mapping remains in the Tauri adapter

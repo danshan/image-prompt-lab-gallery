@@ -16,7 +16,7 @@ The goal is not to pretend the legacy `library/*` surface has disappeared. The g
 | Text-to-image and image-to-image generation | `application::use_cases::generation::GenerateImageUseCase` | CLI `generate`, daemon task execution | Migrated application owner with runtime provider dispatch | Provider process execution remains runtime/provider-owned. Version persistence, reference source behavior, and generation event persistence belong to application/domain. |
 | Metadata suggestion create | `application::use_cases::metadata_review::ReviewMetadataSuggestionUseCase` | CLI suggestion create, daemon metadata tasks, Tauri review flows | Migrated application owner | CLI and daemon now enter through `app.metadata_review()`. The standalone create use case remains compatible but should not be constructed ad hoc in runtime code. |
 | Metadata review list/accept/reject | `application::use_cases::metadata_review::ReviewMetadataSuggestionUseCase` | CLI suggestion list/accept/reject, Tauri review flows | Migrated application owner with library-open compatibility | CLI list still opens the library through the lifecycle surface to resolve `LibraryId`; review behavior enters through the application owner. |
-| Album create/add/remove/reorder/smart query | `application::use_cases::albums::AlbumUseCase` | CLI album commands, Tauri album workflows | Migrated application owner for CLI create/add and Tauri workflows | CLI create/add now use `app.albums()`. Remaining album operations should keep using this application owner as they expand. |
+| Album list/create/add/remove/reorder/smart query | `application::use_cases::albums::AlbumUseCase` | CLI album commands, Tauri album workflows | Migrated application owner for CLI and Tauri workflows | CLI and Tauri album commands use `app.albums()`. Path-scoped desktop list/manual-create operations are covered by the album use case. |
 | Gallery query/detail/inspector read model | `application::use_cases::albums::QueryGalleryUseCase` with focused `library::gallery_search`, `library::gallery_filtering`, and `library::gallery_version_tree` owners | Tauri gallery, daemon task output lookup | Migrated query owner with split read-model adapters | Query behavior enters through application use case. Search, filter/album context, and version tree read behavior are separated from the gallery adapter. Gallery list/detail, task origin, inspector, and file context implementation should continue to split by read-model owner. |
 | Search | `application::use_cases::albums::SearchUseCase` with `library::gallery_search` adapter owner | CLI search, Tauri search/gallery flows | Migrated application owner with focused search read-model module | CLI search opens the library through `app.library_lifecycle()` and executes search through `app.search()`. Search-specific filtering and result mapping are separated from gallery list/detail code. |
 | Gallery filtering and album context | `library::gallery_filtering` behind `QueryGalleryUseCase` | Tauri gallery and smart album flows | Focused read-model owner | Album filter normalization, context validation, smart album preview filtering, shared gallery predicates, and album-order sorting are separated from gallery DTO composition. |
@@ -46,8 +46,8 @@ This is intentionally stricter for new files than for legacy files. It prevents 
 
 ## Next Refactor Targets
 
-1. Move remaining Tauri album list/manual-create helpers off direct legacy service calls.
-2. Continue splitting gallery read-model implementation: asset detail, inspector detail, task origin, and file context remain in `library/gallery.rs`.
+1. Continue splitting gallery read-model implementation: asset detail, inspector detail, task origin, and file context remain in `library/gallery.rs`.
+2. Move remaining Tauri metadata command compatibility calls off direct legacy service calls.
 
 ## Runtime Adapter Review Notes
 
@@ -68,5 +68,6 @@ Daemon:
 Tauri:
 
 - Library command modules call `app.library_lifecycle()` for resource library lifecycle workflows.
+- Album command modules call `app.albums()` for list, create, mutation, reorder, and smart album workflows.
 - Command modules continue to act as path validation, input mapping, application invocation, and view/error mapping adapters.
 - No new direct runtime `LocalLibraryService` usage is allowed outside the documented allowlist enforced by `scripts/check-architecture.sh`.

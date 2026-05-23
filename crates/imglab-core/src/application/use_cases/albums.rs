@@ -25,12 +25,25 @@ where
         self.repository.list_albums(library_id)
     }
 
+    pub fn list_albums_in_library(&self, library_path: &Path) -> DomainResult<Vec<AlbumListItem>> {
+        self.repository.list_albums_in_library(library_path)
+    }
+
     pub fn create_manual_album(
         &self,
         library_id: &LibraryId,
         name: &str,
     ) -> DomainResult<AlbumSummary> {
         self.repository.create_manual_album(library_id, name)
+    }
+
+    pub fn create_manual_album_in_library(
+        &self,
+        library_path: &Path,
+        name: &str,
+    ) -> DomainResult<AlbumSummary> {
+        self.repository
+            .create_manual_album_in_library(library_path, name)
     }
 
     pub fn create_smart_album(

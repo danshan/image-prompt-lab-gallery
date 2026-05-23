@@ -147,8 +147,14 @@ pub trait MetadataSuggestionRepository {
 
 pub trait AlbumRepository {
     fn list_albums(&self, library_id: &LibraryId) -> DomainResult<Vec<AlbumListItem>>;
+    fn list_albums_in_library(&self, library_path: &Path) -> DomainResult<Vec<AlbumListItem>>;
     fn create_manual_album(&self, library_id: &LibraryId, name: &str)
         -> DomainResult<AlbumSummary>;
+    fn create_manual_album_in_library(
+        &self,
+        library_path: &Path,
+        name: &str,
+    ) -> DomainResult<AlbumSummary>;
     fn create_smart_album(&self, request: CreateSmartAlbumRequest) -> DomainResult<AlbumSummary>;
     fn add_asset(&self, album_id: &AlbumId, asset_id: &AssetId) -> DomainResult<()>;
     fn batch_add_assets(&self, request: BatchAddAssetsToAlbumRequest) -> DomainResult<()>;

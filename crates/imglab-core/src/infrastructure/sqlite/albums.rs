@@ -5,10 +5,15 @@ use crate::{
     BatchAddAssetsToAlbumRequest, CreateSmartAlbumRequest, DomainResult, LibraryId,
     ReorderAlbumItemsRequest, ReorderAlbumsRequest, UpdateAssetMetadataRequest,
 };
+use std::path::Path;
 
 impl AlbumRepository for LocalLibraryService {
     fn list_albums(&self, library_id: &LibraryId) -> DomainResult<Vec<AlbumListItem>> {
         AlbumService::list_albums(self, library_id)
+    }
+
+    fn list_albums_in_library(&self, library_path: &Path) -> DomainResult<Vec<AlbumListItem>> {
+        LocalLibraryService::list_albums_in_library(self, library_path)
     }
 
     fn create_manual_album(
@@ -17,6 +22,14 @@ impl AlbumRepository for LocalLibraryService {
         name: &str,
     ) -> DomainResult<AlbumSummary> {
         AlbumService::create_manual_album(self, library_id, name)
+    }
+
+    fn create_manual_album_in_library(
+        &self,
+        library_path: &Path,
+        name: &str,
+    ) -> DomainResult<AlbumSummary> {
+        LocalLibraryService::create_manual_album_in_library(self, library_path, name)
     }
 
     fn create_smart_album(&self, request: CreateSmartAlbumRequest) -> DomainResult<AlbumSummary> {
