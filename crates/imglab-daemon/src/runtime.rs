@@ -78,6 +78,12 @@ impl DaemonState {
         self.app.library()
     }
 
+    pub(crate) fn library_lifecycle(
+        &self,
+    ) -> &imglab_core::application::use_cases::library::LibraryUseCase<LocalLibraryService> {
+        self.app.library_lifecycle()
+    }
+
     pub(crate) fn tasks(
         &self,
     ) -> &imglab_core::application::use_cases::tasks::TaskUseCase<LocalLibraryService> {
@@ -99,7 +105,7 @@ impl DaemonState {
     }
 
     pub(crate) fn open_library(&mut self, root_path: &Path) -> DomainResult<LibrarySummary> {
-        let library = self.service().open_library(root_path)?;
+        let library = self.library_lifecycle().open_library(root_path)?;
         let should_recover = !self.recovered_libraries.contains(&library.id.0);
         self.opened_libraries
             .insert(library.id.0.clone(), library.root_path.clone());

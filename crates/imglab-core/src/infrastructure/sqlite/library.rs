@@ -1,10 +1,10 @@
 use crate::application::ports::LibraryRepository;
 use crate::library::LocalLibraryService;
 use crate::{
-    CreateLibraryRequest, DomainResult, ExportLibraryBackupRequest, ExportLibraryRequest,
-    ExportSummary, ImportLibraryBackupRequest, IntegrityIssue, LibraryBackupSummary, LibraryId,
-    LibraryService, LibraryStatusView, LibrarySummary, RenameLibraryAliasRequest,
-    RepairLibraryRequest, RepairSummary, StudioOverviewView,
+    CreateLibraryRequest, DiagnosticsOverviewView, DomainResult, ExportLibraryBackupRequest,
+    ExportLibraryRequest, ExportSummary, ImportLibraryBackupRequest, IntegrityIssue,
+    LibraryBackupSummary, LibraryId, LibraryService, LibraryStatusView, LibrarySummary,
+    RenameLibraryAliasRequest, RepairLibraryRequest, RepairSummary, StudioOverviewView,
 };
 use std::path::Path;
 
@@ -19,6 +19,10 @@ impl LibraryRepository for LocalLibraryService {
 
     fn list_libraries(&self, include_hidden: bool) -> DomainResult<Vec<LibrarySummary>> {
         LibraryService::list_libraries(self, include_hidden)
+    }
+
+    fn hide_library(&self, library_id: &LibraryId) -> DomainResult<()> {
+        LibraryService::hide_library(self, library_id)
     }
 
     fn rename_library_alias(
@@ -61,5 +65,9 @@ impl LibraryRepository for LocalLibraryService {
 
     fn studio_overview(&self, root_path: &Path) -> DomainResult<StudioOverviewView> {
         LibraryService::studio_overview(self, root_path)
+    }
+
+    fn diagnostics_overview(&self, root_path: &Path) -> DomainResult<DiagnosticsOverviewView> {
+        LibraryService::diagnostics_overview(self, root_path)
     }
 }

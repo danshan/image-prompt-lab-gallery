@@ -3,7 +3,7 @@ use crate::*;
 #[tauri::command]
 pub(crate) fn search_assets(input: SearchInput) -> Result<Vec<AssetView>, CommandError> {
     let app = desktop_app();
-    let library = app.library().open_library(&input.library_path)?;
+    let library = app.library_lifecycle().open_library(&input.library_path)?;
     app.search()
         .execute(
             &library.id,

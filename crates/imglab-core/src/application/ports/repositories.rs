@@ -9,16 +9,16 @@ use crate::{
     AssetVersionId, BatchAddAssetsToAlbumRequest, BatchCreateTasksRequest,
     BatchReviewMetadataSuggestionRequest, CompleteTaskAttemptRequest, ConfidenceScoreView,
     CreateGenerationEventRequest, CreateLibraryRequest, CreateMetadataSuggestionRequest,
-    CreateSmartAlbumRequest, DomainResult, ExportLibraryBackupRequest, ExportLibraryRequest,
-    ExportSummary, GalleryAssetView, GalleryQuery, GenerationEventId, GenerationEventSummary,
-    ImportLibraryBackupRequest, IntegrityIssue, LibraryBackupSummary, LibraryId, LibraryStatusView,
-    LibrarySummary, MetadataSuggestion, MetadataSuggestionId, PersistAssetVersionRequest,
-    PersistImportedAssetRequest, PromoteAssetVersionRequest, PromoteAssetVersionSummary,
-    RenameLibraryAliasRequest, ReorderAlbumItemsRequest, ReorderAlbumsRequest,
-    ReorderQueuedTasksRequest, RepairLibraryRequest, RepairSummary, ReviewDraftDetailView,
-    ReviewMetadataSuggestionRequest, SearchQuery, StudioOverviewView, TaskAttempt, TaskDetail,
-    TaskEvent, TaskId, TaskOutput, TaskOutputType, TaskSummary, UpdateAssetMetadataRequest,
-    UpdateTaskStatusRequest, VersionSummary,
+    CreateSmartAlbumRequest, DiagnosticsOverviewView, DomainResult, ExportLibraryBackupRequest,
+    ExportLibraryRequest, ExportSummary, GalleryAssetView, GalleryQuery, GenerationEventId,
+    GenerationEventSummary, ImportLibraryBackupRequest, IntegrityIssue, LibraryBackupSummary,
+    LibraryId, LibraryStatusView, LibrarySummary, MetadataSuggestion, MetadataSuggestionId,
+    PersistAssetVersionRequest, PersistImportedAssetRequest, PromoteAssetVersionRequest,
+    PromoteAssetVersionSummary, RenameLibraryAliasRequest, ReorderAlbumItemsRequest,
+    ReorderAlbumsRequest, ReorderQueuedTasksRequest, RepairLibraryRequest, RepairSummary,
+    ReviewDraftDetailView, ReviewMetadataSuggestionRequest, SearchQuery, StudioOverviewView,
+    TaskAttempt, TaskDetail, TaskEvent, TaskId, TaskOutput, TaskOutputType, TaskSummary,
+    UpdateAssetMetadataRequest, UpdateTaskStatusRequest, VersionSummary,
 };
 use std::path::Path;
 
@@ -26,6 +26,7 @@ pub trait LibraryRepository {
     fn create_library(&self, request: CreateLibraryRequest) -> DomainResult<LibrarySummary>;
     fn open_library(&self, root_path: &Path) -> DomainResult<LibrarySummary>;
     fn list_libraries(&self, include_hidden: bool) -> DomainResult<Vec<LibrarySummary>>;
+    fn hide_library(&self, library_id: &LibraryId) -> DomainResult<()>;
     fn rename_library_alias(
         &self,
         request: RenameLibraryAliasRequest,
@@ -41,6 +42,7 @@ pub trait LibraryRepository {
     fn check_integrity(&self, root_path: &Path) -> DomainResult<Vec<IntegrityIssue>>;
     fn library_status(&self, root_path: &Path) -> DomainResult<LibraryStatusView>;
     fn studio_overview(&self, root_path: &Path) -> DomainResult<StudioOverviewView>;
+    fn diagnostics_overview(&self, root_path: &Path) -> DomainResult<DiagnosticsOverviewView>;
 }
 
 pub trait AssetRepository {

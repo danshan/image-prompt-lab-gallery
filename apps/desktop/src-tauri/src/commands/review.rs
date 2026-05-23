@@ -5,7 +5,7 @@ pub(crate) fn create_suggestion(
     input: CreateSuggestionInput,
 ) -> Result<SuggestionView, CommandError> {
     desktop_app()
-        .library()
+        .metadata_review()
         .create_suggestion(CreateMetadataSuggestionRequest {
             library_path: input.library_path,
             asset_id: AssetId(input.asset_id),
@@ -26,8 +26,8 @@ pub(crate) fn list_pending_suggestions(
     library_path: PathBuf,
 ) -> Result<Vec<SuggestionView>, CommandError> {
     let app = desktop_app();
-    let library = app.library().open_library(&library_path)?;
-    app.library()
+    let library = app.library_lifecycle().open_library(&library_path)?;
+    app.metadata_review()
         .list_pending(&library_path, &library.id)
         .map(|suggestions| suggestions.into_iter().map(suggestion_view).collect())
         .map_err(Into::into)
@@ -154,7 +154,7 @@ pub(crate) async fn regenerate_suggestion(
         let description = generator.generate(&description_input)?.value;
         let schema_prompt = generator.generate(&schema_input)?.value;
         desktop_app()
-            .library()
+            .metadata_review()
             .create_suggestion(CreateMetadataSuggestionRequest {
                 library_path,
                 asset_id: AssetId(asset_id),

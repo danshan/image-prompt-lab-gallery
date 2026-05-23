@@ -3,6 +3,7 @@ use crate::application::ports::ImageGenerationProvider;
 use crate::application::use_cases::albums::{AlbumUseCase, QueryGalleryUseCase, SearchUseCase};
 use crate::application::use_cases::assets::AssetUseCase;
 use crate::application::use_cases::generation::GenerateImageUseCase;
+use crate::application::use_cases::library::LibraryUseCase;
 use crate::application::use_cases::metadata_review::ReviewMetadataSuggestionUseCase;
 use crate::application::use_cases::tasks::TaskUseCase;
 use crate::library::LocalLibraryService;
@@ -12,6 +13,7 @@ pub type SqliteAssetUseCase = AssetUseCase<LocalLibraryService, LocalLibraryServ
 
 pub type SqliteImgLabApplication<P> = ImgLabApplication<
     LocalLibraryService,
+    LibraryUseCase<LocalLibraryService>,
     SqliteAssetUseCase,
     GenerateImageUseCase<
         P,
@@ -37,6 +39,7 @@ where
     let service = LocalLibraryService::new(registry_path);
     ImgLabApplication::from_parts(ImgLabApplicationParts {
         library: service.clone(),
+        library_lifecycle: LibraryUseCase::new(service.clone()),
         assets: AssetUseCase::new(service.clone(), service.clone()),
         generation: GenerateImageUseCase::new(
             provider,
@@ -66,6 +69,7 @@ mod tests {
         );
 
         let _ = app.library();
+        let _ = app.library_lifecycle();
         let _ = app.assets();
         let _ = app.generation();
         let _ = app.metadata_review();

@@ -1,4 +1,4 @@
-use imglab_core::LibraryService;
+use imglab_core::application::use_cases::library::LibraryUseCase;
 use imglab_core::{
     prepare_generation_request, AssetId, CreateLibraryRequest, CreateMetadataSuggestionRequest,
     DomainError, ExportLibraryRequest, GenerateImageRequest, GenerationOperation,
@@ -31,23 +31,23 @@ fn run(args: Vec<String>) -> Result<(), DomainError> {
             print_help();
             Ok(())
         }
-        "init" => init(app.library(), &args[1..]),
-        "library" => library(app.library(), &args[1..]),
+        "init" => init(app.library_lifecycle(), &args[1..]),
+        "library" => library(app.library_lifecycle(), &args[1..]),
         "import" => import(app.assets(), &args[1..]),
-        "export" => export(app.library(), &args[1..]),
-        "search" => search(app.library(), app.search(), &args[1..]),
+        "export" => export(app.library_lifecycle(), &args[1..]),
+        "search" => search(app.library_lifecycle(), app.search(), &args[1..]),
         "generate" => generate(&args[1..]),
         "tag" => tag(app.library(), &args[1..]),
         "rate" => rate(app.albums(), &args[1..]),
-        "album" => album(app.library(), app.albums(), &args[1..]),
-        "suggestion" => suggestion(app.library(), app.metadata_review(), &args[1..]),
+        "album" => album(app.library_lifecycle(), app.albums(), &args[1..]),
+        "suggestion" => suggestion(app.library_lifecycle(), app.metadata_review(), &args[1..]),
         _ => Err(DomainError::InvalidGenerationParameters {
             message: format!("unsupported command: {command}"),
         }),
     }
 }
 
-fn init(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+fn init(service: &LibraryUseCase<LocalLibraryService>, args: &[String]) -> Result<(), DomainError> {
     let path = positional(args, 0, "library path")?;
     let name = option_value(args, "--name").unwrap_or_else(|| "Image Prompt Lab".to_string());
     let dry_run = has_flag(args, "--dry-run");
@@ -70,7 +70,10 @@ fn init(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainErro
     Ok(())
 }
 
-fn library(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+fn library(
+    service: &LibraryUseCase<LocalLibraryService>,
+    args: &[String],
+) -> Result<(), DomainError> {
     let Some(subcommand) = args.first().map(String::as_str) else {
         return Err(DomainError::InvalidGenerationParameters {
             message: "library subcommand is required".to_string(),
@@ -174,7 +177,10 @@ fn import(
     Ok(())
 }
 
-fn export(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError> {
+fn export(
+    service: &LibraryUseCase<LocalLibraryService>,
+    args: &[String],
+) -> Result<(), DomainError> {
     let library_path = required_option(args, "--library")?;
     let output_path = required_option(args, "--out")?;
     let album_id = option_value(args, "--album").map(imglab_core::AlbumId);
@@ -200,7 +206,7 @@ fn export(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainEr
 }
 
 fn search(
-    library_service: &LocalLibraryService,
+    library_service: &LibraryUseCase<LocalLibraryService>,
     search: &imglab_core::application::use_cases::albums::SearchUseCase<LocalLibraryService>,
     args: &[String],
 ) -> Result<(), DomainError> {
@@ -373,7 +379,7 @@ fn tag(service: &LocalLibraryService, args: &[String]) -> Result<(), DomainError
 }
 
 fn album(
-    library_service: &LocalLibraryService,
+    library_service: &LibraryUseCase<LocalLibraryService>,
     albums: &imglab_core::application::use_cases::albums::AlbumUseCase<LocalLibraryService>,
     args: &[String],
 ) -> Result<(), DomainError> {
@@ -419,7 +425,7 @@ fn album(
 }
 
 fn suggestion(
-    library_service: &LocalLibraryService,
+    library_service: &LibraryUseCase<LocalLibraryService>,
     metadata_review: &imglab_core::application::use_cases::metadata_review::ReviewMetadataSuggestionUseCase<
         LocalLibraryService,
     >,
