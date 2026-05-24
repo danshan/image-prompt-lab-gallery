@@ -86,6 +86,7 @@ pub(super) fn get_asset_detail(
         created_at: asset.created_at,
         updated_at: asset.updated_at,
         prompt: event.as_ref().map(|event| event.prompt.clone()),
+        prompt_generation_event_id: event.as_ref().map(|event| event.id.clone()),
         negative_prompt: event
             .as_ref()
             .and_then(|event| event.negative_prompt.clone()),
@@ -163,6 +164,7 @@ struct AssetDetailBase {
 
 #[derive(Debug, Clone)]
 struct GenerationEventDetail {
+    id: GenerationEventId,
     provider: String,
     provider_model: String,
     prompt: String,
@@ -216,6 +218,7 @@ fn load_generation_event_detail(
             params![event_id.0],
             |row| {
                 Ok(GenerationEventDetail {
+                    id: event_id.clone(),
                     provider: row.get(0)?,
                     provider_model: row.get(1)?,
                     prompt: row.get(2)?,

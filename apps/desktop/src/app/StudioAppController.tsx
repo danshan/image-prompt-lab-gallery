@@ -1148,12 +1148,7 @@ export function StudioAppController() {
       setRecoverableError("Save as Prompt requires a real library.");
       return;
     }
-    const focusedVersionId = detail.focusedVersionId ?? detail.currentVersionId;
-    const event =
-      detail.lineage.find((entry) => entry.version.id === focusedVersionId)?.generationEvent ??
-      detail.lineage.find((entry) => entry.generationEvent)?.generationEvent ??
-      null;
-    if (!event) {
+    if (!detail.promptGenerationEventId) {
       setRecoverableError("No generation event is available for this prompt snapshot.");
       return;
     }
@@ -1162,7 +1157,7 @@ export function StudioAppController() {
       const version = await invokeCommand<PromptVersion>("save_generation_prompt_as_prompt", {
         input: {
           libraryPath: library.rootPath,
-          generationEventId: event.id,
+          generationEventId: detail.promptGenerationEventId,
           name,
         },
       });

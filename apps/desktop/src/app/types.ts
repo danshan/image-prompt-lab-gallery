@@ -276,6 +276,7 @@ export type AssetDetail = {
   createdAt: string;
   updatedAt: string;
   prompt: string | null;
+  promptGenerationEventId?: string | null;
   negativePrompt: string | null;
   provider: string | null;
   modelLabel: string | null;

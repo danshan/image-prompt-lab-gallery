@@ -593,6 +593,58 @@ fn asset_detail_exposes_prompt_lineage_for_focused_generation_event() {
 }
 
 #[test]
+fn asset_detail_prompt_generation_event_id_tracks_latest_prompt_fallback() {
+    let root = test_root("asset-detail-prompt-event-fallback");
+    let registry = test_root("asset-detail-prompt-event-fallback-registry").join("registry.sqlite");
+    let service = LocalLibraryService::new(registry);
+    service
+        .create_library(CreateLibraryRequest {
+            root_path: root.clone(),
+            name: "Prompt Event Fallback".to_string(),
+        })
+        .expect("init library");
+
+    let source = test_root("asset-detail-prompt-event-fallback-source").join("image.png");
+    fs::create_dir_all(source.parent().expect("source parent")).expect("create source parent");
+    fs::write(&source, png_bytes(32, 32)).expect("write png");
+    let (asset, version) = service
+        .import_asset(ImportAssetRequest {
+            library_path: root.clone(),
+            source_path: source,
+        })
+        .expect("import asset");
+    let event = AssetService::record_generation_event(
+        &service,
+        CreateGenerationEventRequest {
+            library_path: root.clone(),
+            asset_id: Some(asset.id.clone()),
+            output_version_id: Some(version.id.clone()),
+            provider: "fake".to_string(),
+            provider_model: "fake-model".to_string(),
+            operation_type: GenerationOperation::TextToImage,
+            prompt: "Fallback prompt".to_string(),
+            negative_prompt: None,
+            input_asset_version_id: None,
+            prompt_version_id: None,
+            parameters_json: "{}".to_string(),
+            raw_request_json: None,
+            raw_response_json: None,
+            status: "completed".to_string(),
+            error_code: None,
+            error_message: None,
+        },
+    )
+    .expect("record generation event");
+
+    let detail = service
+        .get_asset_detail(&root, &asset.id, Some(&version.id))
+        .expect("asset detail");
+
+    assert_eq!(detail.prompt.as_deref(), Some("Fallback prompt"));
+    assert_eq!(detail.prompt_generation_event_id, Some(event.id));
+}
+
+#[test]
 fn save_generation_prompt_as_prompt_creates_new_prompt_version_without_rewriting_event() {
     use crate::application::ports::PromptRepository;
 

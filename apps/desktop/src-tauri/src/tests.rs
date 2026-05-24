@@ -155,6 +155,9 @@ fn maps_asset_detail_prompt_lineage() {
             created_at: "2026-05-24T00:00:00Z".to_string(),
             updated_at: "2026-05-24T00:00:00Z".to_string(),
             prompt: None,
+            prompt_generation_event_id: Some(imglab_core::GenerationEventId(
+                "generation-event-1".to_string(),
+            )),
             negative_prompt: None,
             provider: None,
             model_label: None,
@@ -187,6 +190,10 @@ fn maps_asset_detail_prompt_lineage() {
     );
 
     let lineage = view.prompt_lineage.expect("prompt lineage");
+    assert_eq!(
+        view.prompt_generation_event_id.as_deref(),
+        Some("generation-event-1")
+    );
     assert_eq!(lineage.prompt_id, "prompt-1");
     assert_eq!(lineage.prompt_name, "Lighting study");
     assert_eq!(lineage.prompt_version_id, "prompt-version-1");

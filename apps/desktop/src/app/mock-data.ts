@@ -239,6 +239,7 @@ export const mockDetail: AssetDetail = {
   updatedAt: "Today, 9:15 AM",
   prompt:
     "botanical study of exotic plants and flowers, neon line art glow, dark background, ultra detailed, high contrast, vibrant colors, elegant composition, digital illustration",
+  promptGenerationEventId: "event-botanical-3",
   negativePrompt: null,
   provider: "Midjourney",
   modelLabel: "v6.0",

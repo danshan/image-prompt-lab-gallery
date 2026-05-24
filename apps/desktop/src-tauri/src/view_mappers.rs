@@ -379,6 +379,7 @@ pub(crate) fn asset_detail_view(
         created_at: summary.created_at,
         updated_at: summary.updated_at,
         prompt: summary.prompt,
+        prompt_generation_event_id: summary.prompt_generation_event_id.map(|id| id.0),
         negative_prompt: summary.negative_prompt,
         provider: summary.provider,
         model_label: summary.model_label,

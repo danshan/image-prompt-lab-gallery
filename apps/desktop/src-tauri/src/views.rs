@@ -383,6 +383,7 @@ pub(crate) struct AssetDetailView {
     pub(crate) created_at: String,
     pub(crate) updated_at: String,
     pub(crate) prompt: Option<String>,
+    pub(crate) prompt_generation_event_id: Option<String>,
     pub(crate) negative_prompt: Option<String>,
     pub(crate) provider: Option<String>,
     pub(crate) model_label: Option<String>,

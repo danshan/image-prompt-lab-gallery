@@ -810,6 +810,7 @@ pub struct AssetDetailView {
     pub created_at: String,
     pub updated_at: String,
     pub prompt: Option<String>,
+    pub prompt_generation_event_id: Option<GenerationEventId>,
     pub negative_prompt: Option<String>,
     pub provider: Option<String>,
     pub model_label: Option<String>,
