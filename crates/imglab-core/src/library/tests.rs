@@ -4,11 +4,12 @@ use crate::MetadataReviewService;
 use crate::{
     AlbumId, AlbumKind, AlbumService, AppendTaskOutputRequest, AssetService,
     BatchAddAssetsToAlbumRequest, BatchCreateTasksRequest, BatchReviewMetadataSuggestionRequest,
-    CreateTaskInput, GalleryAlbumFilter, GalleryQuery, GalleryReadService, GallerySort,
-    GenerateImageRequest, GeneratedImage, GenerationResult, ImageProvider, ImportAssetRequest,
-    ReorderAlbumItemsRequest, ReorderAlbumsRequest, ReviewMetadataSuggestionRequest,
-    ReviewStatusFilter, SearchQuery, SearchService, TaskOutputType, TaskService, TaskStatus,
-    TaskType, UpdateAssetMetadataRequest, UpdateTaskStatusRequest,
+    CreatePromptDocumentRequest, CreateTaskInput, GalleryAlbumFilter, GalleryQuery,
+    GalleryReadService, GallerySort, GenerateImageRequest, GeneratedImage, GenerationResult,
+    ImageProvider, ImportAssetRequest, ListPromptVersionsRequest, ReorderAlbumItemsRequest,
+    ReorderAlbumsRequest, ReviewMetadataSuggestionRequest, ReviewStatusFilter,
+    SavePromptVersionRequest, SearchQuery, SearchService, TaskOutputType, TaskService, TaskStatus,
+    TaskType, UpdateAssetMetadataRequest, UpdatePromptDraftRequest, UpdateTaskStatusRequest,
 };
 use std::time::Instant;
 use uuid::Uuid;
@@ -108,6 +109,122 @@ fn prompt_template_rendering_uses_runtime_values() {
     .expect("render prompt");
 
     assert_eq!(rendered, "A fern study");
+}
+
+#[test]
+fn migration_adds_prompt_workspace_schema_without_backfilling_documents() {
+    let root = test_root("prompt-workspace-migration");
+    let registry = test_root("prompt-workspace-migration-registry").join("registry.sqlite");
+    let service = LocalLibraryService::new(registry);
+    service
+        .create_library(CreateLibraryRequest {
+            root_path: root.clone(),
+            name: "Prompt Migration".to_string(),
+        })
+        .expect("init library");
+
+    let connection = Connection::open(LocalLibraryService::database_path(&root)).expect("open db");
+    let prompt_table_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('prompt_documents', 'prompt_versions')",
+            [],
+            |row| row.get(0),
+        )
+        .expect("prompt tables");
+    assert_eq!(prompt_table_count, 2);
+
+    let prompt_link_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('generation_events') WHERE name = 'prompt_version_id'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("prompt link column");
+    assert_eq!(prompt_link_count, 1);
+
+    let prompt_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM prompt_documents", [], |row| {
+            row.get(0)
+        })
+        .expect("prompt count");
+    assert_eq!(prompt_count, 0);
+}
+
+#[test]
+fn prompt_repository_save_version_keeps_previous_version_immutable() {
+    use crate::application::ports::PromptRepository;
+
+    let root = test_root("prompt-version-immutable");
+    let registry = test_root("prompt-version-immutable-registry").join("registry.sqlite");
+    let service = LocalLibraryService::new(registry);
+    service
+        .create_library(CreateLibraryRequest {
+            root_path: root.clone(),
+            name: "Prompt Versions".to_string(),
+        })
+        .expect("init library");
+
+    let created = service
+        .create_prompt_document(CreatePromptDocumentRequest {
+            library_path: root.clone(),
+            name: "Botanical".to_string(),
+            draft_body: "A {{subject}} study".to_string(),
+            draft_negative_prompt: Some("blur".to_string()),
+            draft_style_prompt: Some("macro".to_string()),
+            variables_schema_json: r#"[{"name":"subject","required":true}]"#.to_string(),
+            default_values_json: r#"{"subject":"orchid"}"#.to_string(),
+            parameter_preset_json: r#"{"provider":"fake"}"#.to_string(),
+            notes: Some("first draft".to_string()),
+        })
+        .expect("create prompt");
+
+    let first_version = service
+        .save_prompt_version(SavePromptVersionRequest {
+            library_path: root.clone(),
+            prompt_id: created.id.0.clone(),
+        })
+        .expect("save first version");
+
+    service
+        .update_prompt_draft(UpdatePromptDraftRequest {
+            library_path: root.clone(),
+            prompt_id: created.id.0.clone(),
+            name: "Botanical Revised".to_string(),
+            draft_body: "A {{subject}} field study".to_string(),
+            draft_negative_prompt: Some("noise".to_string()),
+            draft_style_prompt: Some("editorial".to_string()),
+            variables_schema_json: r#"[{"name":"subject","required":true}]"#.to_string(),
+            default_values_json: r#"{"subject":"fern"}"#.to_string(),
+            parameter_preset_json: r#"{"provider":"fake","model":"v2"}"#.to_string(),
+            notes: Some("second draft".to_string()),
+        })
+        .expect("update draft");
+
+    let second_version = service
+        .save_prompt_version(SavePromptVersionRequest {
+            library_path: root.clone(),
+            prompt_id: created.id.0.clone(),
+        })
+        .expect("save second version");
+
+    let versions = service
+        .list_prompt_versions(ListPromptVersionsRequest {
+            library_path: root,
+            prompt_id: created.id.0.clone(),
+        })
+        .expect("list versions");
+
+    assert_eq!(first_version.version_number, 1);
+    assert_eq!(second_version.version_number, 2);
+    assert_eq!(versions.len(), 2);
+    assert_eq!(versions[0].version_number, 2);
+    assert_eq!(versions[1].id, first_version.id);
+    assert_eq!(versions[1].body, "A {{subject}} study");
+    assert_eq!(versions[1].negative_prompt.as_deref(), Some("blur"));
+    assert_eq!(versions[1].style_prompt.as_deref(), Some("macro"));
+    assert_eq!(versions[1].default_values_json, r#"{"subject":"orchid"}"#);
+    assert_eq!(versions[1].parameter_preset_json, r#"{"provider":"fake"}"#);
+    assert_eq!(versions[1].notes.as_deref(), Some("first draft"));
 }
 
 #[test]

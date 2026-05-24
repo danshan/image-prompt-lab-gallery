@@ -280,6 +280,52 @@ pub struct PromptOutputHistoryItem {
 }
 
 #[derive(Debug, Clone)]
+pub struct CreatePromptDocumentRequest {
+    pub library_path: PathBuf,
+    pub name: String,
+    pub draft_body: String,
+    pub draft_negative_prompt: Option<String>,
+    pub draft_style_prompt: Option<String>,
+    pub variables_schema_json: String,
+    pub default_values_json: String,
+    pub parameter_preset_json: String,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdatePromptDraftRequest {
+    pub library_path: PathBuf,
+    pub prompt_id: String,
+    pub name: String,
+    pub draft_body: String,
+    pub draft_negative_prompt: Option<String>,
+    pub draft_style_prompt: Option<String>,
+    pub variables_schema_json: String,
+    pub default_values_json: String,
+    pub parameter_preset_json: String,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SavePromptVersionRequest {
+    pub library_path: PathBuf,
+    pub prompt_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ListPromptDocumentsRequest {
+    pub library_path: PathBuf,
+    pub query: Option<String>,
+    pub include_archived: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct ListPromptVersionsRequest {
+    pub library_path: PathBuf,
+    pub prompt_id: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct CreateTaskInput {
     pub task_type: TaskType,
     pub provider: Option<String>,

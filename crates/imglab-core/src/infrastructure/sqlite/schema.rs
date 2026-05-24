@@ -7,7 +7,7 @@ fn database_error(error: rusqlite::Error) -> DomainError {
     }
 }
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 7;
+pub const CURRENT_SCHEMA_VERSION: u32 = 8;
 
 pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
     let user_version: u32 = connection
@@ -67,6 +67,7 @@ pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
                 prompt TEXT NOT NULL,
                 negative_prompt TEXT,
                 input_asset_version_id TEXT,
+                prompt_version_id TEXT,
                 parameters_json TEXT NOT NULL,
                 raw_request_json TEXT,
                 raw_response_json TEXT,
@@ -75,6 +76,40 @@ pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
                 completed_at TEXT,
                 error_code TEXT,
                 error_message TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS prompt_documents (
+                id TEXT PRIMARY KEY,
+                library_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                status TEXT NOT NULL,
+                draft_body TEXT NOT NULL,
+                draft_negative_prompt TEXT,
+                draft_style_prompt TEXT,
+                draft_variables_schema_json TEXT NOT NULL,
+                draft_default_values_json TEXT NOT NULL,
+                draft_parameter_preset_json TEXT NOT NULL,
+                notes TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                archived_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS prompt_versions (
+                id TEXT PRIMARY KEY,
+                prompt_id TEXT NOT NULL,
+                version_number INTEGER NOT NULL,
+                body TEXT NOT NULL,
+                negative_prompt TEXT,
+                style_prompt TEXT,
+                variables_schema_json TEXT NOT NULL,
+                default_values_json TEXT NOT NULL,
+                parameter_preset_json TEXT NOT NULL,
+                notes TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(prompt_id) REFERENCES prompt_documents(id),
+                UNIQUE(prompt_id, version_number)
             );
 
             CREATE TABLE IF NOT EXISTS metadata_suggestions (
@@ -228,6 +263,12 @@ pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
             CREATE INDEX IF NOT EXISTS idx_generation_events_asset_started
                 ON generation_events(asset_id, started_at DESC, id DESC);
 
+            CREATE INDEX IF NOT EXISTS idx_prompt_documents_library_status
+                ON prompt_documents(library_id, status, updated_at DESC, id DESC);
+
+            CREATE INDEX IF NOT EXISTS idx_prompt_versions_prompt_number
+                ON prompt_versions(prompt_id, version_number DESC);
+
             CREATE INDEX IF NOT EXISTS idx_metadata_suggestions_asset_status
                 ON metadata_suggestions(asset_id, status);
 
@@ -273,6 +314,23 @@ pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
             .execute("ALTER TABLE assets ADD COLUMN schema_prompt TEXT", [])
             .map_err(database_error)?;
     }
+    if !column_exists(connection, "generation_events", "prompt_version_id")? {
+        connection
+            .execute(
+                "ALTER TABLE generation_events ADD COLUMN prompt_version_id TEXT",
+                [],
+            )
+            .map_err(database_error)?;
+    }
+    connection
+        .execute(
+            "
+            CREATE INDEX IF NOT EXISTS idx_generation_events_prompt_version
+                ON generation_events(prompt_version_id, started_at DESC, id DESC)
+            ",
+            [],
+        )
+        .map_err(database_error)?;
     if !column_exists(
         connection,
         "metadata_suggestions",

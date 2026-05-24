@@ -90,6 +90,33 @@ pub trait GenerationEventRepository {
     ) -> DomainResult<GenerationEventSummary>;
 }
 
+pub trait PromptRepository {
+    fn create_prompt_document(
+        &self,
+        request: crate::CreatePromptDocumentRequest,
+    ) -> DomainResult<crate::PromptDocumentView>;
+
+    fn update_prompt_draft(
+        &self,
+        request: crate::UpdatePromptDraftRequest,
+    ) -> DomainResult<crate::PromptDocumentView>;
+
+    fn save_prompt_version(
+        &self,
+        request: crate::SavePromptVersionRequest,
+    ) -> DomainResult<crate::PromptVersionView>;
+
+    fn list_prompt_documents(
+        &self,
+        request: crate::ListPromptDocumentsRequest,
+    ) -> DomainResult<Vec<crate::PromptDocumentView>>;
+
+    fn list_prompt_versions(
+        &self,
+        request: crate::ListPromptVersionsRequest,
+    ) -> DomainResult<Vec<crate::PromptVersionView>>;
+}
+
 pub trait GalleryRepository {
     fn query_gallery(
         &self,

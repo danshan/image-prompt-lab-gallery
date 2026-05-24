@@ -4,6 +4,7 @@ pub mod gallery;
 pub mod generation;
 pub mod library;
 pub mod metadata;
+pub mod prompts;
 pub mod schema;
 pub mod search;
 pub mod tasks;
