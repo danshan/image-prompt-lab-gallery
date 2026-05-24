@@ -376,6 +376,7 @@ fn generation_event_request(
         prompt: request.parameters.prompt.clone(),
         negative_prompt: request.parameters.negative_prompt.clone(),
         input_asset_version_id: details.input_asset_version_id,
+        prompt_version_id: request.parameters.prompt_version_id.clone(),
         parameters_json: request.parameters.parameters_json.clone(),
         raw_request_json: details.raw_request_json,
         raw_response_json: details.raw_response_json,
@@ -543,6 +544,7 @@ mod tests {
                 provider_model: request.provider_model,
                 operation_type: request.operation_type,
                 prompt: request.prompt,
+                prompt_version_id: request.prompt_version_id,
                 parameters_json: request.parameters_json,
                 status: request.status,
             })
@@ -762,6 +764,7 @@ mod tests {
                 negative_prompt: None,
                 operation: GenerationOperation::TextToImage,
                 input_version_id: None,
+                prompt_version_id: None,
                 parameters_json: "{}".to_string(),
             },
             input_file: None,

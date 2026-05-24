@@ -118,6 +118,7 @@ pub struct GenerationParameters {
     pub negative_prompt: Option<String>,
     pub operation: GenerationOperation,
     pub input_version_id: Option<AssetVersionId>,
+    pub prompt_version_id: Option<PromptVersionId>,
     pub parameters_json: String,
 }
 
@@ -196,6 +197,7 @@ pub struct CreateGenerationEventRequest {
     pub prompt: String,
     pub negative_prompt: Option<String>,
     pub input_asset_version_id: Option<AssetVersionId>,
+    pub prompt_version_id: Option<PromptVersionId>,
     pub parameters_json: String,
     pub raw_request_json: Option<String>,
     pub raw_response_json: Option<String>,
@@ -213,6 +215,7 @@ pub struct GenerationEventSummary {
     pub provider_model: String,
     pub operation_type: GenerationOperation,
     pub prompt: String,
+    pub prompt_version_id: Option<PromptVersionId>,
     pub parameters_json: String,
     pub status: String,
 }

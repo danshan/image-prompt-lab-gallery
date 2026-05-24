@@ -123,6 +123,7 @@ where
                     prompt: parameters.prompt.clone(),
                     negative_prompt: parameters.negative_prompt.clone(),
                     input_asset_version_id: Some(reference_version.id.clone()),
+                    prompt_version_id: parameters.prompt_version_id.clone(),
                     parameters_json: parameters.parameters_json.clone(),
                     raw_request_json: None,
                     raw_response_json: None,
@@ -166,6 +167,7 @@ where
                         prompt: parameters.prompt.clone(),
                         negative_prompt: parameters.negative_prompt.clone(),
                         input_asset_version_id: Some(parent_version_id.clone()),
+                        prompt_version_id: parameters.prompt_version_id.clone(),
                         parameters_json: parameters.parameters_json.clone(),
                         raw_request_json: Some(result.raw_request_json.clone()),
                         raw_response_json: Some(result.raw_response_json.clone()),
@@ -198,6 +200,7 @@ where
                         prompt: parameters.prompt.clone(),
                         negative_prompt: parameters.negative_prompt.clone(),
                         input_asset_version_id: input_asset_version_id.clone(),
+                        prompt_version_id: parameters.prompt_version_id.clone(),
                         parameters_json: parameters.parameters_json.clone(),
                         raw_request_json: Some(result.raw_request_json.clone()),
                         raw_response_json: Some(result.raw_response_json.clone()),
@@ -317,6 +320,7 @@ pub fn prepare_generation_request(
         negative_prompt: input.negative_prompt,
         operation,
         input_version_id: input.input_version_id,
+        prompt_version_id: None,
         parameters_json: input.parameters_json.unwrap_or_else(|| "{}".to_string()),
     };
 

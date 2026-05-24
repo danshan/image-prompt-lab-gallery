@@ -143,6 +143,7 @@ mod tests {
             negative_prompt: None,
             operation: GenerationOperation::TextToImage,
             input_version_id: None,
+            prompt_version_id: None,
             parameters_json: "{}".to_string(),
         }
     }

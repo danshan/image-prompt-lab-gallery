@@ -209,6 +209,7 @@ mod tests {
                 provider_model: request.provider_model,
                 operation_type: request.operation_type,
                 prompt: request.prompt,
+                prompt_version_id: request.prompt_version_id,
                 parameters_json: request.parameters_json,
                 status: request.status,
             })
@@ -386,6 +387,7 @@ mod tests {
                 prompt: "prompt".to_string(),
                 negative_prompt: None,
                 input_asset_version_id: None,
+                prompt_version_id: None,
                 parameters_json: "{}".to_string(),
                 raw_request_json: None,
                 raw_response_json: None,

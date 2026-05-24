@@ -1052,6 +1052,7 @@ fn records_event_and_child_version_lineage() {
             prompt: "make a variant".to_string(),
             negative_prompt: None,
             input_asset_version_id: Some(parent.id.clone()),
+            prompt_version_id: None,
             parameters_json: "{}".to_string(),
             raw_request_json: Some("{\"prompt\":\"make a variant\"}".to_string()),
             raw_response_json: Some("{\"ok\":true}".to_string()),
@@ -1123,6 +1124,7 @@ fn generation_service_saves_fake_provider_output() {
                 negative_prompt: None,
                 operation: GenerationOperation::TextToImage,
                 input_version_id: None,
+                prompt_version_id: None,
                 parameters_json: "{}".to_string(),
             },
         })
@@ -1214,6 +1216,7 @@ fn generation_service_imports_uploaded_reference_as_separate_asset() {
                 negative_prompt: None,
                 operation: GenerationOperation::ImageToImage,
                 input_version_id: None,
+                prompt_version_id: None,
                 parameters_json: "{}".to_string(),
             },
         })
@@ -1305,6 +1308,7 @@ fn generation_service_creates_existing_version_variation() {
                 negative_prompt: None,
                 operation: GenerationOperation::ImageToImage,
                 input_version_id: Some(parent.id.clone()),
+                prompt_version_id: None,
                 parameters_json: "{}".to_string(),
             },
         })
@@ -1349,6 +1353,7 @@ fn uploaded_reference_provider_failure_keeps_reference_without_output() {
                 negative_prompt: None,
                 operation: GenerationOperation::ImageToImage,
                 input_version_id: None,
+                prompt_version_id: None,
                 parameters_json: "{}".to_string(),
             },
         })
@@ -1450,6 +1455,7 @@ fn generation_service_persists_output_dimensions() {
                 negative_prompt: None,
                 operation: GenerationOperation::TextToImage,
                 input_version_id: None,
+                prompt_version_id: None,
                 parameters_json: "{}".to_string(),
             },
         })
@@ -1693,6 +1699,7 @@ fn manages_manual_album_and_searches_assets() {
             prompt: "tiny icon sheet".to_string(),
             negative_prompt: None,
             input_asset_version_id: None,
+            prompt_version_id: None,
             parameters_json: "{}".to_string(),
             raw_request_json: None,
             raw_response_json: None,
@@ -1802,6 +1809,7 @@ fn gallery_query_filters_and_sorts_cards() {
             prompt: "neon botanical study".to_string(),
             negative_prompt: None,
             input_asset_version_id: None,
+            prompt_version_id: None,
             parameters_json: "{}".to_string(),
             raw_request_json: None,
             raw_response_json: None,
@@ -1888,6 +1896,7 @@ fn gallery_query_aggregates_versions_events_tags_and_review_counts() {
             prompt: "aggregate prompt".to_string(),
             negative_prompt: None,
             input_asset_version_id: Some(parent.id.clone()),
+            prompt_version_id: None,
             parameters_json: "{}".to_string(),
             raw_request_json: None,
             raw_response_json: None,
@@ -2158,6 +2167,7 @@ fn asset_detail_aggregates_lineage_and_file_context() {
             prompt: "make a variant".to_string(),
             negative_prompt: Some("blur".to_string()),
             input_asset_version_id: Some(parent.id.clone()),
+            prompt_version_id: None,
             parameters_json: "{\"seed\":7}".to_string(),
             raw_request_json: None,
             raw_response_json: None,
@@ -2268,6 +2278,7 @@ fn generation_service_rejects_unsupported_provider_capability() {
                 negative_prompt: None,
                 operation: GenerationOperation::ImageToImage,
                 input_version_id: Some(version.id),
+                prompt_version_id: None,
                 parameters_json: "{}".to_string(),
             },
         })
@@ -2310,6 +2321,7 @@ fn uploaded_reference_capability_failure_does_not_import_reference() {
                 negative_prompt: None,
                 operation: GenerationOperation::ImageToImage,
                 input_version_id: None,
+                prompt_version_id: None,
                 parameters_json: "{}".to_string(),
             },
         })
@@ -2770,6 +2782,7 @@ fn smart_album_uses_shared_gallery_filters() {
             prompt: "neon botanical study".to_string(),
             negative_prompt: None,
             input_asset_version_id: None,
+            prompt_version_id: None,
             parameters_json: "{}".to_string(),
             raw_request_json: None,
             raw_response_json: None,

@@ -416,6 +416,7 @@ fn generation_event_summary(
         provider_model: request.provider_model,
         operation_type: request.operation_type,
         prompt: request.prompt,
+        prompt_version_id: request.prompt_version_id,
         parameters_json: request.parameters_json,
         status: request.status,
     }

@@ -90,6 +90,7 @@ impl AssetService for LocalLibraryService {
             provider_model: request.provider_model,
             operation_type: request.operation_type,
             prompt: request.prompt,
+            prompt_version_id: request.prompt_version_id,
             parameters_json: request.parameters_json,
             status: request.status,
         })
@@ -507,6 +508,7 @@ pub(super) fn load_generation_event(
                     provider_model: row.get(4)?,
                     operation_type,
                     prompt: row.get(6)?,
+                    prompt_version_id: None,
                     parameters_json: row.get(7)?,
                     status: row.get(8)?,
                 })
