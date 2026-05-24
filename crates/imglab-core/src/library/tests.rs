@@ -6,11 +6,11 @@ use crate::{
     BatchAddAssetsToAlbumRequest, BatchCreateTasksRequest, BatchReviewMetadataSuggestionRequest,
     CreatePromptDocumentRequest, CreateTaskInput, GalleryAlbumFilter, GalleryQuery,
     GalleryReadService, GallerySort, GenerateImageRequest, GeneratedImage, GenerationResult,
-    ImageProvider, ImportAssetRequest, ListPromptVersionsRequest, PromptVersionId,
-    ReorderAlbumItemsRequest, ReorderAlbumsRequest, ReviewMetadataSuggestionRequest,
-    ReviewStatusFilter, SavePromptVersionRequest, SearchQuery, SearchService, TaskOutputType,
-    TaskService, TaskStatus, TaskType, UpdateAssetMetadataRequest, UpdatePromptDraftRequest,
-    UpdateTaskStatusRequest,
+    ImageProvider, ImportAssetRequest, ListPromptDocumentsRequest, ListPromptVersionsRequest,
+    PromptVersionId, ReorderAlbumItemsRequest, ReorderAlbumsRequest,
+    ReviewMetadataSuggestionRequest, ReviewStatusFilter, SavePromptVersionRequest, SearchQuery,
+    SearchService, TaskOutputType, TaskService, TaskStatus, TaskType, UpdateAssetMetadataRequest,
+    UpdatePromptDraftRequest, UpdateTaskStatusRequest,
 };
 use std::time::Instant;
 use uuid::Uuid;
@@ -242,29 +242,107 @@ fn prompt_repository_rejects_invalid_json_without_persisting_document() {
         })
         .expect("init library");
 
-    let error = service
+    let invalid_create_cases = [
+        ("variables_schema_json", "{not-json", "{}", "{}"),
+        ("default_values_json", "[]", "{not-json", "{}"),
+        ("parameter_preset_json", "[]", "{}", "{not-json"),
+    ];
+    for (field_name, variables_schema_json, default_values_json, parameter_preset_json) in
+        invalid_create_cases
+    {
+        let error = service
+            .create_prompt_document(CreatePromptDocumentRequest {
+                library_path: root.clone(),
+                name: format!("Broken {field_name}"),
+                draft_body: "A {{subject}} study".to_string(),
+                draft_negative_prompt: None,
+                draft_style_prompt: None,
+                variables_schema_json: variables_schema_json.to_string(),
+                default_values_json: default_values_json.to_string(),
+                parameter_preset_json: parameter_preset_json.to_string(),
+                notes: None,
+            })
+            .expect_err("invalid json should fail");
+
+        assert!(
+            error.to_string().contains(field_name),
+            "error should name {field_name}: {error}"
+        );
+        assert_eq!(prompt_document_count(&root), 0);
+    }
+
+    let created = service
         .create_prompt_document(CreatePromptDocumentRequest {
             library_path: root.clone(),
-            name: "Broken".to_string(),
+            name: "Stable".to_string(),
             draft_body: "A {{subject}} study".to_string(),
             draft_negative_prompt: None,
             draft_style_prompt: None,
-            variables_schema_json: "{not-json".to_string(),
+            variables_schema_json: r#"[{"name":"subject","required":true}]"#.to_string(),
             default_values_json: "{}".to_string(),
             parameter_preset_json: "{}".to_string(),
-            notes: None,
+            notes: Some("unchanged".to_string()),
         })
-        .expect_err("invalid json should fail");
+        .expect("create valid prompt");
 
-    assert!(error.to_string().contains("variables_schema_json"));
+    let invalid_update_cases = [
+        ("variables_schema_json", "{not-json", "{}", "{}"),
+        ("default_values_json", "[]", "{not-json", "{}"),
+        ("parameter_preset_json", "[]", "{}", "{not-json"),
+    ];
+    for (field_name, variables_schema_json, default_values_json, parameter_preset_json) in
+        invalid_update_cases
+    {
+        let error = service
+            .update_prompt_draft(UpdatePromptDraftRequest {
+                library_path: root.clone(),
+                prompt_id: created.id.0.clone(),
+                name: format!("Changed {field_name}"),
+                draft_body: "Changed body".to_string(),
+                draft_negative_prompt: Some("changed negative".to_string()),
+                draft_style_prompt: Some("changed style".to_string()),
+                variables_schema_json: variables_schema_json.to_string(),
+                default_values_json: default_values_json.to_string(),
+                parameter_preset_json: parameter_preset_json.to_string(),
+                notes: Some("changed".to_string()),
+            })
+            .expect_err("invalid update json should fail");
 
-    let connection = Connection::open(LocalLibraryService::database_path(&root)).expect("open db");
-    let prompt_count: i64 = connection
+        assert!(
+            error.to_string().contains(field_name),
+            "error should name {field_name}: {error}"
+        );
+
+        let documents = service
+            .list_prompt_documents(ListPromptDocumentsRequest {
+                library_path: root.clone(),
+                query: None,
+                include_archived: true,
+            })
+            .expect("list documents");
+        assert_eq!(documents.len(), 1);
+        assert_eq!(documents[0].id, created.id);
+        assert_eq!(documents[0].name, "Stable");
+        assert_eq!(documents[0].draft_body, "A {{subject}} study");
+        assert_eq!(documents[0].draft_negative_prompt, None);
+        assert_eq!(documents[0].draft_style_prompt, None);
+        assert_eq!(
+            documents[0].variables_schema_json,
+            r#"[{"name":"subject","required":true}]"#
+        );
+        assert_eq!(documents[0].default_values_json, "{}");
+        assert_eq!(documents[0].parameter_preset_json, "{}");
+        assert_eq!(documents[0].notes.as_deref(), Some("unchanged"));
+    }
+}
+
+fn prompt_document_count(root: &Path) -> i64 {
+    let connection = Connection::open(LocalLibraryService::database_path(root)).expect("open db");
+    connection
         .query_row("SELECT COUNT(*) FROM prompt_documents", [], |row| {
             row.get(0)
         })
-        .expect("prompt count");
-    assert_eq!(prompt_count, 0);
+        .expect("prompt count")
 }
 
 #[test]
@@ -328,6 +406,66 @@ fn generation_event_round_trips_prompt_version_id_through_lineage() {
             .and_then(|event| event.prompt_version_id.as_ref()),
         Some(&prompt_version_id)
     );
+}
+
+#[test]
+fn generation_event_round_trips_missing_prompt_version_id_as_none() {
+    use crate::application::ports::AssetRepository;
+
+    let root = test_root("prompt-generation-event-null-link");
+    let registry = test_root("prompt-generation-event-null-link-registry").join("registry.sqlite");
+    let service = LocalLibraryService::new(registry);
+    service
+        .create_library(CreateLibraryRequest {
+            root_path: root.clone(),
+            name: "Prompt Event Null Link".to_string(),
+        })
+        .expect("init library");
+
+    let source = test_root("prompt-generation-event-null-link-source").join("image.png");
+    fs::create_dir_all(source.parent().expect("source parent")).expect("create source parent");
+    fs::write(&source, png_bytes(32, 32)).expect("write png");
+    let (asset, version) = service
+        .import_asset(ImportAssetRequest {
+            library_path: root.clone(),
+            source_path: source,
+        })
+        .expect("import asset");
+    let event = AssetService::record_generation_event(
+        &service,
+        CreateGenerationEventRequest {
+            library_path: root.clone(),
+            asset_id: Some(asset.id.clone()),
+            output_version_id: Some(version.id.clone()),
+            provider: "fake".to_string(),
+            provider_model: "fake-model".to_string(),
+            operation_type: GenerationOperation::TextToImage,
+            prompt: "legacy prompt".to_string(),
+            negative_prompt: None,
+            input_asset_version_id: None,
+            prompt_version_id: None,
+            parameters_json: "{}".to_string(),
+            raw_request_json: None,
+            raw_response_json: None,
+            status: "completed".to_string(),
+            error_code: None,
+            error_message: None,
+        },
+    )
+    .expect("record generation event");
+    service
+        .mark_version_generated(&root, &asset.id, &version.id, &event.id)
+        .expect("mark generated");
+
+    let lineage = service
+        .get_lineage(&root, &version.id)
+        .expect("load lineage");
+    let event = lineage[0]
+        .generation_event
+        .as_ref()
+        .expect("lineage generation event");
+
+    assert!(event.prompt_version_id.is_none());
 }
 
 #[test]
