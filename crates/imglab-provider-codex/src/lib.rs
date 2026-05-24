@@ -501,6 +501,7 @@ mod tests {
             model: "imagegen".to_string(),
             prompt: prompt.to_string(),
             negative_prompt: None,
+            prompt_version_id: None,
             operation: GenerationOperation::TextToImage,
             input_version_id: None,
             parameters_json: "{}".to_string(),
