@@ -1,4 +1,5 @@
 use super::*;
+use crate::commands::daemon::generation_draft_to_daemon_task;
 
 #[test]
 fn maps_gallery_sort_input() {
@@ -84,4 +85,37 @@ fn rejects_relative_library_path() {
 
     assert_eq!(error.code, "InvalidPath");
     assert!(error.recoverable);
+}
+
+#[test]
+fn generation_draft_preserves_prompt_version_link() {
+    let draft: GenerationTaskDraftInput = serde_json::from_value(serde_json::json!({
+        "provider": "fake",
+        "prompt": "rendered prompt",
+        "negativePrompt": "avoid blur",
+        "promptVersionId": "prompt-version-1",
+        "parametersJson": "{\"steps\":24}"
+    }))
+    .expect("draft");
+
+    let task = generation_draft_to_daemon_task(draft).expect("task");
+
+    assert_eq!(task.input["promptVersionId"], "prompt-version-1");
+    assert_eq!(task.input["prompt"], "rendered prompt");
+    assert_eq!(task.input["negativePrompt"], "avoid blur");
+    assert_eq!(task.input["parametersJson"]["steps"], 24);
+}
+
+#[test]
+fn generation_draft_without_prompt_version_remains_legacy_compatible() {
+    let draft: GenerationTaskDraftInput = serde_json::from_value(serde_json::json!({
+        "provider": "fake",
+        "prompt": "legacy prompt"
+    }))
+    .expect("draft");
+
+    let task = generation_draft_to_daemon_task(draft).expect("task");
+
+    assert!(task.input["promptVersionId"].is_null());
+    assert_eq!(task.input["prompt"], "legacy prompt");
 }

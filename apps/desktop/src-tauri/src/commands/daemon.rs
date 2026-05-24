@@ -119,6 +119,7 @@ pub(crate) fn generation_draft_to_daemon_task(
             serde_json::json!({
                 "prompt": input.prompt,
                 "negativePrompt": input.negative_prompt,
+                "promptVersionId": input.prompt_version_id,
                 "inputFile": input.input_file,
                 "inputVersionId": input.input_version_id,
                 "parametersJson": parameters,
