@@ -86,6 +86,29 @@ export {
   type PromptRunForm,
 } from "./app/workflows/prompts/state.js";
 export {
+  dictionaries,
+  type Dictionary,
+  type Locale,
+} from "./app/i18n/dictionaries.js";
+export {
+  formatBytes,
+  formatCount,
+  formatStatusLabel,
+} from "./app/i18n/formatters.js";
+export {
+  nextLocale,
+  normalizeLocale,
+} from "./app/i18n/use-locale.js";
+export {
+  nextThemePreference,
+  normalizeThemePreference,
+} from "./app/design-system/theme.js";
+export {
+  closeDrawerForWorkspaceChange,
+  drawerPresentationForMode,
+  responsiveModeForWidth,
+} from "./app/shell/state.js";
+export {
   defaultSettingsSection,
   libraryMaintenanceActions,
   libraryPathExists,

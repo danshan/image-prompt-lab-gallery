@@ -5,6 +5,7 @@ import { StarRatingDisplay } from "../../components/rating";
 import { thumbnailImageStyle, thumbnailStyle } from "../../utils";
 import { formatVersionTreeSummary, toggleGalleryTag, type GalleryQueryState } from "../../workflows/gallery";
 import type { GalleryAsset, LightboxImage } from "../../types";
+import type { Dictionary } from "../../i18n/dictionaries";
 
 export function GalleryWorkspace({
   assets,
@@ -14,9 +15,11 @@ export function GalleryWorkspace({
   availableTags,
   onSelect,
   onToggleAssetSelection,
+  onClearSelection,
   onQueryChange,
   onRequestReview,
   onPreviewImage,
+  dictionary,
 }: {
   assets: GalleryAsset[];
   selectedAssetId: string;
@@ -25,13 +28,16 @@ export function GalleryWorkspace({
   availableTags: string[];
   onSelect: (id: string) => void;
   onToggleAssetSelection: (id: string) => void;
+  onClearSelection: () => void;
   onQueryChange: (query: GalleryQueryState) => void;
   onRequestReview: (asset: GalleryAsset) => void;
   onPreviewImage: (image: LightboxImage) => void;
+  dictionary: Dictionary;
 }) {
   if (assets.length === 0) {
-    return <div className="empty-state">No assets match the current query.</div>;
+    return <div className="empty-state">{dictionary.workflow.noAssetsMatch}</div>;
   }
+  const selectedAssets = assets.filter((asset) => selectedAssetIds.includes(asset.id));
   return (
     <>
       <div className="tag-filter-strip">
@@ -45,6 +51,15 @@ export function GalleryWorkspace({
           </button>
         ))}
       </div>
+      {selectedAssets.length > 0 && (
+        <section className="selection-action-bar" aria-label={dictionary.workflow.selectionActions}>
+          <span>{selectedAssets.length} {dictionary.workflow.selected}</span>
+          <button className="secondary-button" onClick={() => onRequestReview(selectedAssets[0])}>
+            {dictionary.workflow.reviewFirst}
+          </button>
+          <button onClick={onClearSelection}>{dictionary.workflow.clearSelection}</button>
+        </section>
+      )}
       <section className="gallery-grid">
         {assets.map((asset, index) => (
           <article
@@ -71,18 +86,21 @@ export function GalleryWorkspace({
                   if (asset.imagePath) {
                     onPreviewImage({
                       path: asset.imagePath,
-                      label: asset.title ?? "Generated image",
+                      label: asset.title ?? dictionary.workflow.generatedImage,
                     });
                   }
                 }}
+                altLabel={dictionary.workflow.generatedImage}
+                previewLabel={dictionary.workflow.openOriginalImagePreview}
+                unavailableLabel={dictionary.workflow.imagePreviewUnavailable}
               />
               <span className="asset-title-row">
-                <span className="asset-title">{asset.title ?? "Untitled"}</span>
+                <span className="asset-title">{asset.title ?? dictionary.workflow.untitled}</span>
                 <span>{asset.currentVersionTreeName ?? asset.currentVersionName ?? asset.versionLabel ?? "v1"}</span>
               </span>
             </div>
             <span className="asset-card-meta">
-              <span className="provider-pill">{asset.provider ?? "Unknown provider"}</span>
+              <span className="provider-pill">{asset.provider ?? dictionary.workflow.unknownProvider}</span>
               <StarRatingDisplay rating={asset.rating} />
             </span>
             <span className="card-tags">
@@ -91,7 +109,7 @@ export function GalleryWorkspace({
               ))}
             </span>
             <span className="asset-card-footer">
-              {asset.reviewPendingCount > 0 ? <span className="review-badge">Review pending</span> : <span />}
+              {asset.reviewPendingCount > 0 ? <span className="review-badge">{dictionary.workflow.reviewPending}</span> : <span />}
               <span>{formatVersionTreeSummary(asset)}</span>
             </span>
             <span className="asset-card-actions">
@@ -102,7 +120,7 @@ export function GalleryWorkspace({
                   onRequestReview(asset);
                 }}
               >
-                Review
+                {dictionary.review}
               </button>
               <label className="checkbox-row card-select-row" onClick={(event) => event.stopPropagation()}>
                 <input
@@ -113,7 +131,7 @@ export function GalleryWorkspace({
                     onToggleAssetSelection(asset.id);
                   }}
                 />
-                <span>Select</span>
+                <span>{dictionary.workflow.select}</span>
               </label>
             </span>
           </article>
@@ -123,12 +141,12 @@ export function GalleryWorkspace({
   );
 }
 
-export function Thumbnail({ asset, index, onPreview }: { asset: GalleryAsset; index: number; onPreview?: () => void }) {
+export function Thumbnail({ asset, index, onPreview, altLabel, previewLabel, unavailableLabel }: { asset: GalleryAsset; index: number; onPreview?: () => void; altLabel?: string; previewLabel?: string; unavailableLabel?: string }) {
   const style = thumbnailStyle(asset, index);
   const imageStyle = thumbnailImageStyle(asset);
   const image = asset.imagePath ? (
     <img
-      alt={asset.title ?? "Generated image"}
+      alt={asset.title ?? altLabel ?? "Generated image"}
       src={convertImagePath(asset.imagePath)}
       loading="lazy"
       decoding="async"
@@ -148,7 +166,7 @@ export function Thumbnail({ asset, index, onPreview }: { asset: GalleryAsset; in
       style={style}
       type="button"
       disabled={!asset.imagePath}
-      aria-label={asset.imagePath ? "Open original image preview" : "Image preview unavailable"}
+      aria-label={asset.imagePath ? (previewLabel ?? "Open original image preview") : (unavailableLabel ?? "Image preview unavailable")}
       onClick={(event) => {
         event.stopPropagation();
         onPreview();
@@ -159,7 +177,7 @@ export function Thumbnail({ asset, index, onPreview }: { asset: GalleryAsset; in
   );
 }
 
-export function ImageLightbox({ image, onClose }: { image: LightboxImage; onClose: () => void }) {
+export function ImageLightbox({ image, onClose, closeLabel }: { image: LightboxImage; onClose: () => void; closeLabel: string }) {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -178,7 +196,7 @@ export function ImageLightbox({ image, onClose }: { image: LightboxImage; onClos
 
   return (
     <div className="image-lightbox" role="dialog" aria-modal="true" aria-label={image.label} onClick={closeFromBackdrop}>
-      <button className="image-lightbox-close" aria-label="Close image preview" onClick={onClose}>
+      <button className="image-lightbox-close" aria-label={closeLabel} onClick={onClose}>
         <Icon name="close" />
       </button>
       <div className="image-lightbox-frame">

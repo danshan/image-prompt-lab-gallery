@@ -46,6 +46,7 @@ import {
   taskActionKey,
   taskPrompt,
 } from "../../workflows/tasks";
+import type { Dictionary } from "../../i18n/dictionaries";
 export function TaskWorkspace({
   drafts,
   tasks,
@@ -65,6 +66,7 @@ export function TaskWorkspace({
   onCancel,
   onRetry,
   onDuplicate,
+  dictionary,
 }: {
   drafts: TaskDraft[];
   tasks: DaemonTask[];
@@ -84,19 +86,20 @@ export function TaskWorkspace({
   onCancel: (taskId: string) => void;
   onRetry: (taskId: string) => void;
   onDuplicate: (taskId: string) => void;
+  dictionary: Dictionary;
 }) {
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
   return (
     <section className={`task-workspace active-${activePanel}`}>
-      <div className="task-panel-tabs" role="tablist" aria-label="Queue panels">
+      <div className="task-panel-tabs" role="tablist" aria-label={dictionary.workflow.queuePanels}>
         <button className={activePanel === "compose" ? "active" : ""} onClick={() => onActivePanelChange("compose")}>
-          Compose
+          {dictionary.workflow.compose}
         </button>
         <button className={activePanel === "queue" ? "active" : ""} onClick={() => onActivePanelChange("queue")}>
-          Queue
+          {dictionary.workflow.queuePanel}
         </button>
         <button className={activePanel === "detail" ? "active" : ""} onClick={() => onActivePanelChange("detail")}>
-          Detail
+          {dictionary.workflow.detail}
         </button>
       </div>
       <div className={activePanel === "compose" ? "task-panel-slot task-panel-compose active" : "task-panel-slot task-panel-compose"}>
@@ -105,6 +108,7 @@ export function TaskWorkspace({
           onDraftsChange={onDraftsChange}
           onAddDraft={onAddDraft}
           onEnqueue={onEnqueue}
+          dictionary={dictionary}
         />
       </div>
       <div className={activePanel === "queue" ? "task-panel-slot task-panel-queue active" : "task-panel-slot task-panel-queue"}>
@@ -120,6 +124,7 @@ export function TaskWorkspace({
           onCancel={onCancel}
           onRetry={onRetry}
           onDuplicate={onDuplicate}
+          dictionary={dictionary}
         />
       </div>
       <div className={activePanel === "detail" ? "task-panel-slot task-panel-detail active" : "task-panel-slot task-panel-detail"}>
@@ -130,6 +135,7 @@ export function TaskWorkspace({
           onCancel={onCancel}
           onRetry={onRetry}
           onDuplicate={onDuplicate}
+          dictionary={dictionary}
         />
       </div>
     </section>
@@ -141,11 +147,13 @@ function BatchComposer({
   onDraftsChange,
   onAddDraft,
   onEnqueue,
+  dictionary,
 }: {
   drafts: TaskDraft[];
   onDraftsChange: (drafts: TaskDraft[]) => void;
   onAddDraft: () => void;
   onEnqueue: () => void;
+  dictionary: Dictionary;
 }) {
   const [importJson, setImportJson] = useState("");
   const [importError, setImportError] = useState<string | null>(null);
@@ -160,7 +168,7 @@ function BatchComposer({
     onDraftsChange(next.length > 0 ? next : [createTaskDraft()]);
   }
   async function chooseReferenceFile(draft: TaskDraft) {
-    const selected = await pickImageFile("Choose Reference Image", draft.inputFile);
+    const selected = await pickImageFile(dictionary.workflow.chooseReferenceImage, draft.inputFile);
     if (selected) {
       updateDraft(draft.id, { inputFile: selected, operation: "image_to_image" });
     }
@@ -184,78 +192,78 @@ function BatchComposer({
       setImportJson("");
       setImportError(null);
     } else {
-      setImportError("No valid tasks found in JSON.");
+      setImportError(dictionary.workflow.noValidTasksFound);
     }
   }
   return (
     <section className="task-panel batch-composer">
       <div className="panel-header">
         <div>
-          <h3>Batch Composer</h3>
-          <p>{drafts.length} draft{drafts.length === 1 ? "" : "s"}</p>
+          <h3>{dictionary.workflow.batchComposer}</h3>
+          <p>{drafts.length} {dictionary.workflow.drafts}</p>
         </div>
-        <button onClick={onAddDraft}>Add task</button>
+        <button onClick={onAddDraft}>{dictionary.workflow.addTask}</button>
       </div>
       {drafts.map((draft, index) => (
         <article className="task-draft-card" key={draft.id}>
           <div className="task-draft-header">
-            <strong>Task {index + 1}</strong>
+            <strong>{dictionary.workflow.task} {index + 1}</strong>
             <div className="row-actions">
-              <button onClick={() => duplicateDraft(draft)}>Duplicate</button>
-              <button onClick={() => removeDraft(draft.id)}>Remove</button>
+              <button onClick={() => duplicateDraft(draft)}>{dictionary.workflow.duplicate}</button>
+              <button onClick={() => removeDraft(draft.id)}>{dictionary.workflow.remove}</button>
             </div>
           </div>
           <label>
-            <span>Prompt</span>
+            <span>{dictionary.workflow.prompt}</span>
             <textarea value={draft.prompt} onChange={(event) => updateDraft(draft.id, { prompt: event.target.value })} />
           </label>
           <div className="task-draft-grid">
             <label>
-              <span>Provider</span>
+              <span>{dictionary.workflow.provider}</span>
               <select className="select-control" value={draft.provider} onChange={(event) => updateDraft(draft.id, { provider: event.target.value })}>
                 <option value="codex-cli">codex-cli</option>
                 <option value="fake">fake</option>
               </select>
             </label>
             <label>
-              <span>Operation</span>
+              <span>{dictionary.workflow.operation}</span>
               <select className="select-control" value={draft.operation} onChange={(event) => updateDraft(draft.id, { operation: event.target.value as TaskDraft["operation"] })}>
                 <option value="text_to_image">text to image</option>
                 <option value="image_to_image">image to image</option>
               </select>
             </label>
             <label>
-              <span>Priority</span>
+              <span>{dictionary.workflow.priority}</span>
               <input type="number" value={draft.priority} onChange={(event) => updateDraft(draft.id, { priority: Number(event.target.value) })} />
             </label>
             <label>
-              <span>Max attempts</span>
+              <span>{dictionary.workflow.maxAttempts}</span>
               <input type="number" min={1} max={10} value={draft.maxAttempts} onChange={(event) => updateDraft(draft.id, { maxAttempts: Number(event.target.value) })} />
             </label>
             <label>
-              <span>Reference file</span>
+              <span>{dictionary.workflow.referenceFile}</span>
               <div className="reference-file-control">
                 <input value={draft.inputFile} onChange={(event) => updateDraft(draft.id, { inputFile: event.target.value, operation: event.target.value.trim() ? "image_to_image" : draft.operation })} />
                 <div className="reference-file-actions">
-                  <button type="button" onClick={() => chooseReferenceFile(draft)}>Choose image</button>
-                  {draft.inputFile.trim() && <button type="button" onClick={() => clearReferenceFile(draft)}>Clear</button>}
+                  <button type="button" onClick={() => chooseReferenceFile(draft)}>{dictionary.workflow.chooseImage}</button>
+                  {draft.inputFile.trim() && <button type="button" onClick={() => clearReferenceFile(draft)}>{dictionary.workflow.clear}</button>}
                 </div>
               </div>
             </label>
           </div>
           <label>
-            <span>Parameters JSON</span>
+            <span>{dictionary.workflow.parametersJson}</span>
             <textarea value={draft.parametersJson} onChange={(event) => updateDraft(draft.id, { parametersJson: event.target.value })} />
           </label>
         </article>
       ))}
       <div className="import-json-box">
         <textarea value={importJson} onChange={(event) => setImportJson(event.target.value)} placeholder='[{"prompt":"multi-line prompt","provider":"fake"}]' />
-        <button disabled={importJson.trim().length === 0} onClick={importDrafts}>Import JSON</button>
+        <button disabled={importJson.trim().length === 0} onClick={importDrafts}>{dictionary.workflow.importJson}</button>
         {importError && <span className="inline-error">{importError}</span>}
       </div>
       <button className="primary-button" disabled={drafts.every((draft) => draft.prompt.trim().length === 0)} onClick={onEnqueue}>
-        Enqueue all
+        {dictionary.workflow.enqueueAll}
       </button>
     </section>
   );
@@ -273,6 +281,7 @@ function TasksQueue({
   onCancel,
   onRetry,
   onDuplicate,
+  dictionary,
 }: {
   tasks: DaemonTask[];
   selectedTaskId: string | null;
@@ -285,6 +294,7 @@ function TasksQueue({
   onCancel: (taskId: string) => void;
   onRetry: (taskId: string) => void;
   onDuplicate: (taskId: string) => void;
+  dictionary: Dictionary;
 }) {
   const queuedIds = [...tasks].filter((task) => task.status === "queued").sort(compareTaskOrder).map((task) => task.id);
   const orderedTasks = [...tasks].sort(compareTaskNewestFirst);
@@ -292,14 +302,14 @@ function TasksQueue({
     <section className="task-panel tasks-queue-panel">
       <div className="panel-header">
         <div>
-          <h3>Tasks Queue</h3>
-          <p>{daemonOnline ? "Daemon connected" : "Daemon offline"}{loading ? " · Refreshing" : ""}</p>
+          <h3>{dictionary.views.queue.title}</h3>
+          <p>{daemonOnline ? dictionary.workflow.daemonConnected : dictionary.workflow.daemonOffline}{loading ? ` · ${dictionary.workflow.refreshing}` : ""}</p>
         </div>
-        <button onClick={onRefresh}>Refresh</button>
+        <button onClick={onRefresh}>{dictionary.workflow.refresh}</button>
       </div>
       <div className="task-list">
         {tasks.length === 0 ? (
-          <div className="empty-state">No tasks yet.</div>
+          <div className="empty-state">{dictionary.workflow.noTasksYet}</div>
         ) : (
           orderedTasks.map((task) => (
             <article key={task.id} className={task.id === selectedTaskId ? "task-row selected" : "task-row"}>
@@ -312,17 +322,17 @@ function TasksQueue({
               <div className="task-row-actions">
                 {task.status === "queued" && (
                   <>
-                    <button disabled={queuedIds.indexOf(task.id) <= 0} onClick={() => onMoveTask(task.id, -1)}>Up</button>
-                    <button disabled={queuedIds.indexOf(task.id) === queuedIds.length - 1} onClick={() => onMoveTask(task.id, 1)}>Down</button>
+                    <button disabled={queuedIds.indexOf(task.id) <= 0} onClick={() => onMoveTask(task.id, -1)}>{dictionary.workflow.up}</button>
+                    <button disabled={queuedIds.indexOf(task.id) === queuedIds.length - 1} onClick={() => onMoveTask(task.id, 1)}>{dictionary.workflow.down}</button>
                   </>
                 )}
                 {["queued", "running", "retry_waiting", "cancel_requested"].includes(task.status) && (
-                  <button disabled={pendingTaskActions.includes(taskActionKey("cancel_daemon_task", task.id))} onClick={() => onCancel(task.id)}>Cancel</button>
+                  <button disabled={pendingTaskActions.includes(taskActionKey("cancel_daemon_task", task.id))} onClick={() => onCancel(task.id)}>{dictionary.workflow.cancel}</button>
                 )}
                 {isRetryableTaskStatus(task.status) && (
-                  <button disabled={pendingTaskActions.includes(taskActionKey("retry_daemon_task", task.id))} onClick={() => onRetry(task.id)}>Retry</button>
+                  <button disabled={pendingTaskActions.includes(taskActionKey("retry_daemon_task", task.id))} onClick={() => onRetry(task.id)}>{dictionary.workflow.retry}</button>
                 )}
-                <button disabled={pendingTaskActions.includes(taskActionKey("duplicate_daemon_task", task.id))} onClick={() => onDuplicate(task.id)}>Duplicate</button>
+                <button disabled={pendingTaskActions.includes(taskActionKey("duplicate_daemon_task", task.id))} onClick={() => onDuplicate(task.id)}>{dictionary.workflow.duplicate}</button>
               </div>
             </article>
           ))
@@ -347,6 +357,7 @@ function TaskDetailPanel({
   onCancel,
   onRetry,
   onDuplicate,
+  dictionary,
 }: {
   task: DaemonTask | null;
   detail: DaemonTaskDetail | null;
@@ -354,41 +365,42 @@ function TaskDetailPanel({
   onCancel: (taskId: string) => void;
   onRetry: (taskId: string) => void;
   onDuplicate: (taskId: string) => void;
+  dictionary: Dictionary;
 }) {
   if (!task) {
-    return <section className="task-panel task-detail-panel empty-state">Select a task to inspect.</section>;
+    return <section className="task-panel task-detail-panel empty-state">{dictionary.workflow.selectTask}</section>;
   }
   return (
     <section className="task-panel task-detail-panel">
       <div className="panel-header">
         <div>
-          <h3>Task Detail</h3>
+          <h3>{dictionary.workflow.taskDetail}</h3>
           <p>{task.id}</p>
         </div>
         <span className={`status ${task.status}`}>{statusLabel(task.status)}</span>
       </div>
       <div className="row-actions">
         {["queued", "running", "retry_waiting", "cancel_requested"].includes(task.status) && (
-          <button disabled={pendingTaskActions.includes(taskActionKey("cancel_daemon_task", task.id))} onClick={() => onCancel(task.id)}>Cancel</button>
+          <button disabled={pendingTaskActions.includes(taskActionKey("cancel_daemon_task", task.id))} onClick={() => onCancel(task.id)}>{dictionary.workflow.cancel}</button>
         )}
         {isRetryableTaskStatus(task.status) && (
-          <button disabled={pendingTaskActions.includes(taskActionKey("retry_daemon_task", task.id))} onClick={() => onRetry(task.id)}>Retry</button>
+          <button disabled={pendingTaskActions.includes(taskActionKey("retry_daemon_task", task.id))} onClick={() => onRetry(task.id)}>{dictionary.workflow.retry}</button>
         )}
-        <button disabled={pendingTaskActions.includes(taskActionKey("duplicate_daemon_task", task.id))} onClick={() => onDuplicate(task.id)}>Duplicate</button>
+        <button disabled={pendingTaskActions.includes(taskActionKey("duplicate_daemon_task", task.id))} onClick={() => onDuplicate(task.id)}>{dictionary.workflow.duplicate}</button>
       </div>
       <section className="detail-section">
-        <h4>Input Snapshot</h4>
+        <h4>{dictionary.workflow.inputSnapshot}</h4>
         <pre>{JSON.stringify(task.input ?? {}, null, 2)}</pre>
       </section>
       {task.lastErrorMessage && (
         <section className="detail-section">
-          <h4>Error</h4>
-          <p className="error-text">{task.lastErrorCode ?? "TaskFailed"}: {task.lastErrorMessage}</p>
+          <h4>{dictionary.workflow.error}</h4>
+          <p className="error-text">{task.lastErrorCode ?? dictionary.workflow.taskFailed}: {task.lastErrorMessage}</p>
         </section>
       )}
       <section className="detail-section">
-        <h4>Attempts</h4>
-        {(detail?.attempts ?? []).length === 0 ? <p>No attempts yet.</p> : detail?.attempts.map((attempt) => (
+        <h4>{dictionary.workflow.attempts}</h4>
+        {(detail?.attempts ?? []).length === 0 ? <p>{dictionary.workflow.noAttemptsYet}</p> : detail?.attempts.map((attempt) => (
           <div className="detail-row" key={attempt.id}>
             <strong>#{attempt.attemptNumber} {attempt.status}</strong>
             <span>{attempt.errorMessage ?? attempt.logPath ?? displayDate(attempt.startedAt)}</span>
@@ -396,7 +408,7 @@ function TaskDetailPanel({
         ))}
       </section>
       <section className="detail-section">
-        <h4>Timeline</h4>
+        <h4>{dictionary.workflow.timeline}</h4>
         {(detail?.events ?? []).map((event) => (
           <div className="detail-row" key={event.id}>
             <strong>{event.eventType}</strong>
@@ -405,8 +417,8 @@ function TaskDetailPanel({
         ))}
       </section>
       <section className="detail-section">
-        <h4>Outputs</h4>
-        {(detail?.outputs ?? []).length === 0 ? <p>No outputs yet.</p> : detail?.outputs.map((output) => (
+        <h4>{dictionary.workflow.outputs}</h4>
+        {(detail?.outputs ?? []).length === 0 ? <p>{dictionary.workflow.noOutputsYet}</p> : detail?.outputs.map((output) => (
           <div className="detail-row" key={output.id}>
             <strong>{output.outputType}</strong>
             <span>{output.targetId}</span>
@@ -414,8 +426,8 @@ function TaskDetailPanel({
         ))}
       </section>
       <section className="detail-section">
-        <h4>Log Tail</h4>
-        <pre>{detail?.logTail || "No log content yet."}</pre>
+        <h4>{dictionary.workflow.logTail}</h4>
+        <pre>{detail?.logTail || dictionary.workflow.noLogContent}</pre>
       </section>
     </section>
   );

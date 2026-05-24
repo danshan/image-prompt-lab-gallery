@@ -62,27 +62,31 @@ import type {
   UpdateState,
   View,
 } from "../../types";
+import type { Dictionary } from "../../i18n/dictionaries";
+
 export function StudioOverviewBand({
   assetCount,
   reviewCount,
   queueCount,
   integrityIssueCount,
   activeView,
+  dictionary,
 }: {
   assetCount: number;
   reviewCount: number;
   queueCount: number;
   integrityIssueCount: number;
   activeView: View;
+  dictionary: Dictionary;
 }) {
   const cards = [
-    { label: "Assets", value: assetCount, tone: activeView === "gallery" ? "active" : "" },
-    { label: "Pending Review", value: reviewCount, tone: reviewCount > 0 ? "warning" : "" },
-    { label: "Active Tasks", value: queueCount, tone: queueCount > 0 ? "active" : "" },
-    { label: "Integrity Issues", value: integrityIssueCount, tone: integrityIssueCount > 0 ? "danger" : "healthy" },
+    { label: dictionary.overview.assets, value: assetCount, tone: activeView === "gallery" ? "active" : "" },
+    { label: dictionary.overview.pendingReview, value: reviewCount, tone: reviewCount > 0 ? "warning" : "" },
+    { label: dictionary.overview.activeTasks, value: queueCount, tone: queueCount > 0 ? "active" : "" },
+    { label: dictionary.overview.integrityIssues, value: integrityIssueCount, tone: integrityIssueCount > 0 ? "danger" : "healthy" },
   ];
   return (
-    <section className="studio-overview-band" aria-label="Studio overview">
+    <section className="studio-overview-band" aria-label={dictionary.overview.label}>
       {cards.map((card) => (
         <div className={`overview-metric ${card.tone}`} key={card.label}>
           <span>{card.label}</span>
@@ -101,6 +105,7 @@ export function WorkspaceToolbar({
   composerOpen,
   availableProviders,
   albums,
+  dictionary,
   onComposerOpenChange,
   onQueryChange,
 }: {
@@ -111,18 +116,12 @@ export function WorkspaceToolbar({
   composerOpen: boolean;
   availableProviders: string[];
   albums: AlbumListItem[];
+  dictionary: Dictionary;
   onComposerOpenChange: (open: boolean) => void;
   onQueryChange: (query: GalleryQueryState) => void;
 }) {
-  const viewLabels: Record<View, { title: string; eyebrow: string }> = {
-    gallery: { title: "Gallery", eyebrow: "Image assets" },
-    albums: { title: "Albums", eyebrow: "Curation sets" },
-    prompts: { title: "Prompts", eyebrow: "Prompt workspace" },
-    review: { title: "Review Inbox", eyebrow: "Metadata suggestions" },
-    queue: { title: "Tasks Queue", eyebrow: "Generation operations" },
-    settings: { title: "Settings", eyebrow: "Library administration" },
-  };
-  const label = viewLabels[activeView];
+  const label = dictionary.views[activeView];
+  const galleryCopy = dictionary.galleryControls;
   const showGalleryControls = activeView === "gallery";
 
   return (
@@ -135,7 +134,7 @@ export function WorkspaceToolbar({
         <span className="toolbar-status">{status}</span>
         <button className="primary-button" onClick={() => onComposerOpenChange(!composerOpen)}>
           <Icon name="plus" />
-          <span>Generate</span>
+          <span>{dictionary.generate}</span>
         </button>
       </div>
 
@@ -144,17 +143,17 @@ export function WorkspaceToolbar({
           <div className="search-row">
             <label className="search-box">
               <Icon name="search" />
-              <span>Search</span>
+              <span>{galleryCopy.searchLabel}</span>
               <input
                 value={query.text}
                 onChange={(event) => onQueryChange(updateGalleryQuery(query, { text: event.target.value }))}
-                placeholder="Search prompts, titles, tags, albums..."
+                placeholder={galleryCopy.searchPlaceholder}
               />
             </label>
-            <button className="icon-button" aria-label="Grid view">
+            <button className="icon-button" aria-label={galleryCopy.gridView}>
               <Icon name="grid" />
             </button>
-            <button className="icon-button" aria-label="List view">
+            <button className="icon-button" aria-label={galleryCopy.listView}>
               <Icon name="list" />
             </button>
           </div>
@@ -166,7 +165,7 @@ export function WorkspaceToolbar({
                 onQueryChange(updateGalleryQuery(query, { providers: event.target.value ? [event.target.value] : [] }))
               }
             >
-              <option value="">Any provider</option>
+              <option value="">{galleryCopy.anyProvider}</option>
               {availableProviders.map((provider) => (
                 <option key={provider} value={provider}>
                   {provider}
@@ -176,6 +175,7 @@ export function WorkspaceToolbar({
             <GalleryAlbumSelector
               albums={albums}
               query={query}
+              dictionary={dictionary}
               onQueryChange={onQueryChange}
             />
             <select
@@ -189,10 +189,10 @@ export function WorkspaceToolbar({
                 )
               }
             >
-              <option value="">Rating</option>
-              <option value="5">5 stars</option>
-              <option value="4">4+ stars</option>
-              <option value="3">3+ stars</option>
+              <option value="">{galleryCopy.rating}</option>
+              <option value="5">5 {galleryCopy.stars}</option>
+              <option value="4">4+ {galleryCopy.starsPlus}</option>
+              <option value="3">3+ {galleryCopy.starsPlus}</option>
             </select>
             <select
               className="select-control"
@@ -201,26 +201,27 @@ export function WorkspaceToolbar({
                 onQueryChange(updateGalleryQuery(query, { reviewStatus: event.target.value as ReviewStatusFilter }))
               }
             >
-              <option value="any">Review</option>
-              <option value="pending">Review Pending</option>
+              <option value="any">{galleryCopy.review}</option>
+              <option value="pending">{galleryCopy.reviewPending}</option>
             </select>
-            <button onClick={() => onQueryChange(resetGalleryQuery())}>Clear All</button>
+            <button onClick={() => onQueryChange(resetGalleryQuery())}>{galleryCopy.clearAll}</button>
             <select
               className="select-control sort-select"
               value={query.sort}
               onChange={(event) => onQueryChange(updateGalleryQuery(query, { sort: event.target.value as GallerySort }))}
             >
-              <option value="newest">Sort: Newest</option>
-              <option value="oldest">Sort: Oldest</option>
-              <option value="ratingDesc">Sort: Rating</option>
-              <option value="titleAsc">Sort: Title</option>
-              <option value="providerAsc">Sort: Provider</option>
+              <option value="newest">{galleryCopy.sortNewest}</option>
+              <option value="oldest">{galleryCopy.sortOldest}</option>
+              <option value="ratingDesc">{galleryCopy.sortRating}</option>
+              <option value="titleAsc">{galleryCopy.sortTitle}</option>
+              <option value="providerAsc">{galleryCopy.sortProvider}</option>
             </select>
-            <strong>{itemCount} items</strong>
+            <strong>{itemCount} {galleryCopy.items}</strong>
           </div>
           <GalleryFilterChips
             query={query}
             albums={albums}
+            dictionary={dictionary}
             onQueryChange={onQueryChange}
           />
         </>
@@ -232,18 +233,21 @@ export function WorkspaceToolbar({
 function GalleryAlbumSelector({
   albums,
   query,
+  dictionary,
   onQueryChange,
 }: {
   albums: AlbumListItem[];
   query: GalleryQueryState;
+  dictionary: Dictionary;
   onQueryChange: (query: GalleryQueryState) => void;
 }) {
   const selectedIds = galleryAlbumFilterIds(query);
   const unassigned = query.albumFilter.mode === "unassigned";
+  const galleryCopy = dictionary.galleryControls;
   return (
     <details className="filter-popover">
       <summary className={selectedIds.length > 0 || unassigned ? "chip-button active" : "chip-button"}>
-        Albums
+        {galleryCopy.albums}
       </summary>
       <div className="filter-popover-panel">
         <label className="checkbox-row">
@@ -252,7 +256,7 @@ function GalleryAlbumSelector({
             checked={unassigned}
             onChange={() => onQueryChange(unassigned ? clearGalleryAlbumFilter(query) : setGalleryUnassignedAlbumFilter(query))}
           />
-          <span>Not in any album</span>
+          <span>{galleryCopy.notInAnyAlbum}</span>
         </label>
         {albums.map((album) => (
           <label key={album.id} className="checkbox-row">
@@ -265,7 +269,7 @@ function GalleryAlbumSelector({
             <span>{album.name}</span>
           </label>
         ))}
-        <button onClick={() => onQueryChange(clearGalleryAlbumFilter(query))}>Clear album filter</button>
+        <button onClick={() => onQueryChange(clearGalleryAlbumFilter(query))}>{galleryCopy.clearAlbumFilter}</button>
       </div>
     </details>
   );
@@ -274,13 +278,16 @@ function GalleryAlbumSelector({
 function GalleryFilterChips({
   query,
   albums,
+  dictionary,
   onQueryChange,
 }: {
   query: GalleryQueryState;
   albums: AlbumListItem[];
+  dictionary: Dictionary;
   onQueryChange: (query: GalleryQueryState) => void;
 }) {
   const selectedIds = galleryAlbumFilterIds(query);
+  const galleryCopy = dictionary.galleryControls;
   const hasFilters =
     query.text.trim().length > 0 ||
     query.providers.length > 0 ||
@@ -295,31 +302,31 @@ function GalleryFilterChips({
     <div className="active-filter-row">
       {query.text.trim().length > 0 && (
         <FilterChipButton
-          label={`Search: ${query.text.trim()}`}
-          ariaLabel="Clear search filter"
+          label={`${galleryCopy.searchChip}: ${query.text.trim()}`}
+          ariaLabel={galleryCopy.clearSearchFilter}
           onClick={() => onQueryChange(clearGalleryTextFilter(query))}
         />
       )}
       {query.providers.map((provider) => (
         <FilterChipButton
           key={provider}
-          label={`Provider: ${provider}`}
-          ariaLabel={`Clear provider filter ${provider}`}
+          label={`${galleryCopy.providerChip}: ${provider}`}
+          ariaLabel={`${galleryCopy.clearProviderFilter} ${provider}`}
           onClick={() => onQueryChange(clearGalleryProviderFilter(query, provider))}
         />
       ))}
       {query.tags.map((tag) => (
         <FilterChipButton
           key={tag}
-          label={`Tag: ${tag}`}
-          ariaLabel={`Clear tag filter ${tag}`}
+          label={`${galleryCopy.tagChip}: ${tag}`}
+          ariaLabel={`${galleryCopy.clearTagFilter} ${tag}`}
           onClick={() => onQueryChange(clearGalleryTagFilter(query, tag))}
         />
       ))}
       {query.albumFilter.mode === "unassigned" && (
         <FilterChipButton
-          label="Not in any album"
-          ariaLabel="Clear album filter"
+          label={galleryCopy.notInAnyAlbum}
+          ariaLabel={galleryCopy.clearAlbumFilter}
           onClick={() => onQueryChange(clearGalleryAlbumFilter(query))}
         />
       )}
@@ -328,27 +335,27 @@ function GalleryFilterChips({
         return (
           <FilterChipButton
             key={albumId}
-            label={`Album: ${albumName}`}
-            ariaLabel={`Clear album filter ${albumName}`}
+            label={`${galleryCopy.albumChip}: ${albumName}`}
+            ariaLabel={`${galleryCopy.clearAlbumFilter} ${albumName}`}
             onClick={() => onQueryChange(removeGalleryAlbumFilter(query, albumId))}
           />
         );
       })}
       {query.minRating !== null && (
         <FilterChipButton
-          label={`${query.minRating}+ stars`}
-          ariaLabel="Clear rating filter"
+          label={`${query.minRating}+ ${galleryCopy.starsPlus}`}
+          ariaLabel={galleryCopy.clearRatingFilter}
           onClick={() => onQueryChange(clearGalleryMinRatingFilter(query))}
         />
       )}
       {query.reviewStatus === "pending" && (
         <FilterChipButton
-          label="Review pending"
-          ariaLabel="Clear review filter"
+          label={galleryCopy.reviewPending}
+          ariaLabel={galleryCopy.clearReviewFilter}
           onClick={() => onQueryChange(clearGalleryReviewFilter(query))}
         />
       )}
-      <button onClick={() => onQueryChange(resetGalleryQuery())}>Clear all</button>
+      <button onClick={() => onQueryChange(resetGalleryQuery())}>{galleryCopy.clearAll}</button>
     </div>
   );
 }

@@ -47,6 +47,7 @@ import type {
   View,
 } from "../../types";
 import { libraryMaintenanceActions, type SettingsSection } from "../../workflows/settings";
+import type { Dictionary } from "../../i18n/dictionaries";
 export function SettingsWorkspace({
   library,
   libraries,
@@ -80,6 +81,7 @@ export function SettingsWorkspace({
   onCheckUpdate,
   onInstallUpdate,
   onRestartApp,
+  dictionary,
 }: {
   library: Library | null;
   libraries: Library[];
@@ -113,9 +115,29 @@ export function SettingsWorkspace({
   onCheckUpdate: () => void;
   onInstallUpdate: () => void;
   onRestartApp: () => void;
+  dictionary: Dictionary;
 }) {
+  const sections: SettingsSection[] = ["libraries", "providers", "updates", "logs"];
   return (
     <section className="settings-workspace">
+      <nav className="settings-tabs" aria-label={dictionary.views.settings.title}>
+        {sections.map((section) => (
+          <button
+            key={section}
+            className={section === activeSection ? "active" : ""}
+            type="button"
+            onClick={() => onSectionChange(section)}
+          >
+            {section === "libraries"
+              ? dictionary.workflow.libraries
+              : section === "providers"
+                ? dictionary.workflow.providers
+                : section === "updates"
+                  ? dictionary.workflow.appUpdates
+                  : dictionary.workflow.logs}
+          </button>
+        ))}
+      </nav>
       {activeSection === "libraries" ? (
         <SettingsLibrariesView
           library={library}
@@ -134,12 +156,14 @@ export function SettingsWorkspace({
           onReveal={onReveal}
           pendingLibraryActions={pendingLibraryActions}
           missingLibraryPaths={missingLibraryPaths}
+          dictionary={dictionary}
         />
       ) : activeSection === "providers" ? (
         <SettingsProvidersView
           providerHealth={providerHealth}
           daemonOnline={daemonOnline}
           libraryStatus={libraryStatus}
+          dictionary={dictionary}
         />
       ) : activeSection === "updates" ? (
         <SettingsUpdatesView
@@ -147,6 +171,7 @@ export function SettingsWorkspace({
           onCheckUpdate={onCheckUpdate}
           onInstallUpdate={onInstallUpdate}
           onRestartApp={onRestartApp}
+          dictionary={dictionary}
         />
       ) : (
         <SettingsLogsView
@@ -157,6 +182,7 @@ export function SettingsWorkspace({
           logContentLoading={logContentLoading}
           onRefreshLogs={onRefreshLogs}
           onSelectLog={onSelectLog}
+          dictionary={dictionary}
         />
       )}
     </section>
@@ -180,6 +206,7 @@ function SettingsLibrariesView({
   onReveal,
   pendingLibraryActions,
   missingLibraryPaths,
+  dictionary,
 }: {
   library: Library | null;
   libraries: Library[];
@@ -197,52 +224,53 @@ function SettingsLibrariesView({
   onReveal: (library: Library) => void;
   pendingLibraryActions: string[];
   missingLibraryPaths: string[];
+  dictionary: Dictionary;
 }) {
   return (
     <div className="settings-section">
       <div className="panel-header">
         <div>
-          <h3>Libraries</h3>
+          <h3>{dictionary.workflow.libraries}</h3>
           <p>
-            {libraries.length} registered{library ? `, current: ${library.name}` : ""}
+            {libraries.length} {dictionary.workflow.registered}{library ? `, ${dictionary.workflow.current}: ${library.name}` : ""}
           </p>
         </div>
         <div className="row-actions">
-          <button onClick={onOpenExisting}>Open Existing Library</button>
+          <button onClick={onOpenExisting}>{dictionary.workflow.openExistingLibrary}</button>
           <button onClick={onImportZip} disabled={pendingLibraryActions.includes("import")}>
-            {pendingLibraryActions.includes("import") ? "Importing..." : "Import Zip"}
+            {pendingLibraryActions.includes("import") ? dictionary.workflow.importing : dictionary.workflow.importZip}
           </button>
         </div>
       </div>
       <div className="library-create-strip">
         <div className="library-section-heading">
-          <h4>Create Library</h4>
-          <p>Choose a parent folder after clicking Create. The library folder will be created inside it.</p>
+          <h4>{dictionary.workflow.createLibrary}</h4>
+          <p>{dictionary.workflow.createLibraryHint}</p>
         </div>
         <div className="library-create-controls">
           <label>
-            <span>Library name</span>
+            <span>{dictionary.workflow.libraryName}</span>
             <input value={libraryName} onChange={(event) => onLibraryNameChange(event.target.value)} />
           </label>
           <label>
-            <span>Folder name</span>
+            <span>{dictionary.workflow.folderName}</span>
             <input value={libraryFolderName} onChange={(event) => onLibraryFolderNameChange(event.target.value)} />
           </label>
-          <button onClick={onCreate}>Create...</button>
+          <button onClick={onCreate}>{dictionary.workflow.createWithEllipsis}</button>
         </div>
       </div>
       <div className="library-section-heading library-list-heading">
-        <h4>Registered Libraries</h4>
-        <p>Switch, rename, close, export, or reveal libraries registered on this machine.</p>
+        <h4>{dictionary.workflow.registeredLibraries}</h4>
+        <p>{dictionary.workflow.registeredLibrariesHint}</p>
       </div>
       {libraries.length === 0 ? (
-        <div className="empty-state compact">No library registered.</div>
+        <div className="empty-state compact">{dictionary.workflow.noLibraryRegistered}</div>
       ) : (
-        <div className="library-table" role="table" aria-label="Registered libraries">
+        <div className="library-table" role="table" aria-label={dictionary.workflow.registeredLibrariesAria}>
           <div className="library-table-row header" role="row">
-            <span>Name</span>
-            <span>Path</span>
-            <span>Actions</span>
+            <span>{dictionary.workflow.name}</span>
+            <span>{dictionary.workflow.path}</span>
+            <span>{dictionary.workflow.actions}</span>
           </div>
           {libraries.map((item) => {
             const actions = libraryMaintenanceActions(item.rootPath, missingLibraryPaths);
@@ -254,7 +282,7 @@ function SettingsLibrariesView({
                 className={isCurrent ? "library-table-row current" : "library-table-row"}
                 role="row"
                 tabIndex={isCurrent ? -1 : 0}
-                aria-label={isCurrent ? `${item.name}, current library` : `Switch to ${item.name}`}
+                aria-label={isCurrent ? `${item.name}, ${dictionary.workflow.currentLibraryAria}` : `${dictionary.workflow.switchToLibraryAria} ${item.name}`}
                 onClick={() => {
                   if (!isCurrent) {
                     onSwitchLibrary(item.id);
@@ -269,8 +297,8 @@ function SettingsLibrariesView({
               >
                 <span className="library-row-main">
                   <strong>{item.name}</strong>
-                  {isCurrent && <small>Current</small>}
-                  {!actions.canReveal && <small>Missing on disk</small>}
+                  {isCurrent && <small>{dictionary.workflow.current}</small>}
+                  {!actions.canReveal && <small>{dictionary.workflow.missingOnDisk}</small>}
                 </span>
                 <span className="mono-line" title={item.rootPath}>
                   {item.rootPath}
@@ -278,8 +306,8 @@ function SettingsLibrariesView({
                 <span className="row-actions library-row-actions">
                   <button
                     className="icon-button tooltip-button"
-                    aria-label="Rename library"
-                    data-tooltip={busy("rename") ? "Renaming..." : "Rename"}
+                    aria-label={dictionary.workflow.rename}
+                    data-tooltip={busy("rename") ? dictionary.workflow.renaming : dictionary.workflow.rename}
                     onClick={(event) => {
                       event.stopPropagation();
                       onRenameLibrary(item);
@@ -290,8 +318,8 @@ function SettingsLibrariesView({
                   </button>
                   <button
                     className="icon-button tooltip-button"
-                    aria-label="Export library zip"
-                    data-tooltip={busy("export") ? "Exporting..." : "Export Zip"}
+                    aria-label={dictionary.workflow.exportZip}
+                    data-tooltip={busy("export") ? dictionary.workflow.exporting : dictionary.workflow.exportZip}
                     onClick={(event) => {
                       event.stopPropagation();
                       onExportZip(item);
@@ -302,8 +330,8 @@ function SettingsLibrariesView({
                   </button>
                   <button
                     className="icon-button tooltip-button"
-                    aria-label="Reveal library in Finder"
-                    data-tooltip="Reveal in Finder"
+                    aria-label={dictionary.workflow.revealInFinder}
+                    data-tooltip={dictionary.workflow.revealInFinder}
                     onClick={(event) => {
                       event.stopPropagation();
                       onReveal(item);
@@ -314,8 +342,8 @@ function SettingsLibrariesView({
                   </button>
                   <button
                     className="icon-button tooltip-button"
-                    aria-label="Close library"
-                    data-tooltip={busy("close") ? "Closing..." : "Close"}
+                    aria-label={dictionary.workflow.close}
+                    data-tooltip={busy("close") ? dictionary.workflow.closing : dictionary.workflow.close}
                     onClick={(event) => {
                       event.stopPropagation();
                       onCloseLibrary(item);
@@ -379,23 +407,25 @@ function SettingsProvidersView({
   providerHealth,
   daemonOnline,
   libraryStatus,
+  dictionary,
 }: {
   providerHealth: ProviderHealth[];
   daemonOnline: boolean;
   libraryStatus: LibraryStatus | null;
+  dictionary: Dictionary;
 }) {
   return (
     <div className="settings-section">
       <div className="panel-header">
         <div>
-          <h3>Providers & Diagnostics</h3>
+          <h3>{dictionary.workflow.providersDiagnostics}</h3>
           <p>
-            Daemon {daemonOnline ? "online" : "offline"} · Integrity{" "}
-            {libraryStatus?.integrityStatus ?? "unknown"}
+            {dictionary.workflow.daemon} {daemonOnline ? dictionary.workflow.online : dictionary.workflow.offline} · {dictionary.workflow.integrity}{" "}
+            {libraryStatus?.integrityStatus ?? dictionary.workflow.unknown}
           </p>
         </div>
         <span className={daemonOnline ? "status completed" : "status failed"}>
-          {daemonOnline ? "online" : "offline"}
+          {daemonOnline ? dictionary.workflow.online : dictionary.workflow.offline}
         </span>
       </div>
       <div className="provider-diagnostics-grid">
@@ -411,10 +441,10 @@ function SettingsProvidersView({
               </span>
             </div>
             <div className="meta-grid">
-              <span>Credentials</span>
+              <span>{dictionary.workflow.credentials}</span>
               <strong>{provider.credentialState}</strong>
-              <span>Capabilities</span>
-              <strong>{provider.supportedOperations.join(", ") || "none"}</strong>
+              <span>{dictionary.workflow.capabilities}</span>
+              <strong>{provider.supportedOperations.join(", ") || dictionary.workflow.none}</strong>
             </div>
             {provider.recoverableError && <p className="error-text">{provider.recoverableError}</p>}
           </div>
@@ -429,37 +459,39 @@ function SettingsUpdatesView({
   onCheckUpdate,
   onInstallUpdate,
   onRestartApp,
+  dictionary,
 }: {
   updateState: UpdateState;
   onCheckUpdate: () => void;
   onInstallUpdate: () => void;
   onRestartApp: () => void;
+  dictionary: Dictionary;
 }) {
   const update = updateState.availableUpdate;
   const busy = updateState.checking || updateState.installing;
   const statusText =
     updateState.status === "checking"
-      ? "Checking"
+      ? dictionary.workflow.checking
       : updateState.status === "available"
-        ? "Update available"
+        ? dictionary.workflow.updateAvailable
         : updateState.status === "installing"
-          ? "Installing"
+          ? dictionary.workflow.installing
           : updateState.status === "pendingRestart"
-            ? "Restart required"
+            ? dictionary.workflow.restartRequired
             : updateState.status === "error"
-              ? "Needs attention"
+              ? dictionary.workflow.needsAttention
               : updateState.status === "upToDate"
-                ? "Up to date"
-                : "Idle";
+                ? dictionary.workflow.upToDate
+                : dictionary.workflow.idle;
 
   return (
     <div className="settings-section">
       <div className="panel-header">
         <div>
-          <h3>App Updates</h3>
+          <h3>{dictionary.workflow.appUpdates}</h3>
           <p>
-            Current version {updateState.currentVersion}
-            {updateState.lastCheckedAt ? ` · checked ${displayDate(updateState.lastCheckedAt)}` : ""}
+            {dictionary.workflow.currentVersion} {updateState.currentVersion}
+            {updateState.lastCheckedAt ? ` · ${dictionary.workflow.checked} ${displayDate(updateState.lastCheckedAt)}` : ""}
           </p>
         </div>
         <span className={`status ${updateState.status === "error" ? "failed" : updateState.status === "available" ? "queued" : "completed"}`}>
@@ -468,33 +500,33 @@ function SettingsUpdatesView({
       </div>
       <div className="updates-panel">
         <div className="meta-grid">
-          <span>Current</span>
+          <span>{dictionary.workflow.current}</span>
           <strong>{updateState.currentVersion}</strong>
-          <span>Latest</span>
-          <strong>{update?.version ?? (updateState.status === "upToDate" ? updateState.currentVersion : "unknown")}</strong>
-          <span>Last checked</span>
-          <strong>{updateState.lastCheckedAt ? displayDate(updateState.lastCheckedAt) : "never"}</strong>
+          <span>{dictionary.workflow.latest}</span>
+          <strong>{update?.version ?? (updateState.status === "upToDate" ? updateState.currentVersion : dictionary.workflow.unknown)}</strong>
+          <span>{dictionary.workflow.lastChecked}</span>
+          <strong>{updateState.lastCheckedAt ? displayDate(updateState.lastCheckedAt) : dictionary.workflow.never}</strong>
         </div>
         {update?.body && (
           <div className="update-notes">
-            <h4>Release Notes</h4>
+            <h4>{dictionary.workflow.releaseNotes}</h4>
             <p>{update.body}</p>
           </div>
         )}
         {updateState.error && <p className="error-text">{updateState.error}</p>}
         <div className="row-actions">
           <button onClick={onCheckUpdate} disabled={busy}>
-            {updateState.checking ? "Checking..." : "Check for Updates"}
+            {updateState.checking ? dictionary.workflow.checkingWithEllipsis : dictionary.workflow.checkForUpdates}
           </button>
           <button onClick={onInstallUpdate} disabled={busy || !update || updateState.pendingRestart}>
-            {updateState.installing ? "Installing..." : "Download and Install"}
+            {updateState.installing ? dictionary.workflow.installingWithEllipsis : dictionary.workflow.downloadAndInstall}
           </button>
           <button onClick={onRestartApp} disabled={!updateState.pendingRestart}>
-            Restart
+            {dictionary.workflow.restart}
           </button>
         </div>
         <p className="settings-note">
-          Updates are verified with the Tauri updater public key. Ad-hoc macOS signing is not Apple notarization.
+          {dictionary.workflow.updateVerificationNote}
         </p>
       </div>
     </div>
@@ -509,6 +541,7 @@ function SettingsLogsView({
   logContentLoading,
   onRefreshLogs,
   onSelectLog,
+  dictionary,
 }: {
   logs: AppLog[];
   logsLoading: boolean;
@@ -517,20 +550,21 @@ function SettingsLogsView({
   logContentLoading: boolean;
   onRefreshLogs: () => void;
   onSelectLog: (path: string) => void;
+  dictionary: Dictionary;
 }) {
   return (
     <div className="settings-section settings-logs-panel">
       <div className="panel-header">
         <div>
-          <h3>Logs</h3>
-          <p>{logsLoading ? "Loading logs..." : `${logs.length} recent log${logs.length === 1 ? "" : "s"}`}</p>
+          <h3>{dictionary.workflow.logs}</h3>
+          <p>{logsLoading ? dictionary.workflow.loadingLogs : `${logs.length} ${logs.length === 1 ? dictionary.workflow.recentLogSingular : dictionary.workflow.recentLogPlural}`}</p>
         </div>
         <button onClick={onRefreshLogs} disabled={logsLoading}>
-          {logsLoading ? "Refreshing..." : "Refresh"}
+          {logsLoading ? dictionary.workflow.refreshingWithEllipsis : dictionary.workflow.refresh}
         </button>
       </div>
       {logs.length === 0 ? (
-        <div className="empty-state compact">No app logs found.</div>
+        <div className="empty-state compact">{dictionary.workflow.noAppLogsFound}</div>
       ) : (
         <div className="logs-browser">
           <div className="logs-list">
@@ -552,17 +586,17 @@ function SettingsLogsView({
           </div>
           <div className="log-preview">
             {logContentLoading ? (
-              <div className="empty-state compact">Loading log preview...</div>
+              <div className="empty-state compact">{dictionary.workflow.loadingLogPreview}</div>
             ) : selectedLogContent ? (
               <>
                 <div className="log-preview-meta">
                   <span className="mono-line">{selectedLogContent.path}</span>
-                  {selectedLogContent.truncated && <strong>Truncated</strong>}
+                  {selectedLogContent.truncated && <strong>{dictionary.workflow.truncated}</strong>}
                 </div>
-                <pre>{selectedLogContent.content || "Log is empty."}</pre>
+                <pre>{selectedLogContent.content || dictionary.workflow.logIsEmpty}</pre>
               </>
             ) : (
-              <div className="empty-state compact">Select a log to preview.</div>
+              <div className="empty-state compact">{dictionary.workflow.selectLogPreview}</div>
             )}
           </div>
         </div>

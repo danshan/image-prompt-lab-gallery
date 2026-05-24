@@ -54,6 +54,7 @@ import {
   type ReviewFieldName,
   type ReviewFormState,
 } from "../../workflows/review";
+import type { Dictionary } from "../../i18n/dictionaries";
 export function ReviewWorkspace({
   suggestions,
   selectedSuggestion,
@@ -77,6 +78,7 @@ export function ReviewWorkspace({
   onBatchReject,
   onAddToAlbum,
   onOpenTask,
+  dictionary,
 }: {
   suggestions: Suggestion[];
   selectedSuggestion: Suggestion | null;
@@ -100,34 +102,35 @@ export function ReviewWorkspace({
   onBatchReject: () => void;
   onAddToAlbum: (albumId: string) => void;
   onOpenTask: (taskId: string) => void;
+  dictionary: Dictionary;
 }) {
   const [albumToAdd, setAlbumToAdd] = useState("");
   if (suggestions.length === 0) {
-    return <div className="empty-state">No pending suggestions.</div>;
+    return <div className="empty-state">{dictionary.workflow.noPendingSuggestions}</div>;
   }
   return (
     <section className="review-workspace">
       <div className="workspace-panel review-list-panel">
         <div className="panel-header">
           <div>
-            <h3>Pending review</h3>
-            <p>{selectedSuggestionIds.length || suggestions.length} selected / {suggestions.length} pending</p>
+            <h3>{dictionary.workflow.pendingReview}</h3>
+            <p>{selectedSuggestionIds.length || suggestions.length} {dictionary.workflow.selected} / {suggestions.length} {dictionary.workflow.pendingReview}</p>
           </div>
         </div>
         <div className="row-actions review-actions">
-          <button onClick={onBatchAccept}>Accept selected</button>
-          <button onClick={onBatchReject}>Reject selected</button>
+          <button onClick={onBatchAccept}>{dictionary.workflow.acceptSelected}</button>
+          <button onClick={onBatchReject}>{dictionary.workflow.rejectSelected}</button>
         </div>
         <div className="add-album-row">
           <select className="select-control" value={albumToAdd} onChange={(event) => setAlbumToAdd(event.target.value)}>
-            <option value="">Add selected to album</option>
+            <option value="">{dictionary.workflow.addSelectedToAlbum}</option>
             {albums
               .filter((album) => album.kind === "manual")
               .map((album) => (
                 <option key={album.id} value={album.id}>{album.name}</option>
               ))}
           </select>
-          <button disabled={!albumToAdd} onClick={() => onAddToAlbum(albumToAdd)}>Add</button>
+          <button disabled={!albumToAdd} onClick={() => onAddToAlbum(albumToAdd)}>{dictionary.workflow.add}</button>
         </div>
         <div className="review-list">
           {suggestions.map((suggestion) => (
@@ -142,9 +145,9 @@ export function ReviewWorkspace({
                 aria-label={`Select ${suggestion.title ?? suggestion.id}`}
               />
               <button type="button" onClick={() => onSelect(suggestion)}>
-                <strong>{suggestion.title ?? "Untitled suggestion"}</strong>
-                <span>{suggestion.category ?? "No category"}</span>
-                <small>{suggestion.tags.join(", ") || "No tags"}</small>
+                <strong>{suggestion.title ?? dictionary.workflow.untitledSuggestion}</strong>
+                <span>{suggestion.category ?? dictionary.workflow.noCategory}</span>
+                <small>{suggestion.tags.join(", ") || dictionary.workflow.noTags}</small>
               </button>
             </div>
           ))}
@@ -152,17 +155,17 @@ export function ReviewWorkspace({
       </div>
       <div className="workspace-panel review-detail-panel">
         {!selectedSuggestion || !form ? (
-          <div className="empty-state">Select a suggestion to review.</div>
+          <div className="empty-state">{dictionary.workflow.selectSuggestion}</div>
         ) : (
           <>
             <div className="panel-header">
               <div>
-                <h3>Review metadata</h3>
-                <p>Status: {selectedSuggestion.status}</p>
+                <h3>{dictionary.workflow.reviewMetadata}</h3>
+                <p>{dictionary.workflow.status}: {selectedSuggestion.status}</p>
               </div>
-              <span className="review-badge">Review pending</span>
+              <span className="review-badge">{dictionary.workflow.reviewPending}</span>
             </div>
-            <ConfidenceSummary confidence={selectedSuggestion.confidence} />
+            <ConfidenceSummary confidence={selectedSuggestion.confidence} dictionary={dictionary} />
             <ReviewTaskMirror
               tasks={tasks}
               suggestionId={selectedSuggestion.id}
@@ -171,24 +174,24 @@ export function ReviewWorkspace({
             <div className="review-form">
               <label>
                 <span>
-                  Title
-                  <ReviewFieldGenerateButton form={form} field="title" onRegenerateField={onRegenerateField} />
+                  {dictionary.workflow.titleLabel}
+                  <ReviewFieldGenerateButton form={form} field="title" onRegenerateField={onRegenerateField} dictionary={dictionary} />
                 </span>
                 <input
                   value={form.title}
                   disabled={isReviewFieldGenerating(form, "title")}
                   onChange={(event) => onFormChange({ ...form, title: event.target.value })}
                 />
-                <ReviewFieldGenerationStatus form={form} field="title" />
+                <ReviewFieldGenerationStatus form={form} field="title" dictionary={dictionary} />
               </label>
               <label>
-                <span>Category</span>
+                <span>{dictionary.workflow.category}</span>
                 <select
                   className="select-control"
                   value={form.category}
                   onChange={(event) => onFormChange({ ...form, category: event.target.value })}
                 >
-                  <option value="">No category</option>
+                  <option value="">{dictionary.workflow.noCategory}</option>
                   {availableCategories.map((category) => (
                     <option key={category} value={category}>
                       {category}
@@ -198,20 +201,20 @@ export function ReviewWorkspace({
               </label>
               <label className="wide-field">
                 <span>
-                  Description
-                  <ReviewFieldGenerateButton form={form} field="description" onRegenerateField={onRegenerateField} />
+                  {dictionary.workflow.descriptionLabel}
+                  <ReviewFieldGenerateButton form={form} field="description" onRegenerateField={onRegenerateField} dictionary={dictionary} />
                 </span>
                 <textarea
                   value={form.description}
                   disabled={isReviewFieldGenerating(form, "description")}
                   onChange={(event) => onFormChange({ ...form, description: event.target.value })}
                 />
-                <ReviewFieldGenerationStatus form={form} field="description" />
+                <ReviewFieldGenerationStatus form={form} field="description" dictionary={dictionary} />
               </label>
               <label className="wide-field">
                 <span>
-                  JSON Schema Prompt
-                  <ReviewFieldGenerateButton form={form} field="schemaPrompt" onRegenerateField={onRegenerateField} />
+                  {dictionary.workflow.jsonSchemaPrompt}
+                  <ReviewFieldGenerateButton form={form} field="schemaPrompt" onRegenerateField={onRegenerateField} dictionary={dictionary} />
                 </span>
                 <textarea
                   className="schema-prompt-input"
@@ -220,10 +223,10 @@ export function ReviewWorkspace({
                   onChange={(event) => onFormChange({ ...form, schemaPrompt: event.target.value })}
                   spellCheck={false}
                 />
-                <ReviewFieldGenerationStatus form={form} field="schemaPrompt" />
+                <ReviewFieldGenerationStatus form={form} field="schemaPrompt" dictionary={dictionary} />
               </label>
               <div className="wide-field tag-editor-field">
-                <span>Tags</span>
+                <span>{dictionary.workflow.tags}</span>
                 <div className="tag-chip-editor">
                   {form.tags.map((tag) => (
                     <button
@@ -244,7 +247,7 @@ export function ReviewWorkspace({
                         onFormChange(addReviewFormTag(form, form.tagInput));
                       }
                     }}
-                    placeholder="Add tag"
+                    placeholder={dictionary.workflow.addTag}
                   />
                   <datalist id="review-tag-options">
                     {availableTags.map((tag) => (
@@ -255,15 +258,15 @@ export function ReviewWorkspace({
               </div>
             </div>
             <div className="row-actions review-actions">
-              <button onClick={onRestore}>Restore</button>
+              <button onClick={onRestore}>{dictionary.workflow.restore}</button>
               <button disabled={suggestionRegenerating} onClick={onRegenerateSuggestion}>
-                {suggestionRegenerating ? "Regenerating..." : "Regenerate suggestion"}
+                {suggestionRegenerating ? dictionary.workflow.regenerating : dictionary.workflow.regenerateSuggestion}
               </button>
               <button className="primary-button" onClick={onAccept}>
-                Accept changes
+                {dictionary.workflow.acceptChanges}
               </button>
             </div>
-            <SuggestionHistoryTable history={suggestionHistory} onPickField={onPickHistoryField} />
+            <SuggestionHistoryTable history={suggestionHistory} onPickField={onPickHistoryField} dictionary={dictionary} />
           </>
         )}
       </div>
@@ -271,16 +274,16 @@ export function ReviewWorkspace({
   );
 }
 
-function ConfidenceSummary({ confidence }: { confidence?: ConfidenceScore }) {
+function ConfidenceSummary({ confidence, dictionary }: { confidence?: ConfidenceScore; dictionary: Dictionary }) {
   if (!confidence) {
     return null;
   }
   const fields = [
-    ["Title", confidence.title],
-    ["Description", confidence.description],
-    ["Schema", confidence.schemaPrompt],
-    ["Tags", confidence.tags],
-    ["Category", confidence.category],
+    [dictionary.workflow.titleLabel, confidence.title],
+    [dictionary.workflow.descriptionLabel, confidence.description],
+    [dictionary.workflow.schemaLabel, confidence.schemaPrompt],
+    [dictionary.workflow.tags, confidence.tags],
+    [dictionary.workflow.category, confidence.category],
   ] as const;
   const knownFields = fields.filter(([, score]) => typeof score === "number");
   if (typeof confidence.overall !== "number" && knownFields.length === 0) {
@@ -288,10 +291,10 @@ function ConfidenceSummary({ confidence }: { confidence?: ConfidenceScore }) {
   }
   return (
     <div className="confidence-panel">
-      <strong>Confidence {formatScore(confidence.overall)}</strong>
+      <strong>{dictionary.workflow.confidence} {formatScore(confidence.overall, dictionary)}</strong>
       <div className="tag-list">
         {knownFields.map(([label, score]) => (
-          <span key={label}>{label}: {formatScore(score)}</span>
+          <span key={label}>{label}: {formatScore(score, dictionary)}</span>
         ))}
       </div>
     </div>
@@ -301,28 +304,30 @@ function ConfidenceSummary({ confidence }: { confidence?: ConfidenceScore }) {
 function SuggestionHistoryTable({
   history,
   onPickField,
+  dictionary,
 }: {
   history: Suggestion[];
   onPickField: (suggestion: Suggestion, field: ReviewFieldName | "tags" | "category") => void;
+  dictionary: Dictionary;
 }) {
   if (history.length === 0) {
-    return <div className="empty-state compact">No suggestion history.</div>;
+    return <div className="empty-state compact">{dictionary.workflow.noSuggestionHistory}</div>;
   }
   return (
     <div className="history-table">
-      <h3>Suggestion history</h3>
+      <h3>{dictionary.workflow.suggestionHistory}</h3>
       {history.map((suggestion) => (
         <article key={suggestion.id} className="history-row">
           <div>
-            <strong>{suggestion.title ?? "Untitled"}</strong>
+            <strong>{suggestion.title ?? dictionary.workflow.untitled}</strong>
             <small>{suggestion.status} · {suggestion.createdAt ? displayDate(suggestion.createdAt) : "-"}</small>
           </div>
           <div className="row-actions">
-            <button onClick={() => onPickField(suggestion, "title")}>Title</button>
-            <button onClick={() => onPickField(suggestion, "description")}>Description</button>
-            <button onClick={() => onPickField(suggestion, "schemaPrompt")}>Schema</button>
-            <button onClick={() => onPickField(suggestion, "tags")}>Tags</button>
-            <button onClick={() => onPickField(suggestion, "category")}>Category</button>
+            <button onClick={() => onPickField(suggestion, "title")}>{dictionary.workflow.titleLabel}</button>
+            <button onClick={() => onPickField(suggestion, "description")}>{dictionary.workflow.descriptionLabel}</button>
+            <button onClick={() => onPickField(suggestion, "schemaPrompt")}>{dictionary.workflow.schemaLabel}</button>
+            <button onClick={() => onPickField(suggestion, "tags")}>{dictionary.workflow.tags}</button>
+            <button onClick={() => onPickField(suggestion, "category")}>{dictionary.workflow.category}</button>
           </div>
         </article>
       ))}
@@ -330,18 +335,20 @@ function SuggestionHistoryTable({
   );
 }
 
-function formatScore(score: number | null | undefined): string {
-  return typeof score === "number" ? `${score}%` : "unknown";
+function formatScore(score: number | null | undefined, dictionary: Dictionary): string {
+  return typeof score === "number" ? `${score}%` : dictionary.workflow.unknown;
 }
 
 function ReviewFieldGenerateButton({
   form,
   field,
   onRegenerateField,
+  dictionary,
 }: {
   form: ReviewFormState;
   field: ReviewFieldName;
   onRegenerateField: (field: ReviewFieldName) => void;
+  dictionary: Dictionary;
 }) {
   const loading = isReviewFieldGenerating(form, field);
   return (
@@ -351,7 +358,7 @@ function ReviewFieldGenerateButton({
       disabled={loading}
       onClick={() => onRegenerateField(field)}
     >
-      {loading ? "Generating..." : "Regenerate"}
+      {loading ? dictionary.workflow.generating : dictionary.workflow.regenerate}
     </button>
   );
 }
@@ -359,13 +366,15 @@ function ReviewFieldGenerateButton({
 function ReviewFieldGenerationStatus({
   form,
   field,
+  dictionary,
 }: {
   form: ReviewFormState;
   field: ReviewFieldName;
+  dictionary: Dictionary;
 }) {
   const state = form.generation[field];
   if (state.error) {
-    return <small className="field-status error-text">Generation failed. Check the message above or Settings Logs.</small>;
+    return <small className="field-status error-text">{dictionary.workflow.generationFailedHint}</small>;
   }
   return null;
 }

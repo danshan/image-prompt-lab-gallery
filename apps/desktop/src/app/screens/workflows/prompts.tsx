@@ -3,6 +3,7 @@ import { Icon } from "../../../studio-icons";
 import { displayDate } from "./common";
 import type { PromptDocument, PromptOutputHistoryItem, PromptVersion, RenderPromptRun } from "../../types";
 import type { PromptDraftForm, PromptRunForm } from "../../workflows/prompts";
+import type { Dictionary } from "../../i18n/dictionaries";
 
 export function PromptWorkspace({
   prompts,
@@ -29,6 +30,7 @@ export function PromptWorkspace({
   onRunFormChange,
   onRender,
   onRun,
+  dictionary,
 }: {
   prompts: PromptDocument[];
   search: string;
@@ -54,6 +56,7 @@ export function PromptWorkspace({
   onRunFormChange: (form: PromptRunForm) => void;
   onRender: () => void;
   onRun: () => void;
+  dictionary: Dictionary;
 }) {
   const selectedPrompt = prompts.find((prompt) => prompt.id === selectedPromptId) ?? null;
   const selectedVersion = versions.find((version) => version.id === selectedVersionId) ?? null;
@@ -65,17 +68,17 @@ export function PromptWorkspace({
       <aside className="prompt-library-panel">
         <div className="panel-header compact">
           <div>
-            <h3>Prompt Library</h3>
-            <p>{loading ? "Loading" : `${prompts.length} prompt${prompts.length === 1 ? "" : "s"}`}</p>
+            <h3>{dictionary.workflow.promptLibrary}</h3>
+            <p>{loading ? dictionary.workflow.loading : `${prompts.length} ${prompts.length === 1 ? dictionary.workflow.promptCountSingular : dictionary.workflow.promptCountPlural}`}</p>
           </div>
-          <button className="icon-button" title="New prompt" aria-label="New prompt" onClick={onNewPrompt}>
+          <button className="icon-button" title={dictionary.workflow.newPrompt} aria-label={dictionary.workflow.newPrompt} onClick={onNewPrompt}>
             <Icon name="plus" />
           </button>
         </div>
         <div className="prompt-search-row">
           <Icon name="search" />
-          <input value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Search prompts" />
-          <button onClick={onRefresh}>Refresh</button>
+          <input value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder={dictionary.workflow.searchPrompts} />
+          <button onClick={onRefresh}>{dictionary.workflow.refresh}</button>
         </div>
         <div className="prompt-list">
           {prompts.map((prompt) => (
@@ -86,15 +89,15 @@ export function PromptWorkspace({
             >
               <span>
                 <strong>{prompt.name}</strong>
-                <small>{prompt.latestVersionName ?? "draft only"} · {displayDate(prompt.updatedAt)}</small>
+                <small>{prompt.latestVersionName ?? dictionary.workflow.draftOnly} · {displayDate(prompt.updatedAt)}</small>
               </span>
               <span className="prompt-status">{prompt.status}</span>
             </button>
           ))}
           {prompts.length === 0 && (
             <div className="empty-panel">
-              <strong>No prompts</strong>
-              <span>Create a prompt draft or adjust search.</span>
+              <strong>{dictionary.workflow.noPrompts}</strong>
+              <span>{dictionary.workflow.noPromptsHint}</span>
             </div>
           )}
         </div>
@@ -103,49 +106,49 @@ export function PromptWorkspace({
       <main className="prompt-editor-panel">
         <div className="prompt-editor-header">
           <label>
-            <span>Name</span>
+            <span>{dictionary.workflow.name}</span>
             <input value={draft.name} onChange={(event) => onDraftChange({ ...draft, name: event.target.value })} />
           </label>
           <div className="row-actions">
-            <button disabled={!canSaveDraft} onClick={onSaveDraft}>Save draft</button>
-            <button className="primary-button" disabled={!canSaveDraft} onClick={onSaveVersion}>Save version</button>
+            <button disabled={!canSaveDraft} onClick={onSaveDraft}>{dictionary.workflow.saveDraft}</button>
+            <button className="primary-button" disabled={!canSaveDraft} onClick={onSaveVersion}>{dictionary.workflow.saveVersion}</button>
           </div>
         </div>
         <div className="prompt-editor-grid">
           <label className="prompt-body-field">
-            <span>Prompt body</span>
+            <span>{dictionary.workflow.promptBody}</span>
             <textarea value={draft.body} onChange={(event) => onDraftChange({ ...draft, body: event.target.value })} />
           </label>
           <label>
-            <span>Negative</span>
+            <span>{dictionary.workflow.negative}</span>
             <textarea value={draft.negativePrompt} onChange={(event) => onDraftChange({ ...draft, negativePrompt: event.target.value })} />
           </label>
           <label>
-            <span>Style</span>
+            <span>{dictionary.workflow.style}</span>
             <textarea value={draft.stylePrompt} onChange={(event) => onDraftChange({ ...draft, stylePrompt: event.target.value })} />
           </label>
           <label>
-            <span>Variables schema JSON</span>
+            <span>{dictionary.workflow.variablesSchemaJson}</span>
             <textarea value={draft.variablesSchemaJson} onChange={(event) => onDraftChange({ ...draft, variablesSchemaJson: event.target.value })} />
           </label>
           <label>
-            <span>Default values JSON</span>
+            <span>{dictionary.workflow.defaultValuesJson}</span>
             <textarea value={draft.defaultValuesJson} onChange={(event) => onDraftChange({ ...draft, defaultValuesJson: event.target.value })} />
           </label>
           <label className="prompt-parameter-preset-field">
-            <span>Parameter preset JSON</span>
+            <span>{dictionary.workflow.parameterPresetJson}</span>
             <textarea value={draft.parameterPresetJson} onChange={(event) => onDraftChange({ ...draft, parameterPresetJson: event.target.value })} />
           </label>
           <label className="prompt-notes-field">
-            <span>Notes</span>
+            <span>{dictionary.workflow.notes}</span>
             <textarea value={draft.notes} onChange={(event) => onDraftChange({ ...draft, notes: event.target.value })} />
           </label>
         </div>
         <section className="prompt-version-strip">
           <div className="panel-header compact">
             <div>
-              <h3>Versions</h3>
-              <p>{versionsLoading ? "Loading" : `${versions.length} saved`}</p>
+              <h3>{dictionary.workflow.versions}</h3>
+              <p>{versionsLoading ? dictionary.workflow.loading : `${versions.length} ${dictionary.workflow.saved}`}</p>
             </div>
           </div>
           <div className="prompt-version-list">
@@ -159,7 +162,7 @@ export function PromptWorkspace({
                 <span>{displayDate(version.createdAt)}</span>
               </button>
             ))}
-            {versions.length === 0 && <span className="muted-inline">Save a version before running this prompt.</span>}
+            {versions.length === 0 && <span className="muted-inline">{dictionary.workflow.saveVersionBeforeRun}</span>}
           </div>
         </section>
       </main>
@@ -167,14 +170,14 @@ export function PromptWorkspace({
       <aside className="prompt-run-panel">
         <div className="panel-header compact">
           <div>
-            <h3>Run</h3>
-            <p>{selectedPrompt?.name ?? "No prompt selected"}</p>
+            <h3>{dictionary.workflow.run}</h3>
+            <p>{selectedPrompt?.name ?? dictionary.workflow.noPromptSelected}</p>
           </div>
-          <button className="primary-button" disabled={!canUseVersion} onClick={onRun}>Run</button>
+          <button className="primary-button" disabled={!canUseVersion} onClick={onRun}>{dictionary.workflow.run}</button>
         </div>
         <div className="prompt-run-controls">
           <label>
-            <span>Version</span>
+            <span>{dictionary.workflow.version}</span>
             <select
               className="select-control"
               value={selectedVersionId ?? ""}
@@ -189,7 +192,7 @@ export function PromptWorkspace({
           </label>
           <div className="prompt-run-row">
             <label>
-              <span>Provider</span>
+              <span>{dictionary.workflow.provider}</span>
               <select
                 className="select-control"
                 value={runForm.provider}
@@ -201,17 +204,17 @@ export function PromptWorkspace({
               </select>
             </label>
             <label>
-              <span>Model</span>
+              <span>{dictionary.workflow.model}</span>
               <input
                 value={runForm.model}
                 onChange={(event) => onRunFormChange({ ...runForm, model: event.target.value })}
-                placeholder="Provider default"
+                placeholder={dictionary.workflow.providerDefault}
               />
             </label>
           </div>
           <div className="prompt-run-row">
             <label>
-              <span>Operation</span>
+              <span>{dictionary.workflow.operation}</span>
               <select
                 className="select-control"
                 value={runForm.operation}
@@ -223,26 +226,26 @@ export function PromptWorkspace({
             </label>
           </div>
           <label>
-            <span>Run values JSON</span>
+            <span>{dictionary.workflow.runValuesJson}</span>
             <textarea value={runForm.valuesJson} onChange={(event) => onRunFormChange({ ...runForm, valuesJson: event.target.value })} />
           </label>
           <label>
-            <span>Parameter JSON</span>
+            <span>{dictionary.workflow.parameterJson}</span>
             <textarea value={runForm.parametersJson} onChange={(event) => onRunFormChange({ ...runForm, parametersJson: event.target.value })} />
           </label>
-          <button disabled={!canUseVersion} onClick={onRender}>Render</button>
+          <button disabled={!canUseVersion} onClick={onRender}>{dictionary.workflow.render}</button>
         </div>
         <section className="prompt-render-preview">
           <div className="prompt-section-title">
-            <strong>Rendered</strong>
+            <strong>{dictionary.workflow.rendered}</strong>
             <span>{renderResult?.versionName ?? selectedVersion?.versionName ?? "-"}</span>
           </div>
-          <pre>{renderResult?.renderedPrompt ?? selectedVersion?.body ?? "Select a version and render."}</pre>
-          <small>{renderResult?.renderedNegativePrompt ?? selectedVersion?.negativePrompt ?? "No negative prompt."}</small>
+          <pre>{renderResult?.renderedPrompt ?? selectedVersion?.body ?? dictionary.workflow.selectVersionAndRender}</pre>
+          <small>{renderResult?.renderedNegativePrompt ?? selectedVersion?.negativePrompt ?? dictionary.workflow.noNegativePrompt}</small>
         </section>
         <section className="prompt-history-panel">
           <div className="prompt-section-title">
-            <strong>Output history</strong>
+            <strong>{dictionary.workflow.outputHistory}</strong>
             <span>{history.length}</span>
           </div>
           <div className="prompt-history-list">
@@ -253,7 +256,7 @@ export function PromptWorkspace({
                 <small>{item.outputVersionId ?? item.assetId ?? item.taskId ?? item.generationEventId}</small>
               </article>
             ))}
-            {history.length === 0 && <span className="muted-inline">No linked outputs yet.</span>}
+            {history.length === 0 && <span className="muted-inline">{dictionary.workflow.noLinkedOutputs}</span>}
           </div>
         </section>
       </aside>

@@ -54,6 +54,7 @@ import type {
   VersionTreeNode,
   View,
 } from "../../types";
+import type { Dictionary } from "../../i18n/dictionaries";
 export function Inspector({
   asset,
   detailState,
@@ -70,6 +71,7 @@ export function Inspector({
   onSavePromptSnapshot,
   onGenerateVariation,
   onPromoteVersion,
+  dictionary,
 }: {
   asset: GalleryAsset | null;
   detailState: DetailLoadState<AssetDetail>;
@@ -86,6 +88,7 @@ export function Inspector({
   onSavePromptSnapshot: (detail: AssetDetail) => void;
   onGenerateVariation: (versionId?: string | null) => void;
   onPromoteVersion: (versionId?: string | null) => void;
+  dictionary: Dictionary;
 }) {
   const detail = detailState.detail;
   const [tagInput, setTagInput] = useState("");
@@ -119,27 +122,27 @@ export function Inspector({
   if (!asset) {
     return (
       <aside className="inspector">
-        <button className="inspector-close" onClick={onClose}>Close</button>
-        <h2>Inspector</h2>
-        <div className="empty-state compact">No asset selected.</div>
+        <button className="inspector-close" onClick={onClose}>{dictionary.workflow.close}</button>
+        <h2>{dictionary.workflow.inspector}</h2>
+        <div className="empty-state compact">{dictionary.workflow.noAssetSelected}</div>
       </aside>
     );
   }
   if (detailState.loading) {
     return (
       <aside className="inspector">
-        <button className="inspector-close" onClick={onClose}>Close</button>
-        <h2>Inspector</h2>
-        <div className="empty-state compact">Loading asset detail...</div>
+        <button className="inspector-close" onClick={onClose}>{dictionary.workflow.close}</button>
+        <h2>{dictionary.workflow.inspector}</h2>
+        <div className="empty-state compact">{dictionary.workflow.loadingAssetDetail}</div>
       </aside>
     );
   }
   if (detailState.error || !detail) {
     return (
       <aside className="inspector">
-        <button className="inspector-close" onClick={onClose}>Close</button>
-        <h2>Inspector</h2>
-        <div className="empty-state compact">{detailState.error ?? "Detail unavailable."}</div>
+        <button className="inspector-close" onClick={onClose}>{dictionary.workflow.close}</button>
+        <h2>{dictionary.workflow.inspector}</h2>
+        <div className="empty-state compact">{detailState.error ?? dictionary.workflow.detailUnavailable}</div>
       </aside>
     );
   }
@@ -154,15 +157,15 @@ export function Inspector({
     detail.focusedVersionTreeName ??
     focusedVersion?.versionName ??
     asset.title ??
-    "Generated image";
+    dictionary.workflow.generatedImage;
   return (
     <aside className="inspector">
-      <button className="inspector-close" onClick={onClose}>Close</button>
+      <button className="inspector-close" onClick={onClose}>{dictionary.workflow.close}</button>
       <section className="inspector-hero">
         {previewPath ? (
           <button
             className="inspector-thumbnail-button"
-            aria-label="Open full image preview"
+            aria-label={dictionary.workflow.openFullImagePreview}
             onClick={() => onPreviewImage({ path: previewPath, label: previewLabel })}
           >
             <img
@@ -195,19 +198,19 @@ export function Inspector({
             />
           ) : (
             <h2 className="editable-title" onDoubleClick={() => setTitleEditing(true)}>
-              {detail.title ?? asset.title ?? "Untitled"}
+              {detail.title ?? asset.title ?? dictionary.workflow.untitled}
             </h2>
           )}
           <StarRatingDisplay rating={detail.rating} showEmpty />
-          {detail.reviewPendingCount > 0 && <strong>Review pending</strong>}
-          <small>Added: {displayDate(detail.createdAt)}</small>
+          {detail.reviewPendingCount > 0 && <strong>{dictionary.workflow.reviewPending}</strong>}
+          <small>{dictionary.workflow.added}: {displayDate(detail.createdAt)}</small>
         </div>
       </section>
-      <InspectorSection title="Prompt">
-        <p>{detail.prompt ?? "Prompt is unavailable for this version."}</p>
+      <InspectorSection title={dictionary.workflow.prompt}>
+        <p>{detail.prompt ?? dictionary.workflow.promptUnavailable}</p>
         {detail.promptLineage ? (
           <div className="prompt-lineage-link">
-            <span>Prompt version</span>
+            <span>{dictionary.workflow.promptVersion}</span>
             <button
               className="text-button"
               onClick={() =>
@@ -222,26 +225,26 @@ export function Inspector({
           </div>
         ) : detail.prompt ? (
           <button className="text-button" onClick={() => onSavePromptSnapshot(detail)}>
-            Save as Prompt
+            {dictionary.workflow.saveAsPrompt}
           </button>
         ) : null}
       </InspectorSection>
-      <InspectorSection title="Rating">
+      <InspectorSection title={dictionary.workflow.rating}>
         <StarRatingControl rating={detail.rating} onChange={onUpdateRating} />
       </InspectorSection>
-      <InspectorSection title="Provider & Model">
-        <MetaRow label="Provider" value={detail.provider ?? asset.provider ?? "-"} />
-        <MetaRow label="Model" value={detail.modelLabel ?? asset.modelLabel ?? "-"} />
-        <MetaRow label="Category" value={detail.category ?? asset.category ?? "-"} />
-        <MetaRow label="Parameters" value={detail.parametersJson ?? "-"} />
+      <InspectorSection title={dictionary.workflow.providerAndModel}>
+        <MetaRow label={dictionary.workflow.provider} value={detail.provider ?? asset.provider ?? "-"} />
+        <MetaRow label={dictionary.workflow.model} value={detail.modelLabel ?? asset.modelLabel ?? "-"} />
+        <MetaRow label={dictionary.workflow.category} value={detail.category ?? asset.category ?? "-"} />
+        <MetaRow label={dictionary.workflow.parameters} value={detail.parametersJson ?? "-"} />
       </InspectorSection>
-      <InspectorSection title="Description">
-        <p>{detail.description ?? "No description."}</p>
+      <InspectorSection title={dictionary.workflow.descriptionLabel}>
+        <p>{detail.description ?? dictionary.workflow.noDescription}</p>
       </InspectorSection>
-      <InspectorSection title="JSON Schema Prompt">
-        <pre className="schema-prompt-preview">{detail.schemaPrompt ?? "No schema prompt."}</pre>
+      <InspectorSection title={dictionary.workflow.jsonSchemaPrompt ?? "JSON Schema Prompt"}>
+        <pre className="schema-prompt-preview">{detail.schemaPrompt ?? dictionary.workflow.noSchemaPrompt}</pre>
       </InspectorSection>
-      <InspectorSection title="Tags">
+      <InspectorSection title={dictionary.workflow.tags}>
         <div className="tag-list">
           {detail.tags.map((tag) => (
             <span key={tag}>{tag}</span>
@@ -261,12 +264,12 @@ export function Inspector({
                   setTagEditorOpen(false);
                 }
               }}
-              placeholder="Add tag"
+              placeholder={dictionary.workflow.addTag}
             />
           )}
           <button
             className="mini-button"
-            aria-label={tagEditorOpen ? "Add tag" : "Open tag editor"}
+            aria-label={tagEditorOpen ? dictionary.workflow.addTag : dictionary.workflow.openTagEditor}
             disabled={tagEditorOpen && tagInput.trim().length === 0}
             onClick={() => {
               if (tagEditorOpen) {
@@ -280,15 +283,15 @@ export function Inspector({
           </button>
         </div>
       </InspectorSection>
-      <InspectorSection title="Albums">
+      <InspectorSection title={dictionary.workflow.albums}>
         {detail.albums.length === 0 ? (
-          <p>No albums yet.</p>
+          <p>{dictionary.workflow.noAlbumsYet}</p>
         ) : (
           detail.albums.map((album) => <MetaRow key={album.id} label={album.kind} value={album.name} />)
         )}
         <div className="add-album-row">
           <select className="select-control" value={albumToAdd} onChange={(event) => setAlbumToAdd(event.target.value)}>
-            <option value="">Add to album</option>
+            <option value="">{dictionary.workflow.addToAlbum ?? dictionary.workflow.addImages}</option>
             {albums
               .filter((album) => album.kind === "manual")
               .map((album) => (
@@ -305,11 +308,11 @@ export function Inspector({
               setAlbumToAdd("");
             }}
           >
-            Add
+            {dictionary.workflow.add}
           </button>
         </div>
       </InspectorSection>
-      <InspectorSection title="Versions & Lineage">
+      <InspectorSection title={dictionary.workflow.versionsAndLineage}>
         <VersionLineagePanel
           detail={detail}
           onSelectVersion={onSelectVersion}
@@ -317,21 +320,22 @@ export function Inspector({
           onGenerateFromReference={onGenerateFromReference}
           onGenerateVariation={onGenerateVariation}
           onPromoteVersion={onPromoteVersion}
+          dictionary={dictionary}
         />
       </InspectorSection>
-      <InspectorSection title="File">
+      <InspectorSection title={dictionary.workflow.file ?? "File"}>
         {detail.file ? (
           <>
-            <MetaRow label="Filename" value={detail.file.filename} />
-            <MetaRow label="Location" value={detail.file.relativeLocation} />
-            <MetaRow label="Size" value={formatBytes(detail.file.sizeBytes)} />
-            <MetaRow label="Dimensions" value={formatDimensions(detail.file)} />
-            <MetaRow label="Aspect Ratio" value={formatAspectRatio(detail.file.width, detail.file.height)} />
-            <MetaRow label="Integrity" value={detail.file.integrityStatus} />
-            <MetaRow label="Checksum" value={formatChecksum(detail.file)} />
+            <MetaRow label={dictionary.workflow.filename} value={detail.file.filename} />
+            <MetaRow label={dictionary.workflow.location} value={detail.file.relativeLocation} />
+            <MetaRow label={dictionary.workflow.size} value={formatBytes(detail.file.sizeBytes)} />
+            <MetaRow label={dictionary.workflow.dimensions} value={formatDimensions(detail.file, dictionary)} />
+            <MetaRow label={dictionary.workflow.aspectRatio} value={formatAspectRatio(detail.file.width, detail.file.height)} />
+            <MetaRow label={dictionary.workflow.integrity} value={detail.file.integrityStatus} />
+            <MetaRow label={dictionary.workflow.checksum} value={formatChecksum(detail.file)} />
           </>
         ) : (
-          <p>File context is unavailable.</p>
+          <p>{dictionary.workflow.fileContextUnavailable}</p>
         )}
       </InspectorSection>
     </aside>
@@ -345,6 +349,7 @@ function VersionLineagePanel({
   onGenerateFromReference,
   onGenerateVariation,
   onPromoteVersion,
+  dictionary,
 }: {
   detail: AssetDetail;
   onSelectVersion: (versionId: string) => void;
@@ -352,6 +357,7 @@ function VersionLineagePanel({
   onGenerateFromReference: (reference: ReferenceSource) => void;
   onGenerateVariation: (versionId?: string | null) => void;
   onPromoteVersion: (versionId?: string | null) => void;
+  dictionary: Dictionary;
 }) {
   const focused =
     detail.focusedVersion ??
@@ -399,11 +405,11 @@ function VersionLineagePanel({
   return (
     <div className="version-lineage-panel">
       <div className="version-current-card">
-        <span className="version-current-kicker">Focused version</span>
+        <span className="version-current-kicker">{dictionary.workflow.focusedVersion}</span>
         <strong>{focusedTreeName ?? formatVersionName(focused?.id ?? detail.id)}</strong>
         <div className="version-current-meta">
-          <span>{detail.versions.length} version{detail.versions.length === 1 ? "" : "s"}</span>
-          <span>{lineage[0]?.generationEvent?.operationType ? formatOperation(lineage[0].generationEvent.operationType) : "Asset lineage"}</span>
+          <span>{detail.versions.length} {dictionary.workflow.versions}</span>
+          <span>{lineage[0]?.generationEvent?.operationType ? formatOperation(lineage[0].generationEvent.operationType) : dictionary.workflow.assetLineage}</span>
         </div>
       </div>
 
@@ -412,7 +418,7 @@ function VersionLineagePanel({
           className="version-tree"
           role="tree"
           tabIndex={0}
-          aria-label="Asset version tree"
+          aria-label={dictionary.workflow.assetVersionTree}
           aria-activedescendant={activeNodeId ? `version-tree-${activeNodeId}` : undefined}
           onKeyDown={(event) => {
             if (visibleNodes.length === 0) {
@@ -474,7 +480,7 @@ function VersionLineagePanel({
           })}
         </div>
       ) : (
-        <div className="version-browser" aria-label="Asset versions">
+        <div className="version-browser" aria-label={dictionary.workflow.assetVersions}>
           {detail.versions.map((version) => {
             const selected = version.id === focused?.id;
           const event = eventByVersionId.get(version.id) ?? null;
@@ -491,11 +497,11 @@ function VersionLineagePanel({
                 </span>
                 <span>
                   <strong>{version.versionName ?? formatVersionName(version.id)}</strong>
-                  <small>{event?.prompt ?? "Imported or metadata-only version"}</small>
+                  <small>{event?.prompt ?? dictionary.workflow.importedOrMetadataOnlyVersion}</small>
                 </span>
               </button>
               <button className="mini-button" onClick={() => onGenerateVariation(version.id)}>
-                Generate
+                {dictionary.workflow.generate}
               </button>
             </article>
           );
@@ -513,20 +519,20 @@ function VersionLineagePanel({
 
       {detail.sourceReference ? (
         <div className="version-current-card reference-source-card">
-          <span className="version-current-kicker">Reference source</span>
+          <span className="version-current-kicker">{dictionary.workflow.referenceSource}</span>
           <div className="reference-source-content">
             <button
               className="reference-source-preview"
-              aria-label="Open reference source image preview"
+              aria-label={dictionary.workflow.openReferenceSourceImagePreview}
               onClick={() =>
                 onPreviewImage({
                   path: detail.sourceReference!.filePath,
-                  label: detail.sourceReference!.assetTitle ?? "Reference image",
+                  label: detail.sourceReference!.assetTitle ?? dictionary.workflow.referenceImage,
                 })
               }
             >
               <img
-                alt={detail.sourceReference.assetTitle ?? "Reference image"}
+                alt={detail.sourceReference.assetTitle ?? dictionary.workflow.referenceImage}
                 src={convertImagePath(detail.sourceReference.filePath)}
                 loading="lazy"
                 decoding="async"
@@ -539,7 +545,7 @@ function VersionLineagePanel({
                 <span>{detail.sourceReference.assetStatus}</span>
               </div>
               <button className="mini-button" onClick={() => onGenerateFromReference(detail.sourceReference!)}>
-                Regenerate
+                {dictionary.workflow.regenerate}
               </button>
             </div>
           </div>
@@ -548,7 +554,7 @@ function VersionLineagePanel({
 
       {detail.promotedFrom ? (
         <div className="version-current-card promoted-source-card">
-          <span className="version-current-kicker">Promoted from</span>
+          <span className="version-current-kicker">{dictionary.workflow.promotedFrom}</span>
           <strong>{detail.promotedFrom.sourceAssetTitle ?? shortIdentifier(detail.promotedFrom.sourceAssetId)}</strong>
           <div className="version-current-meta">
             <span>{detail.promotedFrom.sourceVersionTreeName ?? detail.promotedFrom.sourceVersionName}</span>
@@ -557,9 +563,9 @@ function VersionLineagePanel({
         </div>
       ) : null}
 
-      <div className="lineage-timeline" aria-label="Version lineage">
+      <div className="lineage-timeline" aria-label={dictionary.workflow.versionLineage}>
         {lineage.length === 0 ? (
-          <p>No lineage available.</p>
+          <p>{dictionary.workflow.noLineageAvailable}</p>
         ) : (
           lineage.map((entry, index) => {
             const isCurrent = index === 0;
@@ -567,9 +573,9 @@ function VersionLineagePanel({
               <div className={isCurrent ? "lineage-node current" : "lineage-node"} key={entry.version.id}>
                 <span className="lineage-marker" aria-hidden="true" />
                 <div className="lineage-node-main">
-                  <strong>{isCurrent ? "Current" : "Parent"}</strong>
+                  <strong>{isCurrent ? dictionary.workflow.current : dictionary.workflow.parent}</strong>
                   <span>{entry.version.versionName ?? formatVersionName(entry.version.id)}</span>
-                  <small>{entry.generationEvent ? `${entry.generationEvent.provider} · ${entry.generationEvent.providerModel}` : "Imported version"}</small>
+                  <small>{entry.generationEvent ? `${entry.generationEvent.provider} · ${entry.generationEvent.providerModel}` : dictionary.workflow.importedVersion}</small>
                 </div>
                 <code title={entry.version.id}>{shortIdentifier(entry.version.id)}</code>
               </div>
@@ -580,11 +586,11 @@ function VersionLineagePanel({
 
       <button className="variation-button" onClick={() => onGenerateVariation(focused?.id ?? detail.focusedVersionId ?? detail.currentVersionId)}>
         <Icon name="plus" />
-        <span>Generate variation</span>
+        <span>{dictionary.workflow.generateVariation}</span>
       </button>
       <button className="variation-button secondary" onClick={() => onPromoteVersion(focused?.id ?? detail.focusedVersionId ?? detail.currentVersionId)}>
         <Icon name="image" />
-        <span>Promote as new asset</span>
+        <span>{dictionary.workflow.promoteAsNewAsset}</span>
       </button>
     </div>
   );
@@ -608,13 +614,13 @@ function MetaRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function formatDimensions(file: FileContext) {
-  return formatResolution(file.width, file.height);
+function formatDimensions(file: FileContext, dictionary: Dictionary) {
+  return formatResolution(file.width, file.height, dictionary);
 }
 
-function formatResolution(width: number | null, height: number | null) {
+function formatResolution(width: number | null, height: number | null, dictionary: Dictionary) {
   if (!width || !height) {
-    return "Unavailable";
+    return dictionary.workflow.unavailable;
   }
   return `${width} x ${height}`;
 }

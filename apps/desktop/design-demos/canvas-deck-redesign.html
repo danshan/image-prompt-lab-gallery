@@ -1,0 +1,2151 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Image Prompt Lab - Canvas Deck Redesign</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f8fafc;
+        --bg-grid: rgba(15, 23, 42, 0.045);
+        --surface: #ffffff;
+        --surface-2: #f1f5f9;
+        --surface-3: #e8edf5;
+        --text: #162033;
+        --muted: #617086;
+        --faint: #8b98aa;
+        --border: #dbe3ee;
+        --border-strong: #b8c3d2;
+        --primary: #2563eb;
+        --primary-soft: #e8efff;
+        --generate: #f97316;
+        --generate-soft: #fff0df;
+        --ok: #16a34a;
+        --warn: #b7791f;
+        --danger: #dc2626;
+        --shadow: 0 18px 48px rgba(15, 23, 42, 0.1);
+        --shadow-tight: 0 8px 24px rgba(15, 23, 42, 0.08);
+        --command-h: 56px;
+        --tabs-h: 44px;
+        --filter-w: 244px;
+        --dock-w: 56px;
+        --radius: 12px;
+        --radius-sm: 8px;
+        --font-ui: ui-sans-serif, "Noto Sans SC", "Segoe UI", system-ui, sans-serif;
+        --font-mono: "SFMono-Regular", "Cascadia Mono", "Fira Code", ui-monospace, monospace;
+      }
+
+      :root[data-theme="dark"] {
+        color-scheme: dark;
+        --bg: #0b0d10;
+        --bg-grid: rgba(226, 232, 240, 0.055);
+        --surface: #151922;
+        --surface-2: #1d2430;
+        --surface-3: #273040;
+        --text: #e6eaf2;
+        --muted: #a7b1c1;
+        --faint: #7d8796;
+        --border: #2a3140;
+        --border-strong: #435064;
+        --primary: #6ea3ff;
+        --primary-soft: #122342;
+        --generate: #fb923c;
+        --generate-soft: #3d2415;
+        --ok: #5ed28b;
+        --warn: #f2c15f;
+        --danger: #ff7b72;
+        --shadow: 0 18px 54px rgba(0, 0, 0, 0.42);
+        --shadow-tight: 0 8px 28px rgba(0, 0, 0, 0.34);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        background:
+          linear-gradient(var(--bg-grid) 1px, transparent 1px) 0 0 / 24px 24px,
+          linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px) 0 0 / 24px 24px,
+          var(--bg);
+        color: var(--text);
+        font-family: var(--font-ui);
+        margin: 0;
+        overflow: hidden;
+      }
+
+      button,
+      input,
+      select,
+      textarea {
+        color: inherit;
+        font: inherit;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      .app {
+        display: grid;
+        grid-template-columns: var(--filter-w) minmax(0, 1fr) var(--dock-w);
+        grid-template-rows: var(--command-h) var(--tabs-h) minmax(0, 1fr);
+        height: 100dvh;
+        min-width: 0;
+        overflow: hidden;
+      }
+
+      .command {
+        align-items: center;
+        background: color-mix(in srgb, var(--surface) 94%, transparent);
+        border-bottom: 1px solid var(--border);
+        display: grid;
+        gap: 12px;
+        grid-column: 1 / -1;
+        grid-template-columns: 240px minmax(240px, 640px) minmax(156px, auto) auto;
+        padding: 8px 12px;
+        z-index: 20;
+      }
+
+      .brand {
+        align-items: center;
+        display: grid;
+        gap: 10px;
+        grid-template-columns: 34px minmax(0, 1fr);
+        min-width: 0;
+      }
+
+      .mark {
+        background: var(--text);
+        border-radius: 9px;
+        color: var(--surface);
+        display: grid;
+        font-weight: 800;
+        height: 34px;
+        place-items: center;
+        width: 34px;
+      }
+
+      .brand strong,
+      .brand small,
+      .deck-title strong,
+      .deck-title span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .brand strong {
+        display: block;
+        font-size: 14px;
+        line-height: 1.1;
+      }
+
+      .brand small {
+        color: var(--muted);
+        display: block;
+        font-size: 12px;
+      }
+
+      .search {
+        align-items: center;
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        display: grid;
+        gap: 8px;
+        grid-template-columns: 18px minmax(0, 1fr) auto;
+        height: 38px;
+        min-width: 0;
+        padding: 0 12px;
+      }
+
+      .search input {
+        background: transparent;
+        border: 0;
+        min-width: 0;
+        outline: 0;
+      }
+
+      .search kbd {
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        color: var(--faint);
+        font-family: var(--font-mono);
+        font-size: 11px;
+        padding: 2px 6px;
+      }
+
+      .quick-stats {
+        align-items: center;
+        color: var(--muted);
+        display: grid;
+        gap: 8px;
+        grid-template-columns: repeat(3, minmax(44px, 1fr));
+        justify-content: flex-end;
+        min-width: 0;
+      }
+
+      .quick-stats span {
+        align-items: center;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        display: inline-flex;
+        font-size: 12px;
+        gap: 4px;
+        justify-content: center;
+        min-width: 0;
+        overflow: hidden;
+        padding: 5px 9px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .quick-stats strong {
+        color: var(--text);
+        font-family: var(--font-mono);
+        font-size: 12px;
+      }
+
+      .quick-stats b {
+        color: var(--muted);
+        font-weight: 500;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .icon-row {
+        display: flex;
+        gap: 8px;
+      }
+
+      .icon-button,
+      .dock-button,
+      .tab,
+      .chip,
+      .tool-button {
+        align-items: center;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        display: inline-flex;
+        justify-content: center;
+        transition:
+          background 140ms ease,
+          border-color 140ms ease,
+          color 140ms ease,
+          box-shadow 140ms ease;
+      }
+
+      .icon-button,
+      .dock-button,
+      .tool-button {
+        background: var(--surface);
+        height: 38px;
+        padding: 0;
+        position: relative;
+        width: 38px;
+      }
+
+      .icon-button:hover,
+      .dock-button:hover,
+      .tool-button:hover,
+      .tab:hover,
+      .chip:hover {
+        border-color: var(--border-strong);
+      }
+
+      .generate {
+        background: var(--generate);
+        border-color: var(--generate);
+        color: #fff;
+      }
+
+      .badge {
+        background: var(--primary);
+        border-radius: 999px;
+        color: #fff;
+        font-size: 10px;
+        line-height: 1;
+        min-width: 17px;
+        padding: 3px 5px;
+        position: absolute;
+        right: -5px;
+        top: -5px;
+      }
+
+      .icon-count {
+        background: var(--primary);
+        border-radius: 999px;
+        color: #fff;
+        display: none;
+        font-family: var(--font-mono);
+        font-size: 10px;
+        line-height: 1;
+        min-width: 16px;
+        padding: 3px 5px;
+      }
+
+      .tabs {
+        align-items: center;
+        background: color-mix(in srgb, var(--surface) 88%, transparent);
+        border-bottom: 1px solid var(--border);
+        display: grid;
+        gap: 8px;
+        grid-column: 1 / -1;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        padding: 6px 12px;
+        z-index: 18;
+      }
+
+      .tab {
+        background: transparent;
+        border-color: transparent;
+        color: var(--muted);
+        gap: 8px;
+        height: 32px;
+        min-width: 0;
+        padding: 0 10px;
+      }
+
+      .tab span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .tab.active {
+        background: var(--primary-soft);
+        border-color: color-mix(in srgb, var(--primary) 48%, var(--border));
+        color: var(--primary);
+      }
+
+      .filter-stack {
+        background: color-mix(in srgb, var(--surface) 88%, transparent);
+        border-right: 1px solid var(--border);
+        display: grid;
+        gap: 12px;
+        grid-column: 1;
+        grid-row: 3;
+        grid-template-rows: auto auto minmax(0, 1fr);
+        min-height: 0;
+        overflow: auto;
+        padding: 12px;
+      }
+
+      .deck-title {
+        display: grid;
+        gap: 3px;
+        min-width: 0;
+      }
+
+      .deck-title span {
+        color: var(--faint);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .deck-title strong {
+        font-size: 22px;
+        letter-spacing: -0.02em;
+      }
+
+      .filter-card,
+      .panel {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-tight);
+      }
+
+      .filter-card {
+        display: grid;
+        gap: 10px;
+        padding: 10px;
+      }
+
+      .filter-card h2,
+      .panel h2,
+      .sheet h2 {
+        font-size: 13px;
+        margin: 0;
+      }
+
+      .field {
+        display: grid;
+        gap: 5px;
+      }
+
+      .field label {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      .field select,
+      .field input {
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        height: 34px;
+        min-width: 0;
+        padding: 0 9px;
+      }
+
+      .chip-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .chip {
+        background: var(--surface-2);
+        color: var(--muted);
+        font-size: 12px;
+        min-height: 28px;
+        padding: 0 8px;
+      }
+
+      .chip.active {
+        background: var(--primary-soft);
+        border-color: color-mix(in srgb, var(--primary) 48%, var(--border));
+        color: var(--primary);
+      }
+
+      .saved-views {
+        display: grid;
+        gap: 6px;
+      }
+
+      .saved-view {
+        align-items: center;
+        background: var(--surface-2);
+        border: 1px solid transparent;
+        border-radius: 9px;
+        display: grid;
+        gap: 8px;
+        grid-template-columns: 28px minmax(0, 1fr) auto;
+        min-width: 0;
+        padding: 7px;
+      }
+
+      .saved-view.active {
+        border-color: var(--primary);
+      }
+
+      .saved-view strong,
+      .saved-view small {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .saved-view small {
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .dot {
+        background: var(--primary-soft);
+        border-radius: 8px;
+        color: var(--primary);
+        display: grid;
+        height: 28px;
+        place-items: center;
+        width: 28px;
+      }
+
+      .canvas {
+        display: grid;
+        grid-column: 2;
+        grid-row: 3;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-height: 0;
+        min-width: 0;
+        overflow: hidden;
+        padding: 14px;
+      }
+
+      .canvas-head {
+        align-items: center;
+        display: grid;
+        gap: 12px;
+        grid-template-columns: minmax(0, 1fr) auto;
+        margin-bottom: 12px;
+        min-width: 0;
+      }
+
+      .canvas-title {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      .canvas-title h1 {
+        font-size: 24px;
+        letter-spacing: -0.03em;
+        line-height: 1;
+        margin: 0;
+      }
+
+      .canvas-title p {
+        color: var(--muted);
+        margin: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .canvas-tools {
+        display: flex;
+        gap: 8px;
+      }
+
+      .asset-grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fill, minmax(164px, 1fr));
+        min-height: 0;
+        overflow: auto;
+        padding: 1px 1px 84px;
+      }
+
+      .asset {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-tight);
+        display: grid;
+        gap: 8px;
+        min-width: 0;
+        padding: 8px;
+      }
+
+      .asset.selected {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 18%, transparent), var(--shadow-tight);
+      }
+
+      .thumb {
+        aspect-ratio: 4 / 3;
+        background:
+          linear-gradient(135deg, var(--a), transparent 58%),
+          linear-gradient(315deg, var(--b), var(--c));
+        border-radius: 9px;
+        overflow: hidden;
+        position: relative;
+      }
+
+      .thumb::after {
+        background:
+          linear-gradient(90deg, rgba(255, 255, 255, 0.14), transparent 38%),
+          radial-gradient(circle at 72% 22%, rgba(255, 255, 255, 0.22), transparent 22%);
+        content: "";
+        inset: 0;
+        position: absolute;
+      }
+
+      .asset-meta {
+        display: grid;
+        gap: 5px;
+        min-width: 0;
+      }
+
+      .asset-meta strong,
+      .asset-meta small {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .asset-meta small {
+        color: var(--muted);
+        font-family: var(--font-mono);
+        font-size: 11px;
+      }
+
+      .asset-actions {
+        display: grid;
+        gap: 6px;
+        grid-template-columns: repeat(4, 1fr);
+      }
+
+      .asset-actions .tool-button {
+        height: 32px;
+        width: auto;
+      }
+
+      .action-dock {
+        align-items: center;
+        background: color-mix(in srgb, var(--surface) 90%, transparent);
+        border-left: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        grid-column: 3;
+        grid-row: 3;
+        padding: 12px 8px;
+      }
+
+      .dock-spacer {
+        flex: 1;
+      }
+
+      .sheet {
+        background: color-mix(in srgb, var(--surface) 96%, transparent);
+        border: 1px solid var(--border);
+        border-radius: 18px 18px 0 0;
+        bottom: 0;
+        box-shadow: var(--shadow);
+        display: grid;
+        gap: 12px;
+        grid-template-rows: auto minmax(0, 1fr);
+        left: calc(var(--filter-w) + 14px);
+        max-height: 46dvh;
+        opacity: 0;
+        padding: 12px;
+        pointer-events: none;
+        position: fixed;
+        right: calc(var(--dock-w) + 14px);
+        transform: translateY(16px);
+        transition:
+          opacity 160ms ease,
+          transform 160ms ease;
+        z-index: 40;
+      }
+
+      .sheet.open {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateY(0);
+      }
+
+      .sheet-head {
+        align-items: center;
+        display: grid;
+        gap: 10px;
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
+
+      .sheet-body {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.2fr) minmax(180px, 0.8fr);
+        min-height: 0;
+        overflow: auto;
+        padding: 0 2px 2px;
+        scrollbar-gutter: stable;
+      }
+
+      .mini-preview {
+        aspect-ratio: 4 / 3;
+        background:
+          linear-gradient(135deg, #9fb3c8, transparent 52%),
+          linear-gradient(315deg, #24364c, #c77d46);
+        border-radius: 12px;
+      }
+
+      .metric-grid {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .metric {
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        display: grid;
+        gap: 3px;
+        min-width: 0;
+        padding: 8px;
+      }
+
+      .metric span {
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .metric strong {
+        font-family: var(--font-mono);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .timeline {
+        display: grid;
+        gap: 8px;
+      }
+
+      .timeline-row {
+        align-items: start;
+        display: grid;
+        gap: 8px;
+        grid-template-columns: 10px minmax(0, 1fr);
+      }
+
+      .timeline-row i {
+        background: var(--primary);
+        border-radius: 999px;
+        height: 10px;
+        margin-top: 5px;
+        width: 10px;
+      }
+
+      .timeline-row strong,
+      .timeline-row small {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .timeline-row small {
+        color: var(--muted);
+      }
+
+      .mobile-filter,
+      .mobile-tabs {
+        display: none;
+      }
+
+      .albums-layout,
+      .prompts-layout,
+      .review-layout,
+      .queue-layout,
+      .settings-layout {
+        display: none;
+      }
+
+      .app[data-mode="albums"] .asset-grid,
+      .app[data-mode="prompts"] .asset-grid,
+      .app[data-mode="review"] .asset-grid,
+      .app[data-mode="queue"] .asset-grid,
+      .app[data-mode="settings"] .asset-grid {
+        display: none;
+      }
+
+      .app[data-mode="albums"] .albums-layout,
+      .app[data-mode="prompts"] .prompts-layout,
+      .app[data-mode="review"] .review-layout,
+      .app[data-mode="queue"] .queue-layout,
+      .app[data-mode="settings"] .settings-layout {
+        display: grid;
+      }
+
+      .albums-layout,
+      .review-layout {
+        gap: 12px;
+        grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.2fr);
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .prompts-layout,
+      .queue-layout,
+      .settings-layout {
+        align-content: start;
+        gap: 12px;
+        grid-template-columns: minmax(260px, 0.7fr) minmax(0, 1.3fr);
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .list-panel,
+      .detail-panel {
+        min-height: 0;
+        min-width: 0;
+        overflow: auto;
+        padding: 12px;
+      }
+
+      .list-panel {
+        display: grid;
+        gap: 8px;
+        align-content: start;
+      }
+
+      .card-scroll {
+        align-content: start;
+        display: grid;
+        gap: 8px;
+        min-height: 0;
+        overflow: auto;
+      }
+
+      .row {
+        align-items: center;
+        background: var(--surface-2);
+        border: 1px solid transparent;
+        border-radius: 10px;
+        display: grid;
+        gap: 10px;
+        grid-template-columns: 32px minmax(0, 1fr) auto;
+        min-width: 0;
+        padding: 8px;
+      }
+
+      .row.active {
+        border-color: var(--primary);
+      }
+
+      .row strong,
+      .row small {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .row small {
+        color: var(--muted);
+      }
+
+      .diff-grid {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .diff-box {
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        display: grid;
+        gap: 8px;
+        min-width: 0;
+        padding: 10px;
+      }
+
+      .diff-box p {
+        color: var(--muted);
+        margin: 0;
+      }
+
+      .album-canvas,
+      .prompt-editor,
+      .settings-grid {
+        align-content: start;
+        display: grid;
+        gap: 12px;
+        min-height: 0;
+      }
+
+      .album-toolbar,
+      .prompt-toolbar,
+      .section-toolbar {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: space-between;
+        min-width: 0;
+      }
+
+      .album-toolbar > div:first-child,
+      .prompt-toolbar > div:first-child,
+      .section-toolbar > div:first-child {
+        min-width: 0;
+      }
+
+      .album-strip,
+      .prompt-list,
+      .provider-grid,
+      .log-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .album-card {
+        background: var(--surface-2);
+        border: 1px solid transparent;
+        border-radius: 12px;
+        display: grid;
+        gap: 8px;
+        min-width: 0;
+        padding: 10px;
+      }
+
+      .album-card.active {
+        border-color: var(--primary);
+      }
+
+      .album-card strong,
+      .album-card small,
+      .prompt-row strong,
+      .prompt-row small,
+      .provider-card strong,
+      .provider-card small,
+      .log-row strong,
+      .log-row small {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .album-card small,
+      .prompt-row small,
+      .provider-card small,
+      .log-row small {
+        color: var(--muted);
+      }
+
+      .album-preview-grid {
+        display: grid;
+        gap: 6px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .album-preview-grid span {
+        aspect-ratio: 1 / 1;
+        background:
+          linear-gradient(135deg, var(--a), transparent 55%),
+          linear-gradient(315deg, var(--b), var(--c));
+        border-radius: 8px;
+      }
+
+      .canvas-board {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: repeat(auto-fill, minmax(142px, 1fr));
+        min-height: 0;
+        overflow: auto;
+        padding-bottom: 40px;
+      }
+
+      .canvas-tile {
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        display: grid;
+        gap: 8px;
+        min-width: 0;
+        padding: 8px;
+      }
+
+      .canvas-tile .thumb {
+        aspect-ratio: 4 / 3;
+      }
+
+      .prompt-row {
+        align-items: center;
+        background: var(--surface-2);
+        border: 1px solid transparent;
+        border-radius: 10px;
+        display: grid;
+        gap: 8px;
+        grid-template-columns: 28px minmax(0, 1fr) auto;
+        min-width: 0;
+        padding: 8px;
+      }
+
+      .prompt-row.active {
+        border-color: var(--primary);
+      }
+
+      .editor-surface {
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        display: grid;
+        gap: 10px;
+        min-height: 0;
+        padding: 12px;
+      }
+
+      .editor-surface textarea {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        color: var(--text);
+        min-height: 180px;
+        padding: 12px;
+        resize: none;
+        width: 100%;
+      }
+
+      .run-console {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: minmax(0, 1fr) minmax(210px, 0.7fr);
+      }
+
+      .console-preview {
+        aspect-ratio: 4 / 3;
+        background:
+          linear-gradient(135deg, #14243a, transparent 58%),
+          linear-gradient(315deg, #c37a35, #88a1a4);
+        border-radius: 12px;
+      }
+
+      .provider-grid,
+      .settings-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .provider-card,
+      .log-row {
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        display: grid;
+        gap: 8px;
+        min-width: 0;
+        padding: 10px;
+      }
+
+      .status-dot {
+        align-items: center;
+        color: var(--ok);
+        display: inline-flex;
+        gap: 6px;
+        font-size: 12px;
+      }
+
+      .status-dot::before {
+        background: currentColor;
+        border-radius: 999px;
+        content: "";
+        height: 7px;
+        width: 7px;
+      }
+
+      .field-grid {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .field-card {
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        display: grid;
+        gap: 8px;
+        min-width: 0;
+        padding: 10px;
+      }
+
+      .field-card.wide {
+        grid-column: 1 / -1;
+      }
+
+      .field-card span,
+      .event-card span {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      .field-card strong,
+      .field-card p,
+      .event-card strong,
+      .event-card small {
+        margin: 0;
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+
+      .task-detail-grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: minmax(0, 1.1fr) minmax(240px, 0.9fr);
+      }
+
+      .event-stream {
+        display: grid;
+        gap: 8px;
+      }
+
+      .event-card {
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        display: grid;
+        gap: 5px;
+        padding: 10px;
+      }
+
+      .log-preview {
+        background: #0b1220;
+        border-radius: 12px;
+        color: #dbeafe;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        min-height: 178px;
+        min-width: 0;
+        overflow: auto;
+        padding: 12px;
+        white-space: pre-wrap;
+      }
+
+      .settings-tabs-demo {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .settings-log-browser {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1.3fr);
+        min-height: 0;
+      }
+
+      .settings-tab-demo {
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        display: grid;
+        gap: 5px;
+        min-width: 0;
+        padding: 10px;
+      }
+
+      .settings-tab-demo.active {
+        border-color: var(--primary);
+      }
+
+      .settings-tab-demo strong,
+      .settings-tab-demo small {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .settings-tab-demo small {
+        color: var(--muted);
+      }
+
+      .review-actions,
+      .queue-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .review-actions .chip,
+      .queue-actions .chip {
+        min-height: 34px;
+        padding: 0 12px;
+      }
+
+      .review-layout .list-panel,
+      .queue-layout .list-panel,
+      .settings-layout .list-panel,
+      .prompts-layout .list-panel,
+      .albums-layout .list-panel {
+        align-content: stretch;
+        display: flex;
+        flex-direction: column;
+        max-height: 100%;
+        overflow: hidden;
+      }
+
+      .review-layout .card-scroll,
+      .queue-layout .card-scroll,
+      .settings-layout .card-scroll,
+      .prompt-list,
+      .album-strip {
+        align-content: start;
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+      }
+
+      .section-stack {
+        align-content: start;
+        display: grid;
+        gap: 12px;
+      }
+
+      .settings-layout .detail-panel {
+        align-content: start;
+      }
+
+      .library-table {
+        display: grid;
+        gap: 8px;
+      }
+
+      .library-row {
+        align-items: center;
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        display: grid;
+        gap: 10px;
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        min-width: 0;
+        padding: 10px;
+      }
+
+      .library-row strong,
+      .library-row small {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .library-row small {
+        color: var(--muted);
+      }
+
+      .log-preview b {
+        color: #93c5fd;
+        font-weight: 700;
+      }
+
+      .hidden {
+        display: none !important;
+      }
+
+      svg {
+        height: 18px;
+        pointer-events: none;
+        width: 18px;
+      }
+
+      @media (max-width: 1279px) {
+        .app {
+          grid-template-columns: minmax(0, 1fr) var(--dock-w);
+        }
+
+        .command {
+          grid-template-columns: 220px minmax(220px, 1fr) auto;
+        }
+
+        .quick-stats {
+          display: none;
+        }
+
+        .filter-stack {
+          display: none;
+        }
+
+        .mobile-filter {
+          display: flex;
+        }
+
+        .canvas {
+          grid-column: 1;
+        }
+
+        .sheet {
+          left: 14px;
+          right: calc(var(--dock-w) + 14px);
+        }
+
+        .review-layout,
+        .albums-layout,
+        .prompts-layout,
+        .queue-layout,
+        .settings-layout,
+        .settings-log-browser,
+        .sheet-body {
+          height: auto;
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 959px) {
+        body {
+          overflow: auto;
+          overflow-x: hidden;
+        }
+
+        .app {
+          grid-template-columns: minmax(0, 1fr);
+          grid-template-rows: auto minmax(0, 1fr) 58px;
+          min-height: 100dvh;
+          overflow: visible;
+          overflow-x: hidden;
+          width: 100vw;
+        }
+
+        .command {
+          grid-column: 1;
+          grid-template-columns: minmax(0, 1fr);
+          min-height: var(--command-h);
+          max-width: 100vw;
+          padding-inline: 10px;
+          position: sticky;
+          top: 0;
+          width: 100vw;
+        }
+
+        .search {
+          grid-template-columns: 18px minmax(0, 1fr);
+        }
+
+        .search kbd,
+        .brand small {
+          display: none;
+        }
+
+        .command .icon-row {
+          display: grid;
+          gap: 6px;
+          grid-template-columns: repeat(6, minmax(0, 38px));
+          padding-bottom: 2px;
+        }
+
+        .badge {
+          display: none;
+        }
+
+        .icon-count {
+          display: inline-flex;
+        }
+
+        .command .icon-button {
+          gap: 4px;
+        }
+
+        .tabs {
+          display: none;
+        }
+
+        .mobile-tabs {
+          background: color-mix(in srgb, var(--surface) 94%, transparent);
+          border-top: 1px solid var(--border);
+          bottom: 0;
+          display: flex;
+          gap: 4px;
+          grid-column: 1;
+          grid-row: 3;
+          height: 58px;
+          left: 0;
+          padding: 6px;
+          position: sticky;
+          right: 0;
+          width: 100vw;
+          z-index: 30;
+        }
+
+        .mobile-tabs .tab {
+          flex: 1 1 0;
+          display: grid;
+          gap: 2px;
+          height: 46px;
+          min-width: 0;
+          padding: 3px;
+          place-items: center;
+        }
+
+        .mobile-tabs .tab span {
+          font-size: 10px;
+          max-width: 48px;
+        }
+
+        .canvas {
+          grid-column: 1;
+          grid-row: 2;
+          min-height: calc(100dvh - var(--command-h) - 58px);
+          max-width: 100vw;
+          overflow: visible;
+          overflow-x: hidden;
+          padding: 12px;
+          width: 100vw;
+        }
+
+        .canvas-head {
+          grid-template-columns: 1fr;
+        }
+
+        .canvas-title p {
+          white-space: normal;
+        }
+
+        .asset-grid {
+          grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+          max-width: 100%;
+          overflow: visible;
+          padding-bottom: 74px;
+          width: 100%;
+        }
+
+        .action-dock {
+          background: transparent;
+          border: 0;
+          bottom: 66px;
+          display: flex;
+          flex-direction: row;
+          grid-column: auto;
+          grid-row: auto;
+          justify-content: center;
+          left: 50%;
+          padding: 0;
+          pointer-events: none;
+          position: fixed;
+          right: auto;
+          transform: translateX(-50%);
+          z-index: 28;
+        }
+
+        .action-dock .dock-button {
+          box-shadow: var(--shadow-tight);
+          pointer-events: auto;
+        }
+
+        .dock-spacer,
+        .dock-secondary {
+          display: none;
+        }
+
+        .sheet {
+          border-radius: 18px 18px 0 0;
+          left: 0;
+          max-height: 78dvh;
+          right: 0;
+        }
+
+        .sheet-body {
+          grid-template-columns: 1fr;
+        }
+
+        .review-layout,
+        .albums-layout,
+        .prompts-layout,
+        .queue-layout,
+        .settings-layout {
+          padding-bottom: 74px;
+        }
+      }
+
+      @media (max-width: 520px) {
+        .command {
+          overflow-x: hidden;
+        }
+
+        .command .icon-row {
+          gap: 6px;
+          grid-template-columns: repeat(5, minmax(0, 1fr));
+          width: 100%;
+        }
+
+        .command .icon-row .icon-button:nth-child(2) {
+          display: none;
+        }
+
+        .command .icon-button {
+          width: auto;
+        }
+
+        .asset-grid {
+          grid-template-columns: 1fr;
+          width: 100%;
+        }
+
+        .canvas-tools {
+          display: grid;
+          gap: 6px;
+          grid-template-columns: repeat(2, 1fr);
+          width: 100%;
+        }
+
+        .canvas-tools .icon-button:nth-child(n + 3) {
+          display: none;
+        }
+
+        .canvas-tools .icon-button,
+        .canvas-tools .mobile-filter {
+          width: auto;
+        }
+
+        .asset {
+          align-items: center;
+          display: grid;
+          gap: 10px;
+          grid-template-columns: 108px minmax(0, 1fr);
+          grid-template-rows: auto auto;
+          max-width: 100%;
+          min-width: 0;
+          overflow: visible;
+          width: 100%;
+        }
+
+        .asset .thumb {
+          aspect-ratio: 1 / 1;
+          grid-row: 1 / 3;
+          min-width: 0;
+        }
+
+        .asset-meta {
+          align-self: end;
+        }
+
+        .canvas-title,
+        .canvas-title h1,
+        .canvas-title p {
+          max-width: 100%;
+          min-width: 0;
+          overflow: visible;
+          text-overflow: clip;
+          white-space: normal;
+        }
+
+        .asset-actions {
+          align-self: start;
+          grid-template-columns: repeat(4, minmax(30px, 34px));
+          justify-content: start;
+        }
+
+        .asset-actions .tool-button {
+          min-width: 0;
+          width: auto;
+        }
+
+        .mobile-tabs {
+          gap: 2px;
+          padding: 5px;
+        }
+
+        .mobile-tabs .tab:nth-child(n + 5) {
+          display: none;
+        }
+
+        .mobile-tabs .tab {
+          min-width: 0;
+          padding: 2px;
+        }
+
+        .mobile-tabs .tab span {
+          display: none;
+        }
+
+        .action-dock {
+          display: none;
+        }
+
+        .diff-grid,
+        .metric-grid,
+        .run-console,
+        .provider-grid,
+        .settings-grid,
+        .field-grid,
+        .task-detail-grid,
+        .settings-tabs-demo {
+          grid-template-columns: 1fr;
+        }
+
+        .library-row {
+          grid-template-columns: minmax(0, 1fr) auto;
+        }
+
+        .settings-log-browser {
+          grid-template-columns: 1fr;
+        }
+
+        .settings-layout .list-panel {
+          height: auto;
+          min-height: 338px;
+        }
+
+        .settings-layout .card-scroll {
+          display: none;
+        }
+
+        .library-row .chip {
+          display: none;
+        }
+
+        .review-actions,
+        .queue-actions {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          width: 100%;
+        }
+
+        .review-actions .chip,
+        .queue-actions .chip {
+          width: 100%;
+        }
+
+        .review-layout .list-panel,
+        .queue-layout .list-panel,
+        .settings-layout .list-panel,
+        .prompts-layout .list-panel,
+        .albums-layout .list-panel {
+          max-height: none;
+          overflow: visible;
+        }
+
+        .review-layout .card-scroll,
+        .queue-layout .card-scroll,
+        .prompt-list,
+        .album-strip {
+          flex: 0 1 auto;
+          max-height: min(260px, calc(100dvh - 300px));
+          overflow: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app" id="app" data-mode="gallery">
+      <header class="command">
+        <div class="brand">
+          <div class="mark">IP</div>
+          <div>
+            <strong data-i18n="appName">Image Prompt Lab</strong>
+            <small>MyImageLab.library</small>
+          </div>
+        </div>
+        <label class="search">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.4-4.4M10.8 18a7.2 7.2 0 1 1 0-14.4 7.2 7.2 0 0 1 0 14.4Z" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+          <input data-i18n-placeholder="search" placeholder="Search assets, prompts, tasks, albums" />
+          <kbd>⌘K</kbd>
+        </label>
+        <div class="quick-stats">
+          <span><strong>6</strong><b data-i18n="assetsShort">assets</b></span>
+          <span><strong>1</strong><b data-i18n="reviewShort">review</b></span>
+          <span><strong>1</strong><b data-i18n="queueShort">queue</b></span>
+        </div>
+        <div class="icon-row">
+          <button class="icon-button generate" type="button" title="Generate" data-i18n-title="generate"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+          <button class="icon-button" type="button" title="Review" data-mode-target="review" data-i18n-title="review"><svg viewBox="0 0 24 24"><path d="M7 4h10v16H7zM10 8h4M10 12h4M10 16h2" fill="none" stroke="currentColor" stroke-width="2"/></svg><span class="badge">1</span><span class="icon-count">1</span></button>
+          <button class="icon-button" type="button" title="Queue" data-mode-target="queue" data-i18n-title="queue"><svg viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h9" fill="none" stroke="currentColor" stroke-width="2"/></svg><span class="badge">1</span><span class="icon-count">1</span></button>
+          <button class="icon-button" id="themeToggle" type="button" title="Theme"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+          <button class="icon-button" id="localeToggle" type="button" title="Language"><svg viewBox="0 0 24 24"><path d="M4 5h10M9 3v2m-3 0c1 4 4 7 8 8M12 5c-.8 3-3 6-7 8M14 19l3-7 3 7m-5-2h4" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+          <button class="icon-button" type="button" title="Settings" data-mode-target="settings" data-i18n-title="settings"><svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm8 4h2M2 12h2m12.9-6.9 1.4-1.4M5.7 18.3l1.4-1.4m0-11.8L5.7 3.7m12.6 14.6-1.4-1.4" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+        </div>
+      </header>
+
+      <nav class="tabs" aria-label="Workspace tabs"></nav>
+
+      <aside class="filter-stack">
+        <div class="deck-title">
+          <span data-i18n="eyebrow">Current library</span>
+          <strong data-i18n="gallery">Gallery</strong>
+        </div>
+        <section class="filter-card">
+          <h2 data-i18n="filters">Filters</h2>
+          <div class="field">
+            <label data-i18n="provider">Provider</label>
+            <select><option>Any provider</option><option>Codex</option><option>Fake</option></select>
+          </div>
+          <div class="field">
+            <label data-i18n="rating">Rating</label>
+            <select><option>Any rating</option><option>5 stars</option><option>4+ stars</option></select>
+          </div>
+          <div class="chip-list">
+            <button class="chip active">abstract</button>
+            <button class="chip">architecture</button>
+            <button class="chip">botanical</button>
+            <button class="chip">city</button>
+          </div>
+        </section>
+        <section class="filter-card">
+          <h2 data-i18n="savedViews">Saved views</h2>
+          <div class="saved-views">
+            <button class="saved-view active"><span class="dot">01</span><span><strong data-i18n="allAssets">All assets</strong><small>6 items</small></span><span>6</span></button>
+            <button class="saved-view"><span class="dot">02</span><span><strong data-i18n="reviewInbox">Review inbox</strong><small>metadata</small></span><span>1</span></button>
+            <button class="saved-view"><span class="dot">03</span><span><strong data-i18n="recentRuns">Recent runs</strong><small>queue</small></span><span>1</span></button>
+          </div>
+        </section>
+      </aside>
+
+      <main class="canvas">
+        <div class="canvas-head">
+          <div class="canvas-title">
+            <h1 data-i18n="canvasTitle">Canvas Deck</h1>
+            <p data-i18n="canvasSubtitle">Browse, curate, review, and trace generation work without changing layout shape.</p>
+          </div>
+          <div class="canvas-tools">
+            <button class="icon-button mobile-filter" type="button" title="Filters" data-i18n-title="filters"><svg viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+            <button class="icon-button" type="button" title="Grid"><svg viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+            <button class="icon-button" type="button" title="Sort"><svg viewBox="0 0 24 24"><path d="M6 7h12M8 12h8M10 17h4" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+            <button class="icon-button" type="button" title="Density"><svg viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h14" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+          </div>
+        </div>
+
+        <section class="asset-grid">
+          <article class="asset selected" style="--a:#c6d4cc;--b:#668579;--c:#f1f5f9">
+            <div class="thumb"></div>
+            <div class="asset-meta"><strong>Solarpunk interior</strong><small>v4 · Midjourney</small></div>
+            <div class="asset-actions">
+              <button class="tool-button" title="Inspect" data-open-sheet><svg viewBox="0 0 24 24"><path d="M12 5c5 0 9 7 9 7s-4 7-9 7-9-7-9-7 4-7 9-7Zm0 4a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+              <button class="tool-button" title="Review"><svg viewBox="0 0 24 24"><path d="m5 13 4 4L19 7" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+              <button class="tool-button" title="Regenerate"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v6h-6" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+              <button class="tool-button" title="Album"><svg viewBox="0 0 24 24"><path d="M4 6h6l2 2h8v10H4z" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+            </div>
+          </article>
+          <article class="asset" style="--a:#c94b31;--b:#651635;--c:#f6b36c"><div class="thumb"></div><div class="asset-meta"><strong>Canyon study</strong><small>v1 · Codex</small></div><div class="asset-actions"><button class="tool-button" data-open-sheet><svg viewBox="0 0 24 24"><path d="M12 5c5 0 9 7 9 7s-4 7-9 7-9-7-9-7 4-7 9-7Z" fill="none" stroke="currentColor" stroke-width="2"/></svg></button><button class="tool-button"><svg viewBox="0 0 24 24"><path d="m5 13 4 4L19 7" fill="none" stroke="currentColor" stroke-width="2"/></svg></button><button class="tool-button"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v6h-6" fill="none" stroke="currentColor" stroke-width="2"/></svg></button><button class="tool-button"><svg viewBox="0 0 24 24"><path d="M4 6h6l2 2h8v10H4z" fill="none" stroke="currentColor" stroke-width="2"/></svg></button></div></article>
+          <article class="asset" style="--a:#1d2b1d;--b:#b88922;--c:#34402a"><div class="thumb"></div><div class="asset-meta"><strong>Botanical neon</strong><small>v3 · Fake</small></div><div class="asset-actions"><button class="tool-button" data-open-sheet><svg viewBox="0 0 24 24"><path d="M12 5c5 0 9 7 9 7s-4 7-9 7-9-7-9-7 4-7 9-7Z" fill="none" stroke="currentColor" stroke-width="2"/></svg></button><button class="tool-button"><svg viewBox="0 0 24 24"><path d="m5 13 4 4L19 7" fill="none" stroke="currentColor" stroke-width="2"/></svg></button><button class="tool-button"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v6h-6" fill="none" stroke="currentColor" stroke-width="2"/></svg></button><button class="tool-button"><svg viewBox="0 0 24 24"><path d="M4 6h6l2 2h8v10H4z" fill="none" stroke="currentColor" stroke-width="2"/></svg></button></div></article>
+          <article class="asset" style="--a:#6e6a7d;--b:#e88972;--c:#b4796e"><div class="thumb"></div><div class="asset-meta"><strong>Mountain lake</strong><small>v2 · Codex</small></div><div class="asset-actions"><button class="tool-button" data-open-sheet><svg viewBox="0 0 24 24"><path d="M12 5c5 0 9 7 9 7s-4 7-9 7-9-7-9-7 4-7 9-7Z" fill="none" stroke="currentColor" stroke-width="2"/></svg></button><button class="tool-button"><svg viewBox="0 0 24 24"><path d="m5 13 4 4L19 7" fill="none" stroke="currentColor" stroke-width="2"/></svg></button><button class="tool-button"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v6h-6" fill="none" stroke="currentColor" stroke-width="2"/></svg></button><button class="tool-button"><svg viewBox="0 0 24 24"><path d="M4 6h6l2 2h8v10H4z" fill="none" stroke="currentColor" stroke-width="2"/></svg></button></div></article>
+          <article class="asset" style="--a:#30343b;--b:#bb7a3e;--c:#8d967d"><div class="thumb"></div><div class="asset-meta"><strong>Night outpost</strong><small>v2 · Fake</small></div><div class="asset-actions"><button class="tool-button" data-open-sheet><svg viewBox="0 0 24 24"><path d="M12 5c5 0 9 7 9 7s-4 7-9 7-9-7-9-7 4-7 9-7Z" fill="none" stroke="currentColor" stroke-width="2"/></svg></button><button class="tool-button"><svg viewBox="0 0 24 24"><path d="m5 13 4 4L19 7" fill="none" stroke="currentColor" stroke-width="2"/></svg></button><button class="tool-button"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v6h-6" fill="none" stroke="currentColor" stroke-width="2"/></svg></button><button class="tool-button"><svg viewBox="0 0 24 24"><path d="M4 6h6l2 2h8v10H4z" fill="none" stroke="currentColor" stroke-width="2"/></svg></button></div></article>
+          <article class="asset" style="--a:#20333d;--b:#bf783c;--c:#6b4a35"><div class="thumb"></div><div class="asset-meta"><strong>Rain city</strong><small>v3 · Midjourney</small></div><div class="asset-actions"><button class="tool-button" data-open-sheet><svg viewBox="0 0 24 24"><path d="M12 5c5 0 9 7 9 7s-4 7-9 7-9-7-9-7 4-7 9-7Z" fill="none" stroke="currentColor" stroke-width="2"/></svg></button><button class="tool-button"><svg viewBox="0 0 24 24"><path d="m5 13 4 4L19 7" fill="none" stroke="currentColor" stroke-width="2"/></svg></button><button class="tool-button"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v6h-6" fill="none" stroke="currentColor" stroke-width="2"/></svg></button><button class="tool-button"><svg viewBox="0 0 24 24"><path d="M4 6h6l2 2h8v10H4z" fill="none" stroke="currentColor" stroke-width="2"/></svg></button></div></article>
+        </section>
+
+        <section class="albums-layout">
+          <div class="panel list-panel">
+            <div class="section-toolbar">
+              <h2 data-i18n="albums">Albums</h2>
+              <button class="icon-button" type="button" title="Create album"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+            </div>
+            <div class="album-strip">
+              <article class="album-card active">
+                <div class="album-preview-grid">
+                  <span style="--a:#c6d4cc;--b:#668579;--c:#f1f5f9"></span>
+                  <span style="--a:#6e6a7d;--b:#e88972;--c:#b4796e"></span>
+                  <span style="--a:#20333d;--b:#bf783c;--c:#6b4a35"></span>
+                </div>
+                <strong>Reference Interiors</strong>
+                <small>Manual · 12 assets · custom order</small>
+              </article>
+              <article class="album-card">
+                <div class="album-preview-grid">
+                  <span style="--a:#1d2b1d;--b:#b88922;--c:#34402a"></span>
+                  <span style="--a:#30343b;--b:#bb7a3e;--c:#8d967d"></span>
+                  <span style="--a:#c94b31;--b:#651635;--c:#f6b36c"></span>
+                </div>
+                <strong>Smart: Pending Review</strong>
+                <small>Rule based · 4 matches</small>
+              </article>
+              <article class="album-card">
+                <div class="album-preview-grid">
+                  <span style="--a:#24364c;--b:#c77d46;--c:#9fb3c8"></span>
+                  <span style="--a:#845ec2;--b:#ff8066;--c:#2c73d2"></span>
+                  <span style="--a:#008f7a;--b:#ffc75f;--c:#4b4453"></span>
+                </div>
+                <strong>Export Candidates</strong>
+                <small>Manual · 8 assets</small>
+              </article>
+            </div>
+          </div>
+          <div class="panel detail-panel album-canvas">
+            <div class="album-toolbar">
+              <div>
+                <h2>Reference Interiors</h2>
+                <small class="status-dot">Manual album, drag order enabled</small>
+              </div>
+              <div class="icon-row">
+                <button class="icon-button" type="button" title="Add images"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+                <button class="icon-button" type="button" title="Export"><svg viewBox="0 0 24 24"><path d="M12 3v12m-4-4 4 4 4-4M5 19h14" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+              </div>
+            </div>
+            <div class="canvas-board">
+              <article class="canvas-tile"><div class="thumb" style="--a:#c6d4cc;--b:#668579;--c:#f1f5f9"></div><strong>Solarpunk interior</strong><small>position 01</small></article>
+              <article class="canvas-tile"><div class="thumb" style="--a:#6e6a7d;--b:#e88972;--c:#b4796e"></div><strong>Mountain lake</strong><small>position 02</small></article>
+              <article class="canvas-tile"><div class="thumb" style="--a:#20333d;--b:#bf783c;--c:#6b4a35"></div><strong>Rain city</strong><small>position 03</small></article>
+              <article class="canvas-tile"><div class="thumb" style="--a:#30343b;--b:#bb7a3e;--c:#8d967d"></div><strong>Night outpost</strong><small>position 04</small></article>
+            </div>
+          </div>
+        </section>
+
+        <section class="prompts-layout">
+          <div class="panel list-panel">
+            <div class="section-toolbar">
+              <h2 data-i18n="prompts">Prompts</h2>
+              <button class="icon-button" type="button" title="New prompt"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+            </div>
+            <div class="prompt-list">
+              <button class="prompt-row active"><span class="dot">P1</span><span><strong>Interior lighting study</strong><small>v7 · saved 12m ago</small></span><span>7</span></button>
+              <button class="prompt-row"><span class="dot">P2</span><span><strong>Product material macro</strong><small>v3 · linked outputs</small></span><span>3</span></button>
+              <button class="prompt-row"><span class="dot">P3</span><span><strong>Poster color exploration</strong><small>draft only</small></span><span>1</span></button>
+            </div>
+          </div>
+          <div class="panel detail-panel prompt-editor">
+            <div class="prompt-toolbar">
+              <div>
+                <h2>Interior lighting study</h2>
+                <small class="status-dot">Version v7 selected</small>
+              </div>
+              <div class="icon-row">
+                <button class="icon-button" type="button" title="Save version"><svg viewBox="0 0 24 24"><path d="M5 5h14v14H5zM8 5v6h8" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+                <button class="icon-button generate" type="button" title="Run"><svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z" fill="currentColor"/></svg></button>
+              </div>
+            </div>
+            <div class="editor-surface">
+              <textarea spellcheck="false">A quiet solarpunk interior workspace, soft daylight through translucent panels, modular wood surfaces, living wall details, cinematic but functional, high fidelity product design reference.</textarea>
+              <div class="run-console">
+                <div class="console-preview"></div>
+                <div class="metric-grid">
+                  <div class="metric"><span>Provider</span><strong>codex-cli</strong></div>
+                  <div class="metric"><span>Operation</span><strong>text_to_image</strong></div>
+                  <div class="metric"><span>Linked outputs</span><strong>14</strong></div>
+                  <div class="metric"><span>Review state</span><strong>2 pending</strong></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="review-layout">
+          <div class="panel list-panel">
+            <div class="section-toolbar">
+              <h2 data-i18n="reviewInbox">Review inbox</h2>
+              <button class="icon-button" type="button" title="Batch accept"><svg viewBox="0 0 24 24"><path d="m5 13 4 4L19 7" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+            </div>
+            <div class="card-scroll">
+              <div class="row active"><span class="dot">R1</span><span><strong>Solarpunk interior</strong><small>title, tags, category, prompt link</small></span><span>92%</span></div>
+              <div class="row"><span class="dot">R2</span><span><strong>Botanical neon</strong><small>category and color tags</small></span><span>81%</span></div>
+              <div class="row"><span class="dot">R3</span><span><strong>Night outpost</strong><small>album suggestion</small></span><span>74%</span></div>
+              <div class="event-card">
+                <span>Policy</span>
+                <strong>AI suggestions remain staged until human approval.</strong>
+                <small>No canonical metadata is overwritten by default.</small>
+              </div>
+            </div>
+          </div>
+          <div class="panel detail-panel section-stack">
+            <div class="section-toolbar">
+              <div>
+                <h2 data-i18n="diffInspector">Diff inspector</h2>
+                <small class="status-dot">4 suggested fields, 1 high-impact change</small>
+              </div>
+              <div class="review-actions">
+                <button class="chip active" type="button">Accept selected</button>
+                <button class="chip" type="button">Reject</button>
+                <button class="chip" type="button">Edit</button>
+              </div>
+            </div>
+            <div class="diff-grid">
+              <div class="diff-box"><strong data-i18n="current">Current</strong><p>Untitled generated image, no category, 3 tags, source prompt not linked.</p></div>
+              <div class="diff-box"><strong data-i18n="suggested">Suggested</strong><p>Solarpunk interior, architecture, interior, green energy, linked to prompt v7.</p></div>
+            </div>
+            <div class="field-grid">
+              <article class="field-card">
+                <span>Title</span>
+                <strong>Solarpunk interior</strong>
+                <p>Confidence 0.92 · derived from prompt and visual metadata.</p>
+              </article>
+              <article class="field-card">
+                <span>Category</span>
+                <strong>Architecture reference</strong>
+                <p>Replaces empty category, no schema migration required.</p>
+              </article>
+              <article class="field-card">
+                <span>Tags</span>
+                <strong>interior, solarpunk, daylight, workspace</strong>
+                <p>4 additions, 1 duplicate removed before commit.</p>
+              </article>
+              <article class="field-card">
+                <span>Lineage</span>
+                <strong>Prompt v7 -> asset v4</strong>
+                <p>Links suggestion to generation event without changing parent version.</p>
+              </article>
+              <article class="field-card wide">
+                <span>Decision note</span>
+                <p>Accepting this review will update canonical metadata only for selected fields. The source image, checksum, and version lineage remain untouched.</p>
+              </article>
+            </div>
+            <div class="timeline">
+              <div class="timeline-row"><i></i><span><strong>Suggestion created</strong><small>metadata suggestion task completed 18m ago</small></span></div>
+              <div class="timeline-row"><i></i><span><strong>Reviewer opened diff</strong><small>selected fields are staged locally</small></span></div>
+              <div class="timeline-row"><i></i><span><strong>Awaiting decision</strong><small>no write to canonical metadata yet</small></span></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="queue-layout">
+          <div class="panel list-panel">
+            <div class="section-toolbar">
+              <h2 data-i18n="queue">Queue</h2>
+              <button class="icon-button" type="button" title="Pause queue"><svg viewBox="0 0 24 24"><path d="M8 5v14M16 5v14" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+            </div>
+            <div class="card-scroll">
+              <div class="row active"><span class="dot">Q1</span><span><strong>image_to_image</strong><small>retry waiting · codex-cli</small></span><span>2/3</span></div>
+              <div class="row"><span class="dot">Q2</span><span><strong>metadata suggestion</strong><small>queued · fake provider</small></span><span>0/1</span></div>
+              <div class="row"><span class="dot">Q3</span><span><strong>export backup</strong><small>completed · zip archive</small></span><span>1/1</span></div>
+              <div class="field-grid">
+                <div class="metric"><span>Running</span><strong>0</strong></div>
+                <div class="metric"><span>Waiting</span><strong>1</strong></div>
+                <div class="metric"><span>Failed</span><strong>1</strong></div>
+                <div class="metric"><span>Done</span><strong>14</strong></div>
+              </div>
+            </div>
+          </div>
+          <div class="panel detail-panel section-stack">
+            <div class="section-toolbar">
+              <div>
+                <h2 data-i18n="timeline">Timeline</h2>
+                <small class="status-dot">Retry window opens in 30s</small>
+              </div>
+              <div class="queue-actions">
+                <button class="chip active" type="button">Retry now</button>
+                <button class="chip" type="button">Cancel</button>
+                <button class="chip" type="button">Reveal output</button>
+              </div>
+            </div>
+            <div class="task-detail-grid">
+              <div class="section-stack">
+                <div class="field-grid">
+                  <div class="field-card"><span>Task</span><strong>task_0249</strong><p>image_to_image variation for Solarpunk interior.</p></div>
+                  <div class="field-card"><span>Provider</span><strong>codex-cli</strong><p>Daemon sidecar owns execution outside the Tauri process.</p></div>
+                  <div class="field-card"><span>Reference</span><strong>Uploaded source asset</strong><p>Reference remains a standalone source asset.</p></div>
+                  <div class="field-card"><span>Output link</span><strong>Pending</strong><p>Will attach to asset lineage only after provider output is committed.</p></div>
+                </div>
+                <div class="timeline">
+                  <div class="timeline-row"><i></i><span><strong>Queued</strong><small>Provider codex-cli, operation image_to_image</small></span></div>
+                  <div class="timeline-row"><i></i><span><strong>Attempt 1 failed</strong><small>Reference path was temporarily unavailable</small></span></div>
+                  <div class="timeline-row"><i></i><span><strong>Attempt 2 failed</strong><small>Provider returned recoverable exit code</small></span></div>
+                  <div class="timeline-row"><i></i><span><strong>Retry waiting</strong><small>Backoff policy: 30s</small></span></div>
+                </div>
+              </div>
+              <pre class="log-preview"><b>12:42:10</b> task accepted by local daemon
+<b>12:42:12</b> spawning codex-cli provider adapter
+<b>12:42:19</b> recoverable provider exit
+<b>12:42:19</b> next retry scheduled after backoff
+<b>12:42:49</b> waiting for scheduler tick</pre>
+            </div>
+          </div>
+        </section>
+
+        <section class="settings-layout">
+          <div class="panel list-panel">
+            <div class="section-toolbar">
+              <h2 data-i18n="settings">Settings</h2>
+              <button class="icon-button" type="button" title="Open library"><svg viewBox="0 0 24 24"><path d="M4 6h6l2 2h8v10H4z" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+            </div>
+            <div class="settings-tabs-demo">
+              <button class="settings-tab-demo" type="button"><strong data-i18n="libraries">Libraries</strong><small>3 registered</small></button>
+              <button class="settings-tab-demo" type="button"><strong data-i18n="providers">Providers</strong><small>2 ready</small></button>
+              <button class="settings-tab-demo" type="button"><strong data-i18n="updates">Updates</strong><small>current</small></button>
+              <button class="settings-tab-demo active" type="button"><strong>Logs</strong><small>today</small></button>
+            </div>
+            <div class="card-scroll">
+              <div class="row active"><span class="dot">L</span><span><strong>MyImageLab.library</strong><small>active · local registry alias</small></span><span>42GB</span></div>
+              <div class="row"><span class="dot">D</span><span><strong>Design references</strong><small>closed · reveal available</small></span><span>8GB</span></div>
+              <div class="row"><span class="dot">A</span><span><strong>Archive lab</strong><small>backup restored as clone</small></span><span>17GB</span></div>
+            </div>
+          </div>
+          <div class="panel detail-panel section-stack">
+            <div class="section-toolbar">
+              <div>
+                <h2>Logs</h2>
+                <small class="status-dot">App-owned diagnostics, latest first</small>
+              </div>
+              <div class="icon-row">
+                <button class="icon-button" type="button" title="Refresh"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v6h-6" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+                <button class="icon-button" type="button" title="Reveal"><svg viewBox="0 0 24 24"><path d="M4 6h6l2 2h8v10H4z" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+              </div>
+            </div>
+            <div class="settings-log-browser">
+              <div class="log-list">
+                <button class="row active" type="button"><span class="dot">D</span><span><strong>Daemon</strong><small>Loopback sidecar token valid for current session.</small></span><span>now</span></button>
+                <button class="row" type="button"><span class="dot">L</span><span><strong>Latest library check</strong><small>SQLite integrity and manifest identity verified 2m ago.</small></span><span>2m</span></button>
+                <button class="row" type="button"><span class="dot">U</span><span><strong>Update channel</strong><small>Desktop build is current, no restart pending.</small></span><span>8m</span></button>
+              </div>
+              <pre class="log-preview"><b>19:42:10</b> app log selected: daemon
+<b>19:42:11</b> sidecar health probe completed
+<b>19:42:11</b> token authenticated loopback API
+<b>19:42:12</b> queue scheduler idle
+<b>19:42:15</b> no pending restart or update action</pre>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <aside class="action-dock">
+        <button class="dock-button" type="button" title="Inspect" data-open-sheet><svg viewBox="0 0 24 24"><path d="M12 5c5 0 9 7 9 7s-4 7-9 7-9-7-9-7 4-7 9-7Z" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+        <button class="dock-button" type="button" title="Add to album"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+        <button class="dock-button" type="button" title="Regenerate"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v6h-6" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+        <div class="dock-spacer"></div>
+        <button class="dock-button dock-secondary" type="button" title="Export"><svg viewBox="0 0 24 24"><path d="M12 3v12m-4-4 4 4 4-4M5 19h14" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+      </aside>
+
+      <nav class="mobile-tabs" aria-label="Mobile workspace tabs"></nav>
+
+      <section class="sheet" id="sheet" aria-label="Inspector sheet">
+        <div class="sheet-head">
+          <div>
+            <h2 data-i18n="inspector">Inspector</h2>
+            <span class="muted">Solarpunk interior · v4</span>
+          </div>
+          <button class="icon-button" id="closeSheet" type="button" title="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+        </div>
+        <div class="sheet-body">
+          <div class="mini-preview"></div>
+          <div class="metric-grid">
+            <div class="metric"><span>Provider</span><strong>Midjourney</strong></div>
+            <div class="metric"><span>Rating</span><strong>5</strong></div>
+            <div class="metric"><span>Version</span><strong>v4</strong></div>
+            <div class="metric"><span>Checksum</span><strong>sha256:9fd2</strong></div>
+          </div>
+          <div class="timeline">
+            <div class="timeline-row"><i></i><span><strong>Current</strong><small>v4 generated variation</small></span></div>
+            <div class="timeline-row"><i></i><span><strong>Parent</strong><small>v3 image_to_image</small></span></div>
+            <div class="timeline-row"><i></i><span><strong>Source</strong><small>uploaded reference</small></span></div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      const tabs = [
+        ["gallery", "gallery", "M4 5h16v14H4z"],
+        ["albums", "albums", "M4 6h6l2 2h8v10H4z"],
+        ["prompts", "prompts", "M7 4h10v16H7zM10 8h4M10 12h4M10 16h2"],
+        ["review", "review", "m5 13 4 4L19 7"],
+        ["queue", "queue", "M5 7h14M5 12h14M5 17h9"],
+        ["settings", "settings", "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm8 4h2M2 12h2m12.9-6.9 1.4-1.4M5.7 18.3l1.4-1.4m0-11.8L5.7 3.7m12.6 14.6-1.4-1.4"],
+      ];
+
+      const dictionaries = {
+        en: {
+          appName: "Image Prompt Lab",
+          search: "Search assets, prompts, tasks, albums",
+          generate: "Generate",
+          review: "Review",
+          queue: "Queue",
+          settings: "Settings",
+          gallery: "Gallery",
+          albums: "Albums",
+          prompts: "Prompts",
+          eyebrow: "Current library",
+          filters: "Filters",
+          provider: "Provider",
+          rating: "Rating",
+          savedViews: "Saved views",
+          allAssets: "All assets",
+          reviewInbox: "Review inbox",
+          recentRuns: "Recent runs",
+          canvasTitle: "Canvas Deck",
+          canvasSubtitle: "Browse, curate, review, and trace generation work without changing layout shape.",
+          statsAssets: "6 assets",
+          statsReview: "1 review",
+          statsQueue: "1 queued",
+          assetsShort: "assets",
+          reviewShort: "review",
+          queueShort: "queue",
+          diffInspector: "Diff inspector",
+          current: "Current",
+          suggested: "Suggested",
+          timeline: "Timeline",
+          libraries: "Libraries",
+          providers: "Providers",
+          updates: "Updates",
+          libraryMatrix: "Library matrix",
+          inspector: "Inspector",
+        },
+        zh: {
+          appName: "Image Prompt Lab",
+          search: "搜索资产, Prompt, 任务, Album",
+          generate: "生成",
+          review: "审核",
+          queue: "队列",
+          settings: "设置",
+          gallery: "图库",
+          albums: "Albums",
+          prompts: "Prompts",
+          eyebrow: "当前资源库",
+          filters: "筛选",
+          provider: "Provider",
+          rating: "评分",
+          savedViews: "保存视图",
+          allAssets: "全部资产",
+          reviewInbox: "审核收件箱",
+          recentRuns: "最近运行",
+          canvasTitle: "Canvas Deck",
+          canvasSubtitle: "在稳定布局中浏览, 策展, 审核并追踪生成工作.",
+          statsAssets: "6 个资产",
+          statsReview: "1 条审核",
+          statsQueue: "1 个队列",
+          assetsShort: "资产",
+          reviewShort: "审核",
+          queueShort: "队列",
+          diffInspector: "差异检查器",
+          current: "当前",
+          suggested: "建议",
+          timeline: "时间线",
+          libraries: "资源库",
+          providers: "Providers",
+          updates: "更新",
+          libraryMatrix: "资源库矩阵",
+          inspector: "详情",
+        },
+      };
+
+      const app = document.getElementById("app");
+      const root = document.documentElement;
+      const tabContainers = document.querySelectorAll(".tabs, .mobile-tabs");
+      const sheet = document.getElementById("sheet");
+      const params = new URLSearchParams(window.location.search);
+      let locale = params.get("locale") === "zh" ? "zh" : "en";
+
+      if (params.get("theme") === "dark") {
+        root.dataset.theme = "dark";
+      }
+
+      if (params.get("mode")) {
+        app.dataset.mode = params.get("mode");
+      }
+
+      function icon(path) {
+        return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
+      }
+
+      function renderTabs() {
+        tabContainers.forEach((container) => {
+          container.innerHTML = tabs.map(([mode, key, path]) => `
+            <button class="tab ${app.dataset.mode === mode ? "active" : ""}" type="button" data-mode-target="${mode}" title="${dictionaries[locale][key]}">
+              ${icon(path)}
+              <span>${dictionaries[locale][key]}</span>
+            </button>
+          `).join("");
+        });
+        document.querySelectorAll("[data-mode-target]").forEach((button) => {
+          button.addEventListener("click", () => setMode(button.dataset.modeTarget));
+        });
+      }
+
+      function setMode(mode) {
+        app.dataset.mode = mode;
+        sheet.classList.remove("open");
+        renderTabs();
+      }
+
+      function applyLocale() {
+        const dict = dictionaries[locale];
+        root.lang = locale === "zh" ? "zh-CN" : "en";
+        document.querySelectorAll("[data-i18n]").forEach((node) => {
+          node.textContent = dict[node.dataset.i18n] ?? node.textContent;
+        });
+        document.querySelectorAll("[data-i18n-placeholder]").forEach((node) => {
+          node.placeholder = dict[node.dataset.i18nPlaceholder] ?? node.placeholder;
+        });
+        document.querySelectorAll("[data-i18n-title]").forEach((node) => {
+          node.title = dict[node.dataset.i18nTitle] ?? node.title;
+        });
+        renderTabs();
+      }
+
+      document.getElementById("themeToggle").addEventListener("click", () => {
+        root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
+      });
+
+      document.getElementById("localeToggle").addEventListener("click", () => {
+        locale = locale === "en" ? "zh" : "en";
+        applyLocale();
+      });
+
+      document.querySelectorAll("[data-open-sheet]").forEach((button) => {
+        button.addEventListener("click", () => sheet.classList.add("open"));
+      });
+
+      document.getElementById("closeSheet").addEventListener("click", () => {
+        sheet.classList.remove("open");
+      });
+
+      applyLocale();
+    </script>
+  </body>
+</html>

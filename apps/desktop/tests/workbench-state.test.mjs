@@ -15,6 +15,7 @@ import {
   clearGalleryTagFilter,
   clearGalleryTextFilter,
   clearAlbumQuery,
+  closeDrawerForWorkspaceChange,
   clearSelectedAlbumState,
   clearCurationStateForLibrarySwitch,
   clearLibraryWorkspaceState,
@@ -27,11 +28,16 @@ import {
   defaultAlbumAddSourceQuery,
   defaultSettingsSection,
   defaultGalleryQuery,
+  dictionaries,
+  drawerPresentationForMode,
   failReviewFieldGeneration,
   failDetailLoad,
   filterAlbumAddCandidates,
   flattenVisibleVersionTree,
   formatAspectRatio,
+  formatBytes,
+  formatCount,
+  formatStatusLabel,
   formatVersionTreeSummary,
   galleryAlbumFilterIds,
   addReviewFormTag,
@@ -40,6 +46,10 @@ import {
   markAssetReviewPending,
   moveItem,
   moveQueuedTaskOrder,
+  nextLocale,
+  nextThemePreference,
+  normalizeLocale,
+  normalizeThemePreference,
   openAlbumQuery,
   parseParameterPreset,
   parseTaskDraftImport,
@@ -47,6 +57,7 @@ import {
   removeReviewFormTag,
   removeSuggestionState,
   reorderByIds,
+  responsiveModeForWidth,
   resetGalleryQuery,
   removeGalleryAlbumFilter,
   reviewFormTags,
@@ -68,6 +79,108 @@ test("settings defaults to libraries section", () => {
 test("settings sections include providers diagnostics", () => {
   const section = "providers";
   assert.equal(section, "providers");
+});
+
+test("theme preference normalizes and toggles", () => {
+  assert.equal(normalizeThemePreference("dark"), "dark");
+  assert.equal(normalizeThemePreference("unknown", true), "dark");
+  assert.equal(normalizeThemePreference(null, false), "light");
+  assert.equal(nextThemePreference("light"), "dark");
+  assert.equal(nextThemePreference("dark"), "light");
+});
+
+test("locale preference normalizes and toggles", () => {
+  assert.equal(normalizeLocale("zh-CN"), "zh-CN");
+  assert.equal(normalizeLocale(null, "zh-Hans"), "zh-CN");
+  assert.equal(normalizeLocale("fr", "fr-FR"), "en");
+  assert.equal(nextLocale("en"), "zh-CN");
+  assert.equal(nextLocale("zh-CN"), "en");
+});
+
+test("responsive shell maps width to drawer presentation", () => {
+  assert.equal(responsiveModeForWidth(1440), "wide");
+  assert.equal(responsiveModeForWidth(960), "compact");
+  assert.equal(responsiveModeForWidth(390), "narrow");
+  assert.equal(drawerPresentationForMode("wide"), "docked");
+  assert.equal(drawerPresentationForMode("compact"), "overlay");
+  assert.equal(drawerPresentationForMode("narrow"), "bottomSheet");
+  assert.equal(closeDrawerForWorkspaceChange(true), false);
+  assert.equal(closeDrawerForWorkspaceChange(false), false);
+});
+
+test("locale formatters keep compact labels", () => {
+  assert.equal(formatCount("en", 1, "asset", "assets"), "1 asset");
+  assert.equal(formatCount("en", 2, "asset", "assets"), "2 assets");
+  assert.equal(formatCount("zh-CN", 2, "资产", "资产"), "2 资产");
+  assert.equal(formatBytes(1024 * 1024), "1.0 MB");
+  assert.equal(formatBytes(null), "-");
+  assert.equal(formatStatusLabel("retry_waiting"), "Retry Waiting");
+});
+
+test("workflow dictionaries cover shell and workflow entry labels", () => {
+  for (const locale of ["en", "zh-CN"]) {
+    const copy = dictionaries[locale];
+    assert.equal(copy.views.gallery.title.length > 0, true);
+    assert.equal(copy.views.albums.title.length > 0, true);
+    assert.equal(copy.views.prompts.title.length > 0, true);
+    assert.equal(copy.views.review.title.length > 0, true);
+    assert.equal(copy.views.queue.title.length > 0, true);
+    assert.equal(copy.views.settings.title.length > 0, true);
+    for (const key of [
+      "noAssetsMatch",
+      "selectionActions",
+      "albumsTitle",
+      "noAlbumsYet",
+      "promptLibrary",
+      "noPrompts",
+      "pendingReview",
+      "noPendingSuggestions",
+      "queuePanels",
+      "noTasksYet",
+      "libraries",
+      "noLibraryRegistered",
+    ]) {
+      assert.equal(typeof copy.workflow[key], "string");
+      assert.equal(copy.workflow[key].length > 0, true);
+    }
+  }
+});
+
+test("workflow entry state helpers cover primary screens", () => {
+  const galleryQuery = toggleGalleryTag(defaultGalleryQuery, "botanical");
+  assert.deepEqual(galleryQuery.tags, ["botanical"]);
+
+  const albumQuery = albumContentsQuery("album-1", "manual");
+  assert.equal(albumQuery.albumFilter.mode, "inAny");
+
+  const promptPreset = parseParameterPreset('{"provider":"fake","operation":"text_to_image","model":"fake-image"}');
+  assert.equal(promptPreset.provider, "fake");
+  assert.equal(promptPreset.operation, "text_to_image");
+
+  const reviewForm = createReviewFormState({
+    id: "suggestion-1",
+    assetId: "asset-1",
+    title: "Title",
+    description: "Description",
+    category: "study",
+    tags: ["tag"],
+    schemaPrompt: "schema",
+  });
+  assert.equal(reviewForm.title, "Title");
+
+  const queued = moveQueuedTaskOrder(
+    [
+      { id: "a", status: "queued", queuePosition: 0 },
+      { id: "b", status: "queued", queuePosition: 1 },
+    ],
+    "b",
+    -1,
+  );
+  assert.deepEqual(queued, ["b", "a"]);
+
+  const libraryActions = libraryMaintenanceActions("/missing/library", ["/missing/library"]);
+  assert.equal(libraryActions.canClose, true);
+  assert.equal(libraryActions.canReveal, false);
 });
 
 test("acceptSuggestionState applies metadata and removes pending item", () => {

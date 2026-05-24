@@ -17,9 +17,10 @@ import {
 } from "./workflows/review";
 import { toggleSelection } from "./workflows/shared/state";
 import { clearLibraryWorkspaceState } from "./workflows/library/state";
-import { ActivityStrip, AppShell } from "../studio-shell";
-import { Icon } from "../studio-icons";
-import { Sidebar } from "../studio-navigation";
+import { AppShell } from "../studio-shell";
+import { useThemePreference } from "./design-system/theme.js";
+import { useLocalePreference } from "./i18n/use-locale.js";
+import { CommandBar, ContextDrawer, WorkspaceSwitcher } from "./shell/desktop-shell.js";
 import { useGalleryDerivedState } from "./hooks/gallery";
 import { useReviewDerivedState } from "./hooks/review";
 import { useTaskActivitySummary } from "./hooks/tasks";
@@ -149,9 +150,38 @@ import type {
   ConfidenceScore,
 } from "./types";
 
+const views: View[] = ["gallery", "albums", "prompts", "review", "queue", "settings"];
+
+function initialViewFromUrl(): View {
+  if (typeof window === "undefined") {
+    return "gallery";
+  }
+  const view = new URLSearchParams(window.location.search).get("view");
+  return views.includes(view as View) ? (view as View) : "gallery";
+}
+
+function initialDrawerOpenFromUrl(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return new URLSearchParams(window.location.search).get("drawer") === "1";
+}
+
+const settingsSections: SettingsSection[] = ["libraries", "providers", "updates", "logs"];
+
+function initialSettingsSectionFromUrl(): SettingsSection | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const section = new URLSearchParams(window.location.search).get("settings");
+  return settingsSections.includes(section as SettingsSection) ? (section as SettingsSection) : null;
+}
+
 export function StudioAppController() {
   const runningInTauri = hasTauriRuntime();
-  const [activeView, setActiveView] = useState<View>("gallery");
+  const [activeView, setActiveView] = useState<View>(initialViewFromUrl);
+  const { theme, toggleTheme } = useThemePreference();
+  const { locale, dictionary, toggleLocale } = useLocalePreference();
   const {
     libraries,
     setLibraries,
@@ -172,6 +202,12 @@ export function StudioAppController() {
     missingLibraryPaths,
     setMissingLibraryPaths,
   } = useLibrarySettingsControllerState(runningInTauri);
+  const initialSettingsSection = useMemo(initialSettingsSectionFromUrl, []);
+  useEffect(() => {
+    if (initialSettingsSection) {
+      setSettingsSection(initialSettingsSection);
+    }
+  }, [initialSettingsSection, setSettingsSection]);
   const {
     gallery,
     setGallery,
@@ -185,11 +221,15 @@ export function StudioAppController() {
     setDetailState,
     lightboxImage,
     setLightboxImage,
-    sidebarExpanded,
-    setSidebarExpanded,
     inspectorOpen,
     setInspectorOpen,
   } = useGallerySelectionControllerState(runningInTauri);
+  const initialDrawerOpen = useMemo(initialDrawerOpenFromUrl, []);
+  useEffect(() => {
+    if (initialDrawerOpen) {
+      setInspectorOpen(true);
+    }
+  }, [initialDrawerOpen, setInspectorOpen]);
   const {
     albums,
     setAlbums,
@@ -504,7 +544,6 @@ export function StudioAppController() {
   });
   const changeView = (view: View) => {
     setActiveView(view);
-    setSidebarExpanded(false);
   };
   const selectTask = (taskId: string) => {
     setSelectedTaskId(taskId);
@@ -1109,11 +1148,11 @@ export function StudioAppController() {
 
   async function promoteFocusedVersionAsAsset(versionId: string | null | undefined) {
     if (!library || !versionId) {
-      setRecoverableError("Select an asset version before promoting it.");
+      setRecoverableError(dictionary.workflow.selectAssetVersionBeforePromote);
       return;
     }
     if (!runningInTauri) {
-      setRecoverableError("Promote as new asset requires a real library.");
+      setRecoverableError(dictionary.workflow.promoteRequiresRealLibrary);
       return;
     }
     try {
@@ -1141,15 +1180,15 @@ export function StudioAppController() {
 
   async function savePromptSnapshotFromInspector(detail: AssetDetail) {
     if (!library) {
-      setRecoverableError("Open a real library before saving a prompt snapshot.");
+      setRecoverableError(dictionary.workflow.openRealLibraryBeforePromptSnapshot);
       return;
     }
     if (!runningInTauri) {
-      setRecoverableError("Save as Prompt requires a real library.");
+      setRecoverableError(dictionary.workflow.saveAsPromptRequiresRealLibrary);
       return;
     }
     if (!detail.promptGenerationEventId) {
-      setRecoverableError("No generation event is available for this prompt snapshot.");
+      setRecoverableError(dictionary.workflow.noGenerationEventForPromptSnapshot);
       return;
     }
     const name = detail.title?.trim() || "Saved Prompt";
@@ -1183,34 +1222,45 @@ export function StudioAppController() {
     (composerInputVersionId ? shortIdentifier(composerInputVersionId) : null);
   const composerInputSourceName = composerInputVersionName ?? composerInputFileName;
 
-  const sidebarSlot = (
-    <Sidebar
+  const commandBarSlot = (
+    <CommandBar
+      dictionary={dictionary}
+      locale={locale}
+      theme={theme}
       library={library}
-      libraries={libraries}
-      libraryStatus={libraryStatus}
-      albums={albums}
-      selectedAlbumId={selectedAlbumId}
-      albumSearchValue={albumSearchInput}
-      settingsSection={settingsSection}
-      activeView={activeView}
+      status={status}
+      assetCount={gallery.length}
       reviewCount={pendingSuggestions.length}
       queueCount={queueCount}
-      expanded={sidebarExpanded}
-      onExpandedChange={setSidebarExpanded}
+      runningTaskCount={runningTaskCount}
+      failedTaskCount={failedTaskCount}
+      onGenerate={() => openComposerForTextGeneration(!composerOpen)}
+      onThemeToggle={toggleTheme}
+      onLocaleToggle={toggleLocale}
       onViewChange={changeView}
-      onLibraryChange={switchLibrary}
-      onAlbumSearchChange={setAlbumSearchInput}
-      onCreateAlbumClick={() => {
-        setActiveView("albums");
-        setAlbumCreateOpen(true);
-      }}
-      onCloseAlbum={closeAlbum}
-      onOpenAlbum={openAlbum}
-      onSettingsSectionChange={setSettingsSection}
+    />
+  );
+  const workspaceSwitcherSlot = (
+    <WorkspaceSwitcher
+      activeView={activeView}
+      dictionary={dictionary}
+      reviewCount={pendingSuggestions.length}
+      queueCount={queueCount}
+      onViewChange={changeView}
     />
   );
   const workspaceSlot = (
     <>
+        <header className="workflow-header">
+          <div className="workflow-title">
+            <span>{dictionary.currentLibrary}: {library?.name ?? dictionary.noLibrary}</span>
+            <h1>{dictionary.views[activeView].title}</h1>
+            <p>{dictionary.views[activeView].description}</p>
+          </div>
+          <button className="context-open-button" onClick={() => setInspectorOpen(true)}>
+            {dictionary.openContext}
+          </button>
+        </header>
         <WorkspaceToolbar
           activeView={activeView}
           query={query}
@@ -1219,6 +1269,7 @@ export function StudioAppController() {
           composerOpen={composerOpen}
           availableProviders={availableProviders}
           albums={albums}
+          dictionary={dictionary}
           onComposerOpenChange={openComposerForTextGeneration}
           onQueryChange={setQuery}
         />
@@ -1229,6 +1280,7 @@ export function StudioAppController() {
           queueCount={queueCount}
           integrityIssueCount={libraryStatus?.integrityIssueCount ?? 0}
           activeView={activeView}
+          dictionary={dictionary}
         />
 
         {composerOpen && (
@@ -1246,7 +1298,7 @@ export function StudioAppController() {
         {recoverableError && (
           <div className="inline-error">
             <span>{recoverableError}</span>
-            <button onClick={() => setRecoverableError(null)}>Dismiss</button>
+            <button onClick={() => setRecoverableError(null)}>{dictionary.dismiss}</button>
           </div>
         )}
 
@@ -1259,9 +1311,11 @@ export function StudioAppController() {
             availableTags={availableTags}
             onSelect={selectGalleryAsset}
             onToggleAssetSelection={(assetId) => setSelectedGalleryAssetIds((current) => toggleSelection(current, assetId))}
+            onClearSelection={() => setSelectedGalleryAssetIds([])}
             onQueryChange={setQuery}
             onRequestReview={(asset) => void requestAssetReview(asset)}
             onPreviewImage={setLightboxImage}
+            dictionary={dictionary}
           />
         )}
         {activeView === "albums" && (
@@ -1299,6 +1353,7 @@ export function StudioAppController() {
             onToggleAddSelection={(assetId) => setAlbumAddSelectionIds((current) => toggleSelection(current, assetId))}
             onSubmitAddSelection={() => void submitAlbumAddSelection()}
             onSelectAsset={selectGalleryAsset}
+            dictionary={dictionary}
           />
         )}
         {activeView === "review" && (
@@ -1328,6 +1383,7 @@ export function StudioAppController() {
               selectTask(taskId);
               changeView("queue");
             }}
+            dictionary={dictionary}
           />
         )}
         {activeView === "prompts" && (
@@ -1356,6 +1412,7 @@ export function StudioAppController() {
             onRunFormChange={promptWorkspaceState.setPromptRunForm}
             onRender={() => void renderSelectedPrompt()}
             onRun={() => void runSelectedPrompt()}
+            dictionary={dictionary}
           />
         )}
         {activeView === "queue" && (
@@ -1379,6 +1436,7 @@ export function StudioAppController() {
               onCancel={(taskId) => void runTaskAction("cancel_daemon_task", taskId)}
               onRetry={(taskId) => void runTaskAction("retry_daemon_task", taskId)}
               onDuplicate={(taskId) => void runTaskAction("duplicate_daemon_task", taskId)}
+              dictionary={dictionary}
             />
           </div>
         )}
@@ -1416,16 +1474,19 @@ export function StudioAppController() {
             onCheckUpdate={() => void checkForAppUpdate()}
             onInstallUpdate={() => void installAppUpdate()}
             onRestartApp={() => void restartApp()}
+            dictionary={dictionary}
           />
         )}
       </>
   );
   const inspectorSlot = (
-      <>
-        <button className="inspector-toggle" onClick={() => setInspectorOpen(!inspectorOpen)}>
-          <Icon name="panelRight" />
-          <span>{inspectorOpen ? "Close detail" : "Open detail"}</span>
-        </button>
+      <ContextDrawer
+        open={inspectorOpen}
+        title={selectedAsset?.title ?? dictionary.openContext}
+        subtitle={selectedAsset?.currentVersionName ?? selectedAsset?.versionLabel ?? dictionary.views[activeView].title}
+        closeLabel={dictionary.closeContext}
+        onClose={() => setInspectorOpen(false)}
+      >
         <Inspector
           asset={selectedAsset}
           detailState={detailState}
@@ -1452,45 +1513,26 @@ export function StudioAppController() {
             openComposerForVersionGeneration(versionId);
           }}
           onPromoteVersion={(versionId) => void promoteFocusedVersionAsAsset(versionId)}
+          dictionary={dictionary}
         />
-      </>
-  );
-  const activityStripSlot = (
-    <ActivityStrip>
-      <button className="activity-item" onClick={() => changeView("queue")}>
-        <Icon name="plus" />
-        <span>
-          <strong>{runningTaskCount}</strong>
-          <small>Running</small>
-        </span>
-      </button>
-      <button className="activity-item" onClick={() => changeView("review")}>
-        <Icon name="panelRight" />
-        <span>
-          <strong>{pendingSuggestions.length}</strong>
-          <small>Review</small>
-        </span>
-      </button>
-      <button className={failedTaskCount > 0 ? "activity-item danger" : "activity-item"} onClick={() => changeView("queue")}>
-        <Icon name="list" />
-        <span>
-          <strong>{failedTaskCount}</strong>
-          <small>Failed</small>
-        </span>
-      </button>
-    </ActivityStrip>
+      </ContextDrawer>
   );
 
   return (
     <AppShell
-      sidebar={sidebarSlot}
+      commandBar={commandBarSlot}
+      workspaceSwitcher={workspaceSwitcherSlot}
       workspace={workspaceSlot}
-      inspector={inspectorSlot}
-      sidebarExpanded={sidebarExpanded}
-      inspectorExpanded={inspectorOpen}
-      activityStrip={activityStripSlot}
+      contextDrawer={inspectorSlot}
+      drawerOpen={inspectorOpen}
     >
-      {lightboxImage && <ImageLightbox image={lightboxImage} onClose={() => setLightboxImage(null)} />}
+      {lightboxImage && (
+        <ImageLightbox
+          image={lightboxImage}
+          closeLabel={dictionary.workflow.closeImagePreview}
+          onClose={() => setLightboxImage(null)}
+        />
+      )}
     </AppShell>
   );
 }

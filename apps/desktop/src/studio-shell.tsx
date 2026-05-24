@@ -1,39 +1,26 @@
 import React from "react";
 
 export function AppShell({
-  sidebar,
+  commandBar,
+  workspaceSwitcher,
   workspace,
-  inspector,
-  sidebarExpanded,
-  inspectorExpanded,
-  activityStrip,
+  contextDrawer,
+  drawerOpen,
   children,
 }: {
-  sidebar: React.ReactNode;
+  commandBar: React.ReactNode;
+  workspaceSwitcher: React.ReactNode;
   workspace: React.ReactNode;
-  inspector: React.ReactNode;
-  sidebarExpanded: boolean;
-  inspectorExpanded: boolean;
-  activityStrip?: React.ReactNode;
+  contextDrawer: React.ReactNode;
+  drawerOpen: boolean;
   children?: React.ReactNode;
 }) {
   return (
-    <main className={`workbench${sidebarExpanded ? " sidebar-expanded" : ""}${inspectorExpanded ? " inspector-expanded" : ""}`}>
-      <header className="studio-command-bar">
-        <div className="studio-brand">
-          <strong>Image Prompt Lab</strong>
-          <span>Studio Console</span>
-        </div>
-        <div className="studio-command-meta">
-          <span>Local-first library</span>
-          <span>Review-gated metadata</span>
-          <span>Task-backed generation</span>
-        </div>
-      </header>
-      <div className="studio-sidebar">{sidebar}</div>
-      <WorkspaceFrame>{workspace}</WorkspaceFrame>
-      <InspectorFrame>{inspector}</InspectorFrame>
-      {activityStrip}
+    <main className={drawerOpen ? "desktop-app-shell drawer-open" : "desktop-app-shell"}>
+      {commandBar}
+      {workspaceSwitcher}
+      <WorkflowSurface>{workspace}</WorkflowSurface>
+      {contextDrawer}
       {children}
     </main>
   );
@@ -57,4 +44,8 @@ export function InspectorFrame({ children }: { children: React.ReactNode }) {
 
 export function ActivityStrip({ children }: { children: React.ReactNode }) {
   return <div className="activity-strip">{children}</div>;
+}
+
+export function WorkflowSurface({ children }: { children: React.ReactNode }) {
+  return <section className="workflow-surface">{children}</section>;
 }

@@ -1,0 +1,967 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Image Prompt Lab Interface System Demo</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f3f0ea;
+        --bg-2: #ebe7de;
+        --surface: #fffefa;
+        --surface-2: #f8f5ee;
+        --surface-3: #eee9df;
+        --text: #171717;
+        --muted: #62615d;
+        --quiet: #8a8780;
+        --line: #ddd7cc;
+        --line-strong: #c6beb0;
+        --primary: #e94c2f;
+        --primary-ink: #ffffff;
+        --secondary: #2157d7;
+        --secondary-ink: #ffffff;
+        --success: #2d8a58;
+        --warning: #b7791f;
+        --danger: #c7352b;
+        --info: #2d6cdf;
+        --focus: #181818;
+        --overlay: rgba(23, 23, 23, 0.18);
+        --shadow: 0 18px 42px rgba(32, 28, 22, 0.12);
+        --shadow-soft: 0 8px 24px rgba(32, 28, 22, 0.08);
+        --radius: 12px;
+        --radius-sm: 8px;
+        --bar: 58px;
+        --switcher: 82px;
+        --drawer: 360px;
+        --font: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      }
+
+      [data-theme="dark"] {
+        color-scheme: dark;
+        --bg: #101112;
+        --bg-2: #17191b;
+        --surface: #1d2022;
+        --surface-2: #24282b;
+        --surface-3: #303538;
+        --text: #f4f1eb;
+        --muted: #b8b1a8;
+        --quiet: #827b73;
+        --line: #34383b;
+        --line-strong: #4b5155;
+        --primary: #ff684f;
+        --primary-ink: #1b0f0b;
+        --secondary: #7da0ff;
+        --secondary-ink: #09142f;
+        --success: #65c18c;
+        --warning: #e4b458;
+        --danger: #ff756b;
+        --info: #8facff;
+        --focus: #ffffff;
+        --overlay: rgba(0, 0, 0, 0.46);
+        --shadow: 0 22px 48px rgba(0, 0, 0, 0.34);
+        --shadow-soft: 0 12px 28px rgba(0, 0, 0, 0.26);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        background:
+          radial-gradient(circle at 8% 0%, rgba(233, 76, 47, 0.12), transparent 28rem),
+          linear-gradient(135deg, var(--bg), var(--bg-2));
+        color: var(--text);
+        font-family: var(--font);
+        margin: 0;
+        overflow: hidden;
+      }
+
+      button,
+      input,
+      select,
+      textarea {
+        color: inherit;
+        font: inherit;
+      }
+
+      button {
+        align-items: center;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        display: inline-flex;
+        gap: 8px;
+        justify-content: center;
+        min-height: 34px;
+        padding: 7px 10px;
+      }
+
+      button:hover {
+        border-color: var(--line-strong);
+        transform: translateY(-1px);
+      }
+
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      textarea:focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: 2px;
+      }
+
+      input,
+      select,
+      textarea {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        min-height: 34px;
+        padding: 7px 10px;
+      }
+
+      textarea {
+        resize: none;
+      }
+
+      .app {
+        display: grid;
+        grid-template-columns: var(--switcher) minmax(0, 1fr) var(--drawer);
+        grid-template-rows: var(--bar) minmax(0, 1fr);
+        height: 100vh;
+        min-width: 0;
+      }
+
+      .command-bar {
+        align-items: center;
+        backdrop-filter: blur(18px);
+        background: color-mix(in srgb, var(--surface) 88%, transparent);
+        border-bottom: 1px solid var(--line);
+        display: grid;
+        gap: 12px;
+        grid-column: 1 / -1;
+        grid-template-columns: minmax(188px, 260px) minmax(180px, 1fr) auto;
+        min-width: 0;
+        padding: 10px 14px;
+        z-index: 30;
+      }
+
+      .brand-lockup,
+      .bar-actions,
+      .search-box,
+      .workspace-switcher,
+      .status-cluster {
+        align-items: center;
+        display: flex;
+      }
+
+      .brand-lockup {
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .mark {
+        background: var(--text);
+        border-radius: 10px;
+        color: var(--surface);
+        display: grid;
+        flex: 0 0 auto;
+        font-weight: 800;
+        height: 34px;
+        place-items: center;
+        width: 34px;
+      }
+
+      .brand-copy {
+        display: grid;
+        min-width: 0;
+      }
+
+      .brand-copy strong,
+      .truncate {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .brand-copy small,
+      .muted {
+        color: var(--muted);
+      }
+
+      .search-box {
+        background: var(--surface-2);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        gap: 8px;
+        min-width: 0;
+        padding: 0 12px;
+      }
+
+      .search-box input {
+        background: transparent;
+        border: 0;
+        min-width: 0;
+        width: 100%;
+      }
+
+      .bar-actions {
+        gap: 8px;
+        justify-content: flex-end;
+      }
+
+      .primary {
+        background: var(--primary);
+        border-color: var(--primary);
+        color: var(--primary-ink);
+        font-weight: 760;
+      }
+
+      .secondary {
+        background: var(--secondary);
+        border-color: var(--secondary);
+        color: var(--secondary-ink);
+        font-weight: 720;
+      }
+
+      .icon-only {
+        aspect-ratio: 1;
+        padding: 0;
+        width: 34px;
+      }
+
+      .workspace-switcher {
+        background: color-mix(in srgb, var(--surface) 82%, transparent);
+        border-right: 1px solid var(--line);
+        flex-direction: column;
+        gap: 7px;
+        grid-row: 2;
+        padding: 12px 10px;
+        z-index: 20;
+      }
+
+      .nav-button {
+        align-items: center;
+        background: transparent;
+        border-color: transparent;
+        color: var(--muted);
+        display: grid;
+        font-size: 11px;
+        gap: 4px;
+        min-height: 54px;
+        padding: 7px 5px;
+        width: 100%;
+      }
+
+      .nav-button.active {
+        background: var(--text);
+        border-color: var(--text);
+        color: var(--surface);
+      }
+
+      .nav-icon {
+        display: grid;
+        font-family: var(--mono);
+        font-size: 13px;
+        place-items: center;
+      }
+
+      .surface {
+        display: grid;
+        gap: 14px;
+        grid-column: 2;
+        grid-row: 2;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-width: 0;
+        overflow: hidden;
+        padding: 16px;
+      }
+
+      .workspace-head {
+        align-items: end;
+        display: grid;
+        gap: 12px;
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
+
+      .title-block {
+        min-width: 0;
+      }
+
+      .title-block h1 {
+        font-size: clamp(25px, 3vw, 42px);
+        letter-spacing: 0;
+        line-height: 0.95;
+        margin: 0;
+      }
+
+      .title-block p {
+        color: var(--muted);
+        margin: 7px 0 0;
+        max-width: 70ch;
+      }
+
+      .toolbar,
+      .chip-row,
+      .row-actions {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .toolbar {
+        justify-content: flex-end;
+      }
+
+      .chip {
+        background: var(--surface-2);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        display: inline-flex;
+        font-size: 12px;
+        gap: 6px;
+        min-height: 28px;
+        padding: 5px 9px;
+      }
+
+      .chip.active {
+        background: color-mix(in srgb, var(--secondary) 12%, var(--surface));
+        border-color: color-mix(in srgb, var(--secondary) 42%, var(--line));
+        color: var(--text);
+      }
+
+      .workspace-panel {
+        background: color-mix(in srgb, var(--surface) 92%, transparent);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-soft);
+        min-height: 0;
+        min-width: 0;
+        overflow: hidden;
+      }
+
+      .view {
+        display: none;
+        min-height: 0;
+        min-width: 0;
+      }
+
+      .view.active {
+        display: grid;
+      }
+
+      .gallery-view {
+        gap: 12px;
+        grid-template-rows: auto minmax(0, 1fr);
+      }
+
+      .gallery-grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fill, minmax(172px, 1fr));
+        min-height: 0;
+        overflow: auto;
+        padding: 12px;
+      }
+
+      .asset-tile {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        display: grid;
+        gap: 9px;
+        min-width: 0;
+        padding: 8px;
+      }
+
+      .asset-tile.active {
+        border-color: var(--secondary);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--secondary) 18%, transparent);
+      }
+
+      .thumb {
+        aspect-ratio: 1 / 0.72;
+        background:
+          linear-gradient(135deg, rgba(233, 76, 47, 0.2), transparent 40%),
+          linear-gradient(315deg, rgba(33, 87, 215, 0.22), transparent 40%),
+          var(--surface-3);
+        border-radius: 9px;
+        overflow: hidden;
+        position: relative;
+      }
+
+      .thumb::after {
+        background-image:
+          linear-gradient(90deg, rgba(255, 255, 255, 0.18) 1px, transparent 1px),
+          linear-gradient(0deg, rgba(255, 255, 255, 0.14) 1px, transparent 1px);
+        background-size: 18px 18px;
+        content: "";
+        inset: 0;
+        opacity: 0.38;
+        position: absolute;
+      }
+
+      .tile-title,
+      .list-title {
+        align-items: center;
+        display: flex;
+        gap: 8px;
+        justify-content: space-between;
+        min-width: 0;
+      }
+
+      .tile-title strong,
+      .list-title strong {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .meta-line {
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        font-size: 12px;
+        gap: 6px;
+      }
+
+      .pill {
+        background: var(--surface-2);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        font-size: 11px;
+        padding: 3px 7px;
+      }
+
+      .pill.success {
+        color: var(--success);
+      }
+
+      .pill.warning {
+        color: var(--warning);
+      }
+
+      .pill.danger {
+        color: var(--danger);
+      }
+
+      .split-view {
+        gap: 12px;
+        grid-template-columns: minmax(210px, 0.72fr) minmax(0, 1.28fr);
+        min-height: 0;
+      }
+
+      .three-view {
+        gap: 12px;
+        grid-template-columns: minmax(210px, 0.78fr) minmax(320px, 1.35fr) minmax(250px, 0.9fr);
+        min-height: 0;
+      }
+
+      .stack {
+        display: grid;
+        gap: 10px;
+        min-height: 0;
+        overflow: auto;
+        padding: 12px;
+      }
+
+      .panel-head {
+        align-items: center;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        gap: 12px;
+        justify-content: space-between;
+        padding: 12px;
+      }
+
+      .panel-head h2,
+      .panel-head h3 {
+        font-size: 15px;
+        margin: 0;
+      }
+
+      .list-item {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        display: grid;
+        gap: 5px;
+        min-width: 0;
+        padding: 10px;
+      }
+
+      .list-item.active {
+        border-color: var(--secondary);
+      }
+
+      .form-grid {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: 1fr 1fr;
+      }
+
+      label {
+        color: var(--muted);
+        display: grid;
+        font-size: 12px;
+        gap: 5px;
+        min-width: 0;
+      }
+
+      label.wide {
+        grid-column: 1 / -1;
+      }
+
+      .code-box {
+        background: var(--surface-2);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        font-family: var(--mono);
+        font-size: 12px;
+        line-height: 1.55;
+        max-height: 146px;
+        overflow: auto;
+        padding: 10px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .queue-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .task-row {
+        align-items: center;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        display: grid;
+        gap: 10px;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        padding: 10px;
+      }
+
+      .dot {
+        background: var(--info);
+        border-radius: 999px;
+        height: 9px;
+        width: 9px;
+      }
+
+      .dot.success {
+        background: var(--success);
+      }
+
+      .dot.warning {
+        background: var(--warning);
+      }
+
+      .dot.danger {
+        background: var(--danger);
+      }
+
+      .drawer {
+        background: color-mix(in srgb, var(--surface) 94%, transparent);
+        border-left: 1px solid var(--line);
+        box-shadow: var(--shadow);
+        display: grid;
+        grid-column: 3;
+        grid-row: 2;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-width: 0;
+        overflow: hidden;
+        z-index: 25;
+      }
+
+      .drawer-head {
+        align-items: center;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        justify-content: space-between;
+        padding: 14px;
+      }
+
+      .drawer-body {
+        display: grid;
+        gap: 12px;
+        min-height: 0;
+        overflow: auto;
+        padding: 14px;
+      }
+
+      .drawer-section {
+        background: var(--surface-2);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        display: grid;
+        gap: 9px;
+        min-width: 0;
+        padding: 12px;
+      }
+
+      .drawer-section h3 {
+        font-size: 13px;
+        margin: 0;
+      }
+
+      .drawer-section p {
+        color: var(--muted);
+        line-height: 1.45;
+        margin: 0;
+      }
+
+      .overlay-close {
+        display: none;
+      }
+
+      @media (max-width: 1279px) {
+        .app {
+          grid-template-columns: var(--switcher) minmax(0, 1fr);
+        }
+
+        .drawer {
+          bottom: 16px;
+          border: 1px solid var(--line);
+          border-radius: var(--radius);
+          grid-column: auto;
+          grid-row: auto;
+          max-width: min(420px, calc(100vw - 112px));
+          position: fixed;
+          right: 16px;
+          top: calc(var(--bar) + 16px);
+        }
+
+        .drawer.closed {
+          display: none;
+        }
+
+        .overlay-close {
+          display: inline-flex;
+        }
+
+        .three-view {
+          grid-template-columns: minmax(190px, 0.7fr) minmax(0, 1.3fr);
+        }
+
+        .prompt-run {
+          display: none;
+        }
+      }
+
+      @media (max-width: 959px) {
+        body {
+          overflow: auto;
+        }
+
+        .app {
+          grid-template-columns: minmax(0, 1fr);
+          grid-template-rows: auto auto minmax(0, 1fr);
+          min-height: 100vh;
+        }
+
+        .command-bar {
+          grid-template-columns: 1fr;
+          position: sticky;
+          top: 0;
+        }
+
+        .bar-actions {
+          justify-content: flex-start;
+          overflow-x: auto;
+          padding-bottom: 2px;
+        }
+
+        .workspace-switcher {
+          border-bottom: 1px solid var(--line);
+          border-right: 0;
+          flex-direction: row;
+          grid-column: 1;
+          grid-row: 2;
+          overflow-x: auto;
+          padding: 8px 10px;
+        }
+
+        .nav-button {
+          flex: 0 0 76px;
+        }
+
+        .surface {
+          grid-column: 1;
+          grid-row: 3;
+          overflow: visible;
+          padding: 12px;
+        }
+
+        .workspace-head {
+          align-items: start;
+          grid-template-columns: 1fr;
+        }
+
+        .toolbar {
+          justify-content: flex-start;
+        }
+
+        .view.active,
+        .split-view,
+        .three-view {
+          grid-template-columns: 1fr;
+        }
+
+        .gallery-grid {
+          grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+        }
+
+        .form-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .drawer {
+          border-radius: 16px 16px 0 0;
+          bottom: 0;
+          left: 0;
+          max-height: 72vh;
+          max-width: none;
+          right: 0;
+          top: auto;
+        }
+      }
+
+      @media (max-width: 520px) {
+        .title-block h1 {
+          font-size: 26px;
+        }
+
+        .gallery-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .chip-row {
+          overflow-x: auto;
+          flex-wrap: nowrap;
+          padding-bottom: 2px;
+        }
+
+        .chip {
+          flex: 0 0 auto;
+        }
+
+        .task-row {
+          grid-template-columns: auto minmax(0, 1fr);
+        }
+
+        .task-row .row-actions {
+          grid-column: 1 / -1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <header class="command-bar">
+        <div class="brand-lockup">
+          <div class="mark">IP</div>
+          <div class="brand-copy">
+            <strong>Image Prompt Lab</strong>
+            <small class="truncate">Editorial Library / local resource workspace</small>
+          </div>
+        </div>
+        <label class="search-box" aria-label="Global search">
+          <span class="nav-icon">/</span>
+          <input value="" placeholder="Search assets, prompts, tasks, albums" />
+        </label>
+        <div class="bar-actions">
+          <button class="primary" type="button">New run</button>
+          <button type="button">Review <span class="pill warning">18</span></button>
+          <button type="button">Queue <span class="pill success">4</span></button>
+          <button id="themeToggle" class="icon-only" type="button" aria-label="Toggle theme">T</button>
+          <button id="localeToggle" type="button" aria-label="Toggle language">EN</button>
+        </div>
+      </header>
+
+      <nav class="workspace-switcher" aria-label="Workspace">
+        <button class="nav-button active" data-view="gallery" type="button"><span class="nav-icon">G</span><span>Gallery</span></button>
+        <button class="nav-button" data-view="albums" type="button"><span class="nav-icon">A</span><span>Albums</span></button>
+        <button class="nav-button" data-view="prompts" type="button"><span class="nav-icon">P</span><span>Prompts</span></button>
+        <button class="nav-button" data-view="review" type="button"><span class="nav-icon">R</span><span>Review</span></button>
+        <button class="nav-button" data-view="queue" type="button"><span class="nav-icon">Q</span><span>Queue</span></button>
+        <button class="nav-button" data-view="settings" type="button"><span class="nav-icon">S</span><span>Settings</span></button>
+      </nav>
+
+      <section class="surface">
+        <div class="workspace-head">
+          <div class="title-block">
+            <h1 id="workspaceTitle">Gallery</h1>
+            <p id="workspaceDescription">Browse every generated asset, keep filters explicit, and open detail only when needed.</p>
+          </div>
+          <div class="toolbar" id="workspaceToolbar">
+            <button type="button">Filter</button>
+            <button type="button">Sort</button>
+            <button class="secondary" type="button">Open drawer</button>
+          </div>
+        </div>
+
+        <section id="gallery" class="view gallery-view active">
+          <div class="chip-row">
+            <span class="chip active">All assets</span>
+            <span class="chip">Review pending</span>
+            <span class="chip">Codex</span>
+            <span class="chip">Rating 4+</span>
+            <span class="chip">In any album</span>
+          </div>
+          <div class="workspace-panel gallery-grid">
+            <article class="asset-tile active">
+              <div class="thumb"></div>
+              <div class="tile-title"><strong>Glasshouse study</strong><span class="pill">v4</span></div>
+              <div class="meta-line"><span>codex-cli</span><span>4 versions</span><span>botanical</span></div>
+              <div class="row-actions"><span class="pill warning">Review</span><span class="pill">Atrium set</span></div>
+            </article>
+            <article class="asset-tile">
+              <div class="thumb"></div>
+              <div class="tile-title"><strong>Monoline specimen</strong><span class="pill">v2</span></div>
+              <div class="meta-line"><span>fake</span><span>2 versions</span><span>line art</span></div>
+              <div class="row-actions"><span class="pill success">Curated</span><span class="pill">Reference</span></div>
+            </article>
+            <article class="asset-tile">
+              <div class="thumb"></div>
+              <div class="tile-title"><strong>Solar atrium angle</strong><span class="pill">v1</span></div>
+              <div class="meta-line"><span>codex-cli</span><span>1 version</span><span>architecture</span></div>
+              <div class="row-actions"><span class="pill">Unassigned</span><span class="pill">4 stars</span></div>
+            </article>
+            <article class="asset-tile">
+              <div class="thumb"></div>
+              <div class="tile-title"><strong>Material board</strong><span class="pill">v7</span></div>
+              <div class="meta-line"><span>codex-cli</span><span>branch 2</span><span>surface</span></div>
+              <div class="row-actions"><span class="pill danger">Failed task</span><span class="pill">Draft</span></div>
+            </article>
+          </div>
+        </section>
+
+        <section id="albums" class="view split-view">
+          <aside class="workspace-panel">
+            <div class="panel-head"><h2>Albums</h2><button class="icon-only" type="button" aria-label="Create album">+</button></div>
+            <div class="stack">
+              <article class="list-item active"><div class="list-title"><strong>All albums</strong><span class="pill">12</span></div><small class="muted">Overview and maintenance</small></article>
+              <article class="list-item"><div class="list-title"><strong>Atrium set</strong><span class="pill">32</span></div><small class="muted">Manual ordering</small></article>
+              <article class="list-item"><div class="list-title"><strong>Review queue smart</strong><span class="pill warning">18</span></div><small class="muted">Smart rule preview</small></article>
+            </div>
+          </aside>
+          <section class="workspace-panel">
+            <div class="panel-head"><h2>Atrium set</h2><div class="row-actions"><button type="button">Add assets</button><button type="button">Rules</button></div></div>
+            <div class="gallery-grid">
+              <article class="asset-tile"><div class="thumb"></div><div class="tile-title"><strong>Sunlit frame</strong><span class="pill">v3</span></div><div class="meta-line"><span>Manual order 01</span></div></article>
+              <article class="asset-tile"><div class="thumb"></div><div class="tile-title"><strong>Plant corridor</strong><span class="pill">v1</span></div><div class="meta-line"><span>Manual order 02</span></div></article>
+            </div>
+          </section>
+        </section>
+
+        <section id="prompts" class="view three-view">
+          <aside class="workspace-panel"><div class="panel-head"><h2>Prompt Library</h2><button class="icon-only" type="button" aria-label="New prompt">+</button></div><div class="stack"><article class="list-item active"><strong>Botanical editorial</strong><small class="muted">v8 saved today</small></article><article class="list-item"><strong>Material scanner</strong><small class="muted">v3 saved yesterday</small></article></div></aside>
+          <section class="workspace-panel"><div class="panel-head"><h2>Editor</h2><div class="row-actions"><button type="button">Save draft</button><button class="secondary" type="button">Save version</button></div></div><div class="stack"><div class="form-grid"><label class="wide">Name<input value="Botanical editorial" /></label><label class="wide">Prompt body<textarea rows="7">botanical study of architectural plants, editorial composition, restrained light, precise texture</textarea></label><label>Variables JSON<textarea rows="5">{ "subject": { "required": true } }</textarea></label><label>Preset JSON<textarea rows="5">{ "provider": "codex-cli" }</textarea></label></div></div></section>
+          <aside class="workspace-panel prompt-run"><div class="panel-head"><h2>Run</h2><button class="primary" type="button">Run</button></div><div class="stack"><label>Version<select><option>v8</option></select></label><label>Values JSON<textarea rows="5">{ "subject": "glasshouse" }</textarea></label><div class="code-box">botanical study of glasshouse, editorial composition, restrained light, precise texture</div></div></aside>
+        </section>
+
+        <section id="review" class="view split-view">
+          <aside class="workspace-panel"><div class="panel-head"><h2>Pending Review</h2><span class="pill warning">18</span></div><div class="stack"><article class="list-item active"><strong>Glasshouse study</strong><small class="muted">High title confidence</small></article><article class="list-item"><strong>Solar atrium angle</strong><small class="muted">Schema prompt ready</small></article></div></aside>
+          <section class="workspace-panel"><div class="panel-head"><h2>Metadata Draft</h2><div class="row-actions"><button type="button">Restore</button><button class="primary" type="button">Accept</button></div></div><div class="stack"><div class="form-grid"><label>Title<input value="Glasshouse study" /></label><label>Category<select><option>Botanical</option></select></label><label class="wide">Description<textarea rows="5">A controlled editorial image with architectural glass, plant forms, and restrained daylight.</textarea></label><label class="wide">Schema prompt<textarea rows="7">{ "subject": "glasshouse", "lighting": "controlled daylight" }</textarea></label></div></div></section>
+        </section>
+
+        <section id="queue" class="view split-view">
+          <section class="workspace-panel"><div class="panel-head"><h2>Operations Queue</h2><button type="button">Refresh</button></div><div class="stack queue-list"><article class="task-row"><span class="dot warning"></span><div class="truncate"><strong>image_to_image variation</strong><br /><small class="muted">retry waiting, attempt 2 of 4</small></div><div class="row-actions"><button type="button">Retry</button><button type="button">Open</button></div></article><article class="task-row"><span class="dot success"></span><div class="truncate"><strong>metadata title regeneration</strong><br /><small class="muted">completed, linked review suggestion</small></div><div class="row-actions"><button type="button">Open</button></div></article></div></section>
+          <aside class="workspace-panel"><div class="panel-head"><h2>Batch Compose</h2><button class="primary" type="button">Enqueue</button></div><div class="stack"><label>Prompt<textarea rows="6">editorial botanical study, controlled rim light</textarea></label><div class="form-grid"><label>Provider<select><option>codex-cli</option></select></label><label>Operation<select><option>text_to_image</option></select></label></div></div></aside>
+        </section>
+
+        <section id="settings" class="view split-view">
+          <aside class="workspace-panel"><div class="panel-head"><h2>Settings</h2></div><div class="stack"><article class="list-item active"><strong>Libraries</strong><small class="muted">Registry and backup</small></article><article class="list-item"><strong>Providers</strong><small class="muted">Health and capabilities</small></article><article class="list-item"><strong>Updates</strong><small class="muted">Desktop app release</small></article><article class="list-item"><strong>Logs</strong><small class="muted">App-owned diagnostics</small></article></div></aside>
+          <section class="workspace-panel"><div class="panel-head"><h2>Registered Libraries</h2><div class="row-actions"><button type="button">Open existing</button><button type="button">Import zip</button></div></div><div class="stack"><article class="list-item active"><div class="list-title"><strong>Editorial Library</strong><span class="pill success">Current</span></div><small class="muted truncate">/Users/local/workspaces/image-lab/editorial-library</small><div class="row-actions"><button type="button">Rename</button><button type="button">Export</button><button type="button">Reveal</button></div></article><article class="list-item"><div class="list-title"><strong>Reference Archive</strong><span class="pill">Closed</span></div><small class="muted truncate">/Volumes/Archive/reference-library-with-a-very-long-path-name</small></article></div></section>
+        </section>
+      </section>
+
+      <aside class="drawer" id="drawer" aria-label="Context drawer">
+        <div class="drawer-head">
+          <div>
+            <strong>Glasshouse study</strong><br />
+            <small class="muted">Asset detail / v4 / codex-cli</small>
+          </div>
+          <button class="overlay-close icon-only" id="closeDrawer" type="button" aria-label="Close drawer">X</button>
+        </div>
+        <div class="drawer-body">
+          <section class="drawer-section">
+            <h3>Current version</h3>
+            <p>v4, generated from prompt version v8. Strong lineage is preserved while uploaded references stay separate.</p>
+            <div class="row-actions"><button type="button">Generate variation</button><button type="button">Open task</button></div>
+          </section>
+          <section class="drawer-section">
+            <h3>Review state</h3>
+            <p>Pending metadata suggestion available. Canonical metadata remains unchanged until accepted.</p>
+            <div class="row-actions"><button class="secondary" type="button">Open review</button><button type="button">Request again</button></div>
+          </section>
+          <section class="drawer-section">
+            <h3>File and prompt</h3>
+            <div class="code-box">library://originals/generated/2026/05/glasshouse-study/v4/output.png
+checksum: sha256:b084331f74f0d6ecb7eafc9e5fb2f6a901f9e50a14d2f9c6c7e2d5ddbe2c9c81</div>
+          </section>
+          <section class="drawer-section">
+            <h3>Albums</h3>
+            <div class="chip-row"><span class="chip active">Atrium set</span><span class="chip">Botanical</span><span class="chip">Add to album</span></div>
+          </section>
+        </div>
+      </aside>
+    </main>
+
+    <script>
+      const titles = {
+        gallery: ["Gallery", "Browse every generated asset, keep filters explicit, and open detail only when needed."],
+        albums: ["Albums", "Manage collections, smart rules, manual order, and add-to-album workflows inside Albums."],
+        prompts: ["Prompts", "Draft, version, render, and run reusable prompts without mixing prompt facts into asset metadata."],
+        review: ["Review", "Accept metadata only after staged suggestions, local edits, and generated results are reviewed."],
+        queue: ["Queue", "Plan, enqueue, inspect, retry, and trace generation and metadata tasks."],
+        settings: ["Settings", "Manage libraries, providers, updates, and app-owned diagnostics with compact operations."],
+      };
+
+      const navButtons = document.querySelectorAll(".nav-button");
+      const views = document.querySelectorAll(".view");
+      const title = document.getElementById("workspaceTitle");
+      const description = document.getElementById("workspaceDescription");
+      const drawer = document.getElementById("drawer");
+
+      navButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          const view = button.dataset.view;
+          navButtons.forEach((item) => item.classList.toggle("active", item === button));
+          views.forEach((item) => item.classList.toggle("active", item.id === view));
+          title.textContent = titles[view][0];
+          description.textContent = titles[view][1];
+        });
+      });
+
+      document.getElementById("themeToggle").addEventListener("click", () => {
+        const root = document.documentElement;
+        root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
+      });
+
+      document.getElementById("localeToggle").addEventListener("click", (event) => {
+        event.currentTarget.textContent = event.currentTarget.textContent === "EN" ? "ZH" : "EN";
+      });
+
+      document.getElementById("closeDrawer").addEventListener("click", () => {
+        drawer.classList.add("closed");
+      });
+
+      document.querySelector(".secondary").addEventListener("click", () => {
+        drawer.classList.remove("closed");
+      });
+    </script>
+  </body>
+</html>
