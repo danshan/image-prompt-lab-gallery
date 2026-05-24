@@ -7,7 +7,7 @@ use crate::{
     CreatePromptDocumentRequest, CreateTaskInput, GalleryAlbumFilter, GalleryQuery,
     GalleryReadService, GallerySort, GenerateImageRequest, GeneratedImage, GenerationResult,
     ImageProvider, ImportAssetRequest, ListPromptDocumentsRequest, ListPromptVersionsRequest,
-    PromptVersionId, ReorderAlbumItemsRequest, ReorderAlbumsRequest,
+    PromptVersionId, RenderPromptRunRequest, ReorderAlbumItemsRequest, ReorderAlbumsRequest,
     ReviewMetadataSuggestionRequest, ReviewStatusFilter, SavePromptVersionRequest, SearchQuery,
     SearchService, TaskOutputType, TaskService, TaskStatus, TaskType, UpdateAssetMetadataRequest,
     UpdatePromptDraftRequest, UpdateTaskStatusRequest,
@@ -334,6 +334,110 @@ fn prompt_repository_rejects_invalid_json_without_persisting_document() {
         assert_eq!(documents[0].parameter_preset_json, "{}");
         assert_eq!(documents[0].notes.as_deref(), Some("unchanged"));
     }
+}
+
+#[test]
+fn prompt_workspace_facade_versions_draft_and_render_run() {
+    let root = test_root("prompt-workspace-use-case");
+    let registry = test_root("prompt-workspace-use-case-registry").join("registry.sqlite");
+    let app = crate::infrastructure::composition::sqlite_application(
+        registry,
+        crate::FakeImageProvider::success("fake"),
+    );
+    app.library_lifecycle()
+        .create_library(CreateLibraryRequest {
+            root_path: root.clone(),
+            name: "Prompt Use Case".to_string(),
+        })
+        .expect("init library");
+
+    let created = app
+        .prompts()
+        .create_prompt_document(CreatePromptDocumentRequest {
+            library_path: root.clone(),
+            name: "Botanical".to_string(),
+            draft_body: "A {{subject}} study".to_string(),
+            draft_negative_prompt: Some("avoid {{subject}} noise".to_string()),
+            draft_style_prompt: Some("macro {{lighting}}".to_string()),
+            variables_schema_json:
+                r#"[{"name":"subject","required":true},{"name":"lighting","required":false}]"#
+                    .to_string(),
+            default_values_json: r#"{"subject":"orchid","lighting":"window light"}"#.to_string(),
+            parameter_preset_json: r#"{"provider":"fake","model":"v1"}"#.to_string(),
+            notes: Some("first draft".to_string()),
+        })
+        .expect("create prompt");
+
+    let first_version = app
+        .prompts()
+        .save_prompt_version(SavePromptVersionRequest {
+            library_path: root.clone(),
+            prompt_id: created.id.0.clone(),
+        })
+        .expect("save version");
+
+    app.prompts()
+        .update_prompt_draft(UpdatePromptDraftRequest {
+            library_path: root.clone(),
+            prompt_id: created.id.0.clone(),
+            name: "Botanical Revised".to_string(),
+            draft_body: "A revised {{subject}} study".to_string(),
+            draft_negative_prompt: Some("avoid blur".to_string()),
+            draft_style_prompt: Some("editorial".to_string()),
+            variables_schema_json: r#"[{"name":"subject","required":true}]"#.to_string(),
+            default_values_json: r#"{"subject":"fern"}"#.to_string(),
+            parameter_preset_json: r#"{"provider":"fake","model":"v2"}"#.to_string(),
+            notes: Some("second draft".to_string()),
+        })
+        .expect("update draft");
+
+    let versions = app
+        .prompts()
+        .list_prompt_versions(ListPromptVersionsRequest {
+            library_path: root.clone(),
+            prompt_id: created.id.0.clone(),
+        })
+        .expect("list versions");
+    assert_eq!(versions.len(), 1);
+    assert_eq!(versions[0].id, first_version.id);
+    assert_eq!(versions[0].body, "A {{subject}} study");
+    assert_eq!(
+        versions[0].default_values_json,
+        r#"{"subject":"orchid","lighting":"window light"}"#
+    );
+
+    let rendered = app
+        .prompts()
+        .render_prompt_run(RenderPromptRunRequest {
+            library_path: root.clone(),
+            prompt_version_id: first_version.id.0.clone(),
+            values_json: r#"{"subject":"fern","lighting":"north light"}"#.to_string(),
+        })
+        .expect("render prompt run");
+    assert_eq!(
+        rendered.rendered_prompt,
+        "A fern study\n\nmacro north light"
+    );
+    assert_eq!(
+        rendered.rendered_negative_prompt.as_deref(),
+        Some("avoid fern noise")
+    );
+    assert_eq!(
+        rendered.parameter_preset_json,
+        r#"{"provider":"fake","model":"v1"}"#
+    );
+
+    let versions_after_render = app
+        .prompts()
+        .list_prompt_versions(ListPromptVersionsRequest {
+            library_path: root,
+            prompt_id: created.id.0.clone(),
+        })
+        .expect("list versions after render");
+    assert_eq!(
+        versions_after_render[0].default_values_json,
+        r#"{"subject":"orchid","lighting":"window light"}"#
+    );
 }
 
 fn prompt_document_count(root: &Path) -> i64 {

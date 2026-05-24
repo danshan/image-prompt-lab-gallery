@@ -1,4 +1,4 @@
-pub struct ImgLabApplication<L, LL, A, G, M, AL, GA, S, T> {
+pub struct ImgLabApplication<L, LL, A, G, M, AL, GA, S, T, P> {
     library: L,
     library_lifecycle: LL,
     assets: A,
@@ -8,9 +8,10 @@ pub struct ImgLabApplication<L, LL, A, G, M, AL, GA, S, T> {
     gallery: GA,
     search: S,
     tasks: T,
+    prompts: P,
 }
 
-pub struct ImgLabApplicationParts<L, LL, A, G, M, AL, GA, S, T> {
+pub struct ImgLabApplicationParts<L, LL, A, G, M, AL, GA, S, T, P> {
     pub library: L,
     pub library_lifecycle: LL,
     pub assets: A,
@@ -20,10 +21,11 @@ pub struct ImgLabApplicationParts<L, LL, A, G, M, AL, GA, S, T> {
     pub gallery: GA,
     pub search: S,
     pub tasks: T,
+    pub prompts: P,
 }
 
-impl<L, LL, A, G, M, AL, GA, S, T> ImgLabApplication<L, LL, A, G, M, AL, GA, S, T> {
-    pub fn from_parts(parts: ImgLabApplicationParts<L, LL, A, G, M, AL, GA, S, T>) -> Self {
+impl<L, LL, A, G, M, AL, GA, S, T, P> ImgLabApplication<L, LL, A, G, M, AL, GA, S, T, P> {
+    pub fn from_parts(parts: ImgLabApplicationParts<L, LL, A, G, M, AL, GA, S, T, P>) -> Self {
         Self {
             library: parts.library,
             library_lifecycle: parts.library_lifecycle,
@@ -34,6 +36,7 @@ impl<L, LL, A, G, M, AL, GA, S, T> ImgLabApplication<L, LL, A, G, M, AL, GA, S, 
             gallery: parts.gallery,
             search: parts.search,
             tasks: parts.tasks,
+            prompts: parts.prompts,
         }
     }
 
@@ -73,7 +76,11 @@ impl<L, LL, A, G, M, AL, GA, S, T> ImgLabApplication<L, LL, A, G, M, AL, GA, S, 
         &self.tasks
     }
 
-    pub fn into_parts(self) -> ImgLabApplicationParts<L, LL, A, G, M, AL, GA, S, T> {
+    pub fn prompts(&self) -> &P {
+        &self.prompts
+    }
+
+    pub fn into_parts(self) -> ImgLabApplicationParts<L, LL, A, G, M, AL, GA, S, T, P> {
         ImgLabApplicationParts {
             library: self.library,
             library_lifecycle: self.library_lifecycle,
@@ -84,6 +91,7 @@ impl<L, LL, A, G, M, AL, GA, S, T> ImgLabApplication<L, LL, A, G, M, AL, GA, S, 
             gallery: self.gallery,
             search: self.search,
             tasks: self.tasks,
+            prompts: self.prompts,
         }
     }
 }
@@ -104,6 +112,7 @@ mod tests {
             gallery: "gallery",
             search: "search",
             tasks: "tasks",
+            prompts: "prompts",
         });
 
         assert_eq!(*app.library(), "library");
@@ -115,5 +124,6 @@ mod tests {
         assert_eq!(*app.gallery(), "gallery");
         assert_eq!(*app.search(), "search");
         assert_eq!(*app.tasks(), "tasks");
+        assert_eq!(*app.prompts(), "prompts");
     }
 }

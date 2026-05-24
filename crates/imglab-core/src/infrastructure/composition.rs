@@ -5,6 +5,7 @@ use crate::application::use_cases::assets::AssetUseCase;
 use crate::application::use_cases::generation::GenerateImageUseCase;
 use crate::application::use_cases::library::LibraryUseCase;
 use crate::application::use_cases::metadata_review::ReviewMetadataSuggestionUseCase;
+use crate::application::use_cases::prompts::PromptWorkspaceUseCase;
 use crate::application::use_cases::tasks::TaskUseCase;
 use crate::library::LocalLibraryService;
 use std::path::PathBuf;
@@ -27,6 +28,7 @@ pub type SqliteImgLabApplication<P> = ImgLabApplication<
     QueryGalleryUseCase<LocalLibraryService>,
     SearchUseCase<LocalLibraryService>,
     TaskUseCase<LocalLibraryService>,
+    PromptWorkspaceUseCase<LocalLibraryService>,
 >;
 
 pub fn sqlite_application<P>(
@@ -52,7 +54,8 @@ where
         albums: AlbumUseCase::new(service.clone()),
         gallery: QueryGalleryUseCase::new(service.clone()),
         search: SearchUseCase::new(service.clone()),
-        tasks: TaskUseCase::new(service),
+        tasks: TaskUseCase::new(service.clone()),
+        prompts: PromptWorkspaceUseCase::new(service),
     })
 }
 
@@ -77,5 +80,6 @@ mod tests {
         let _ = app.gallery();
         let _ = app.search();
         let _ = app.tasks();
+        let _ = app.prompts();
     }
 }

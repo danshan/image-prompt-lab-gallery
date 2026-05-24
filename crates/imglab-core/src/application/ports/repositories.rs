@@ -13,9 +13,10 @@ use crate::{
     DomainResult, ExportLibraryBackupRequest, ExportLibraryRequest, ExportSummary,
     GalleryAssetView, GalleryQuery, GenerationEventId, GenerationEventSummary,
     ImportLibraryBackupRequest, IntegrityIssue, LibraryBackupSummary, LibraryId, LibraryStatusView,
-    LibrarySummary, MetadataSuggestion, MetadataSuggestionId, PersistAssetVersionRequest,
-    PersistImportedAssetRequest, PromoteAssetVersionRequest, PromoteAssetVersionSummary,
-    RenameLibraryAliasRequest, ReorderAlbumItemsRequest, ReorderAlbumsRequest,
+    LibrarySummary, ListPromptOutputHistoryRequest, LoadPromptVersionRequest, MetadataSuggestion,
+    MetadataSuggestionId, PersistAssetVersionRequest, PersistImportedAssetRequest,
+    PromoteAssetVersionRequest, PromoteAssetVersionSummary, PromptOutputHistoryItem,
+    PromptVersionView, RenameLibraryAliasRequest, ReorderAlbumItemsRequest, ReorderAlbumsRequest,
     ReorderQueuedTasksRequest, RepairLibraryRequest, RepairSummary, ReviewDraftDetailView,
     ReviewMetadataSuggestionRequest, SearchQuery, StudioOverviewView, TaskAttempt, TaskDetail,
     TaskEvent, TaskId, TaskOutput, TaskOutputType, TaskSummary, UpdateAssetMetadataRequest,
@@ -115,6 +116,16 @@ pub trait PromptRepository {
         &self,
         request: crate::ListPromptVersionsRequest,
     ) -> DomainResult<Vec<crate::PromptVersionView>>;
+
+    fn load_prompt_version(
+        &self,
+        request: LoadPromptVersionRequest,
+    ) -> DomainResult<PromptVersionView>;
+
+    fn list_prompt_output_history(
+        &self,
+        request: ListPromptOutputHistoryRequest,
+    ) -> DomainResult<Vec<PromptOutputHistoryItem>>;
 }
 
 pub trait GalleryRepository {

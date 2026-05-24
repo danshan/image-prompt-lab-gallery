@@ -4,8 +4,9 @@ use crate::domain::prompt::{next_prompt_version_number, prompt_version_name, Pro
 use crate::library::{timestamp_string, LocalLibraryService};
 use crate::{
     CreatePromptDocumentRequest, DomainError, DomainResult, ListPromptDocumentsRequest,
-    ListPromptVersionsRequest, PromptDocumentView, PromptId, PromptVersionId, PromptVersionView,
-    SavePromptVersionRequest, UpdatePromptDraftRequest,
+    ListPromptOutputHistoryRequest, ListPromptVersionsRequest, LoadPromptVersionRequest,
+    PromptDocumentView, PromptId, PromptOutputHistoryItem, PromptVersionId, PromptVersionView,
+    SavePromptVersionRequest, TaskId, TaskOutputType, UpdatePromptDraftRequest,
 };
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde_json::Value;
@@ -226,6 +227,45 @@ impl PromptRepository for LocalLibraryService {
             .map_err(database_error)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(database_error)
     }
+
+    fn load_prompt_version(
+        &self,
+        request: LoadPromptVersionRequest,
+    ) -> DomainResult<PromptVersionView> {
+        let connection = LocalLibraryService::open_library_database(&request.library_path)?;
+        let version_id = PromptVersionId(request.prompt_version_id);
+        load_prompt_version(&connection, &version_id)
+    }
+
+    fn list_prompt_output_history(
+        &self,
+        request: ListPromptOutputHistoryRequest,
+    ) -> DomainResult<Vec<PromptOutputHistoryItem>> {
+        let connection = LocalLibraryService::open_library_database(&request.library_path)?;
+        let version_id = PromptVersionId(request.prompt_version_id);
+        let mut statement = connection
+            .prepare(
+                "
+                SELECT
+                    ge.id, ge.asset_id, ge.output_version_id, task_outputs.task_id,
+                    ge.provider, ge.provider_model, ge.status, ge.prompt, ge.started_at
+                FROM generation_events ge
+                LEFT JOIN task_outputs
+                    ON task_outputs.output_type = ?2
+                    AND task_outputs.target_id = ge.id
+                WHERE ge.prompt_version_id = ?1
+                ORDER BY ge.started_at DESC, ge.id DESC
+                ",
+            )
+            .map_err(database_error)?;
+        let rows = statement
+            .query_map(
+                params![version_id.0, TaskOutputType::GenerationEvent.as_str()],
+                prompt_output_history_from_row,
+            )
+            .map_err(database_error)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(database_error)
+    }
 }
 
 fn load_prompt_document(
@@ -317,6 +357,20 @@ fn prompt_version_from_row(row: &Row<'_>) -> rusqlite::Result<PromptVersionView>
         parameter_preset_json: row.get(8)?,
         notes: row.get(9)?,
         created_at: row.get(10)?,
+    })
+}
+
+fn prompt_output_history_from_row(row: &Row<'_>) -> rusqlite::Result<PromptOutputHistoryItem> {
+    Ok(PromptOutputHistoryItem {
+        generation_event_id: crate::GenerationEventId(row.get(0)?),
+        asset_id: row.get::<_, Option<String>>(1)?.map(crate::AssetId),
+        output_version_id: row.get::<_, Option<String>>(2)?.map(crate::AssetVersionId),
+        task_id: row.get::<_, Option<String>>(3)?.map(TaskId),
+        provider: row.get(4)?,
+        provider_model: row.get(5)?,
+        status: row.get(6)?,
+        prompt_snapshot: row.get(7)?,
+        created_at: row.get(8)?,
     })
 }
 

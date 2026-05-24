@@ -326,6 +326,46 @@ pub struct ListPromptVersionsRequest {
 }
 
 #[derive(Debug, Clone)]
+pub struct LoadPromptVersionRequest {
+    pub library_path: PathBuf,
+    pub prompt_version_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct RenderPromptRunRequest {
+    pub library_path: PathBuf,
+    pub prompt_version_id: String,
+    pub values_json: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenderPromptRunResult {
+    pub prompt_version_id: PromptVersionId,
+    pub prompt_id: PromptId,
+    pub version_number: u32,
+    pub version_name: String,
+    pub rendered_prompt: String,
+    pub rendered_negative_prompt: Option<String>,
+    pub values_json: String,
+    pub parameter_preset_json: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ListPromptOutputHistoryRequest {
+    pub library_path: PathBuf,
+    pub prompt_version_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SavePromptAsPromptRequest {
+    pub library_path: PathBuf,
+    pub name: String,
+    pub prompt: String,
+    pub negative_prompt: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 pub struct CreateTaskInput {
     pub task_type: TaskType,
     pub provider: Option<String>,
