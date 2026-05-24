@@ -93,7 +93,13 @@
 #### Scenario: 从 Prompt Version Enqueue Task
 
 - **WHEN** 用户从 prompt version 发起 generation
-- **THEN** task input 包含 prompt version id, rendered prompt snapshot, variables, provider, model, operation 和 parameters
+- **THEN** task input 包含 prompt version id, rendered prompt snapshot, rendered negative prompt snapshot, variables, provider, model, operation 和 parameters
+
+#### Scenario: Style Prompt 参与 Rendered Prompt Snapshot
+
+- **WHEN** prompt version 包含 style prompt 且用户从该 version 发起 generation
+- **THEN** style prompt 作为 prompt version source 的一部分合并进 rendered prompt snapshot
+- **AND** style prompt 不写入 canonical asset metadata
 
 #### Scenario: Preset Defaults 支持 Run-Time Overrides
 
@@ -111,8 +117,9 @@
 #### Scenario: Generation Event 保存 Prompt Link
 
 - **WHEN** prompt-sourced image generation task completed
-- **THEN** generation event 保存 prompt snapshot
-- **AND** generation event 保存 prompt version link
+- **THEN** generation event 保存 rendered prompt snapshot
+- **AND** generation event 保存 rendered negative prompt snapshot
+- **AND** generation event 保存 nullable prompt_version_id
 - **AND** output asset version 通过 generation event 可反查 prompt version
 
 ### Requirement: Prompt-To-Output History
@@ -144,10 +151,20 @@
 - **THEN** asset detail 仍展示 raw prompt snapshot
 - **AND** 用户可以执行 Save as Prompt
 
+#### Scenario: Save As Prompt From Legacy Snapshot
+
+- **WHEN** 用户对 legacy generation prompt snapshot 执行 Save as Prompt
+- **THEN** 系统用 raw generation prompt snapshot 创建新的 prompt document draft
+- **AND** 系统可以复制 legacy negative prompt snapshot 到 prompt document draft
+- **AND** 系统默认不创建 prompt version
+- **AND** 系统不修改原 generation event
+- **AND** 系统不写入 canonical asset metadata
+
 #### Scenario: Prompt Metadata 不进入 Asset Metadata
 
 - **WHEN** 用户从 prompt version 发起 generation
-- **THEN** prompt notes, template variables, style prompt 和 preset 不写入 canonical asset metadata
+- **THEN** prompt body, negative prompt, style prompt, notes, variables 和 preset 不写入 canonical asset metadata
+- **AND** generation event snapshot 和 prompt lineage link 是这些 prompt 事实唯一允许的 fact carriers
 
 ### Requirement: Library Compatibility
 
