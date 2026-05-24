@@ -320,7 +320,7 @@ pub fn prepare_generation_request(
         negative_prompt: input.negative_prompt,
         operation,
         input_version_id: input.input_version_id,
-        prompt_version_id: None,
+        prompt_version_id: input.prompt_version_id,
         parameters_json: input.parameters_json.unwrap_or_else(|| "{}".to_string()),
     };
 

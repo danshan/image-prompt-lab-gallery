@@ -140,6 +140,7 @@ pub(crate) fn execute_generation(
         operation: None,
         input_file: input.input_file,
         input_version_id: input.input_version_id.map(imglab_core::AssetVersionId),
+        prompt_version_id: None,
         parameters_json: input.parameters_json,
     })?;
 

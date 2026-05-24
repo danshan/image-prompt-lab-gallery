@@ -140,6 +140,7 @@ pub struct GenerationRequestInput {
     pub operation: Option<GenerationOperation>,
     pub input_file: Option<PathBuf>,
     pub input_version_id: Option<AssetVersionId>,
+    pub prompt_version_id: Option<PromptVersionId>,
     pub parameters_json: Option<String>,
 }
 

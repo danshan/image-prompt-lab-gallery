@@ -44,6 +44,8 @@ fn scheduler_tick_executes_fake_image_task_and_links_outputs() {
         .outputs
         .iter()
         .any(|output| output.output_type == TaskOutputType::AssetVersion));
+    let generation_event = output_generation_event(&state, &library_path, &detail);
+    assert!(generation_event.prompt_version_id.is_none());
     assert!(detail
         .events
         .iter()
@@ -59,6 +61,94 @@ fn scheduler_tick_executes_fake_image_task_and_links_outputs() {
         .as_str()
         .expect("log content")
         .contains("task completed"));
+}
+
+#[test]
+fn scheduler_tick_preserves_prompt_version_id_on_image_generation_event() {
+    let mut state = test_state("worker-prompt-version");
+    let library_id = create_open_library(&mut state, "worker-prompt-version-library");
+    let prompt_version_id = "prompt-version-linked";
+    let create_response = handle_http_request_with_state(
+        &json_request(
+            "POST",
+            TASKS_PATH,
+            serde_json::json!({
+                "libraryId": library_id,
+                "taskType": "image_generation",
+                "provider": "fake",
+                "operation": "text_to_image",
+                "input": {
+                    "prompt": "rendered prompt snapshot",
+                    "negativePrompt": "rendered negative prompt snapshot",
+                    "promptVersionId": prompt_version_id
+                }
+            }),
+        ),
+        "secret",
+        &mut state,
+    );
+    let task_id = json_value(&create_response)[0]["id"]
+        .as_str()
+        .expect("task id")
+        .to_string();
+
+    let task = run_scheduler_tick(
+        &mut state,
+        &TaskSchedulerConfig::default(),
+        &RetryPolicy::default(),
+    )
+    .expect("run tick")
+    .expect("executed task");
+    assert_eq!(task.status, TaskStatus::Completed);
+
+    let library_path = state.library_path(&library_id).expect("library path");
+    let detail = state
+        .tasks()
+        .get_task_detail(&library_path, &TaskId(task_id))
+        .expect("detail");
+    let generation_event = output_generation_event(&state, &library_path, &detail);
+    assert_eq!(
+        generation_event
+            .prompt_version_id
+            .as_ref()
+            .map(|id| id.0.as_str()),
+        Some(prompt_version_id)
+    );
+    assert_eq!(generation_event.prompt, "rendered prompt snapshot");
+}
+
+fn output_generation_event(
+    state: &DaemonState,
+    library_path: &Path,
+    detail: &TaskDetail,
+) -> imglab_core::GenerationEventSummary {
+    let asset_id = detail
+        .outputs
+        .iter()
+        .find(|output| output.output_type == TaskOutputType::Asset)
+        .expect("asset output")
+        .target_id
+        .clone();
+    let version_id = detail
+        .outputs
+        .iter()
+        .find(|output| output.output_type == TaskOutputType::AssetVersion)
+        .expect("asset version output")
+        .target_id
+        .clone();
+    let generated_asset = state
+        .gallery()
+        .get_asset_detail(
+            library_path,
+            &imglab_core::AssetId(asset_id),
+            Some(&imglab_core::AssetVersionId(version_id)),
+        )
+        .expect("generated asset detail");
+    generated_asset.lineage[0]
+        .generation_event
+        .as_ref()
+        .expect("generation event")
+        .clone()
 }
 
 #[test]

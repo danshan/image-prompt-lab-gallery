@@ -413,6 +413,7 @@ mod tests {
         AddAssetTagRequest, ConfidenceScoreView, GeneratedImage, GenerationEventId,
         GenerationEventSummary, ManagedFileImport, ManagedFileMetadata, MetadataSuggestion,
         MetadataSuggestionId, PromoteAssetVersionRequest, PromoteAssetVersionSummary,
+        PromptVersionId,
     };
     use std::cell::RefCell;
     use std::path::PathBuf;
@@ -840,6 +841,28 @@ mod tests {
         assert_eq!(use_case.events.requests.borrow()[0].status, "completed");
         assert_eq!(use_case.metadata.suggestions.borrow().len(), 1);
         assert_eq!(use_case.assets.generated_marks.borrow().len(), 1);
+    }
+
+    #[test]
+    fn text_to_image_records_prompt_version_id_on_generation_event() {
+        let use_case = GenerateImageUseCase::new(
+            FakeProvider { fail: false },
+            FakeAssets::default(),
+            FakeEvents::default(),
+            FakeMetadata::default(),
+            FakeFiles,
+        );
+        let mut request = text_request();
+        let prompt_version_id = PromptVersionId("prompt-version-1".to_string());
+        request.parameters.prompt_version_id = Some(prompt_version_id.clone());
+
+        let versions = use_case.execute(request).expect("generate");
+
+        assert_eq!(versions.len(), 1);
+        assert_eq!(
+            use_case.events.requests.borrow()[0].prompt_version_id,
+            Some(prompt_version_id)
+        );
     }
 
     #[test]

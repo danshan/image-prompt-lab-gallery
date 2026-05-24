@@ -142,6 +142,7 @@ impl Clone for DaemonState {
 pub struct ImageGenerationTaskInput {
     pub prompt: String,
     pub negative_prompt: Option<String>,
+    pub prompt_version_id: Option<String>,
     pub model: Option<String>,
     pub parameters: Option<Value>,
     pub parameters_json: Option<Value>,

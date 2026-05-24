@@ -245,6 +245,7 @@ fn generate(args: &[String]) -> Result<(), DomainError> {
         operation: None,
         input_file: option_value(args, "--input-file").map(PathBuf::from),
         input_version_id: option_value(args, "--input-version").map(imglab_core::AssetVersionId),
+        prompt_version_id: None,
         parameters_json: option_value(args, "--parameters"),
     })?;
 

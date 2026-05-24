@@ -118,6 +118,7 @@ pub(crate) fn execute_image_generation_task(
         operation: task.operation,
         input_file: input.input_file,
         input_version_id: input.input_version_id.map(imglab_core::AssetVersionId),
+        prompt_version_id: input.prompt_version_id.map(imglab_core::PromptVersionId),
         parameters_json: input
             .parameters_json
             .or(input.parameters)
