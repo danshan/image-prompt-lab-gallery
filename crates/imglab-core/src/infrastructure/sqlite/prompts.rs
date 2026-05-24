@@ -8,6 +8,7 @@ use crate::{
     SavePromptVersionRequest, UpdatePromptDraftRequest,
 };
 use rusqlite::{params, Connection, OptionalExtension, Row};
+use serde_json::Value;
 use std::fs;
 use std::path::Path;
 use uuid::Uuid;
@@ -19,9 +20,14 @@ impl PromptRepository for LocalLibraryService {
     ) -> DomainResult<PromptDocumentView> {
         let connection = LocalLibraryService::open_library_database(&request.library_path)?;
         let manifest = read_library_manifest(&request.library_path)?;
+        let prompt_json = validate_prompt_json(
+            &request.variables_schema_json,
+            &request.default_values_json,
+            &request.parameter_preset_json,
+        )?;
         let prompt_id = PromptId(Uuid::new_v4().to_string());
         let now = timestamp_string();
-        let kind = infer_prompt_kind(&request.variables_schema_json);
+        let kind = infer_prompt_kind(&prompt_json.variables_schema);
 
         connection
             .execute(
@@ -60,7 +66,12 @@ impl PromptRepository for LocalLibraryService {
     ) -> DomainResult<PromptDocumentView> {
         let connection = LocalLibraryService::open_library_database(&request.library_path)?;
         let prompt_id = PromptId(request.prompt_id);
-        let kind = infer_prompt_kind(&request.variables_schema_json);
+        let prompt_json = validate_prompt_json(
+            &request.variables_schema_json,
+            &request.default_values_json,
+            &request.parameter_preset_json,
+        )?;
+        let kind = infer_prompt_kind(&prompt_json.variables_schema);
         let now = timestamp_string();
         let changed = connection
             .execute(
@@ -327,10 +338,31 @@ fn ensure_prompt_document_exists(
     }
 }
 
-fn infer_prompt_kind(variables_schema_json: &str) -> PromptDocumentKind {
-    match serde_json::from_str::<serde_json::Value>(variables_schema_json) {
-        Ok(serde_json::Value::Array(values)) if !values.is_empty() => PromptDocumentKind::Template,
-        Ok(serde_json::Value::Object(values)) if !values.is_empty() => PromptDocumentKind::Template,
+struct ValidatedPromptJson {
+    variables_schema: Value,
+}
+
+fn validate_prompt_json(
+    variables_schema_json: &str,
+    default_values_json: &str,
+    parameter_preset_json: &str,
+) -> DomainResult<ValidatedPromptJson> {
+    let variables_schema = parse_json_field("variables_schema_json", variables_schema_json)?;
+    parse_json_field("default_values_json", default_values_json)?;
+    parse_json_field("parameter_preset_json", parameter_preset_json)?;
+    Ok(ValidatedPromptJson { variables_schema })
+}
+
+fn parse_json_field(field: &str, value: &str) -> DomainResult<Value> {
+    serde_json::from_str(value).map_err(|error| DomainError::InvalidGenerationParameters {
+        message: format!("{field} must be valid JSON: {error}"),
+    })
+}
+
+fn infer_prompt_kind(variables_schema: &Value) -> PromptDocumentKind {
+    match variables_schema {
+        Value::Array(values) if !values.is_empty() => PromptDocumentKind::Template,
+        Value::Object(values) if !values.is_empty() => PromptDocumentKind::Template,
         _ => PromptDocumentKind::Draft,
     }
 }

@@ -6,10 +6,11 @@ use crate::{
     BatchAddAssetsToAlbumRequest, BatchCreateTasksRequest, BatchReviewMetadataSuggestionRequest,
     CreatePromptDocumentRequest, CreateTaskInput, GalleryAlbumFilter, GalleryQuery,
     GalleryReadService, GallerySort, GenerateImageRequest, GeneratedImage, GenerationResult,
-    ImageProvider, ImportAssetRequest, ListPromptVersionsRequest, ReorderAlbumItemsRequest,
-    ReorderAlbumsRequest, ReviewMetadataSuggestionRequest, ReviewStatusFilter,
-    SavePromptVersionRequest, SearchQuery, SearchService, TaskOutputType, TaskService, TaskStatus,
-    TaskType, UpdateAssetMetadataRequest, UpdatePromptDraftRequest, UpdateTaskStatusRequest,
+    ImageProvider, ImportAssetRequest, ListPromptVersionsRequest, PromptVersionId,
+    ReorderAlbumItemsRequest, ReorderAlbumsRequest, ReviewMetadataSuggestionRequest,
+    ReviewStatusFilter, SavePromptVersionRequest, SearchQuery, SearchService, TaskOutputType,
+    TaskService, TaskStatus, TaskType, UpdateAssetMetadataRequest, UpdatePromptDraftRequest,
+    UpdateTaskStatusRequest,
 };
 use std::time::Instant;
 use uuid::Uuid;
@@ -225,6 +226,108 @@ fn prompt_repository_save_version_keeps_previous_version_immutable() {
     assert_eq!(versions[1].default_values_json, r#"{"subject":"orchid"}"#);
     assert_eq!(versions[1].parameter_preset_json, r#"{"provider":"fake"}"#);
     assert_eq!(versions[1].notes.as_deref(), Some("first draft"));
+}
+
+#[test]
+fn prompt_repository_rejects_invalid_json_without_persisting_document() {
+    use crate::application::ports::PromptRepository;
+
+    let root = test_root("prompt-invalid-json");
+    let registry = test_root("prompt-invalid-json-registry").join("registry.sqlite");
+    let service = LocalLibraryService::new(registry);
+    service
+        .create_library(CreateLibraryRequest {
+            root_path: root.clone(),
+            name: "Prompt Invalid JSON".to_string(),
+        })
+        .expect("init library");
+
+    let error = service
+        .create_prompt_document(CreatePromptDocumentRequest {
+            library_path: root.clone(),
+            name: "Broken".to_string(),
+            draft_body: "A {{subject}} study".to_string(),
+            draft_negative_prompt: None,
+            draft_style_prompt: None,
+            variables_schema_json: "{not-json".to_string(),
+            default_values_json: "{}".to_string(),
+            parameter_preset_json: "{}".to_string(),
+            notes: None,
+        })
+        .expect_err("invalid json should fail");
+
+    assert!(error.to_string().contains("variables_schema_json"));
+
+    let connection = Connection::open(LocalLibraryService::database_path(&root)).expect("open db");
+    let prompt_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM prompt_documents", [], |row| {
+            row.get(0)
+        })
+        .expect("prompt count");
+    assert_eq!(prompt_count, 0);
+}
+
+#[test]
+fn generation_event_round_trips_prompt_version_id_through_lineage() {
+    use crate::application::ports::AssetRepository;
+
+    let root = test_root("prompt-generation-event-link");
+    let registry = test_root("prompt-generation-event-link-registry").join("registry.sqlite");
+    let service = LocalLibraryService::new(registry);
+    service
+        .create_library(CreateLibraryRequest {
+            root_path: root.clone(),
+            name: "Prompt Event Link".to_string(),
+        })
+        .expect("init library");
+
+    let source = test_root("prompt-generation-event-link-source").join("image.png");
+    fs::create_dir_all(source.parent().expect("source parent")).expect("create source parent");
+    fs::write(&source, png_bytes(32, 32)).expect("write png");
+    let (asset, version) = service
+        .import_asset(ImportAssetRequest {
+            library_path: root.clone(),
+            source_path: source,
+        })
+        .expect("import asset");
+    let prompt_version_id = PromptVersionId(Uuid::new_v4().to_string());
+    let event = AssetService::record_generation_event(
+        &service,
+        CreateGenerationEventRequest {
+            library_path: root.clone(),
+            asset_id: Some(asset.id.clone()),
+            output_version_id: Some(version.id.clone()),
+            provider: "fake".to_string(),
+            provider_model: "fake-model".to_string(),
+            operation_type: GenerationOperation::TextToImage,
+            prompt: "linked prompt".to_string(),
+            negative_prompt: None,
+            input_asset_version_id: None,
+            prompt_version_id: Some(prompt_version_id.clone()),
+            parameters_json: "{}".to_string(),
+            raw_request_json: None,
+            raw_response_json: None,
+            status: "completed".to_string(),
+            error_code: None,
+            error_message: None,
+        },
+    )
+    .expect("record generation event");
+    service
+        .mark_version_generated(&root, &asset.id, &version.id, &event.id)
+        .expect("mark generated");
+
+    let lineage = service
+        .get_lineage(&root, &version.id)
+        .expect("load lineage");
+
+    assert_eq!(
+        lineage[0]
+            .generation_event
+            .as_ref()
+            .and_then(|event| event.prompt_version_id.as_ref()),
+        Some(&prompt_version_id)
+    );
 }
 
 #[test]

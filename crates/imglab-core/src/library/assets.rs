@@ -10,7 +10,7 @@ use crate::{
     CreateGenerationEventRequest, DomainError, DomainResult, GenerationEventId,
     GenerationEventSummary, ImportAssetRequest, LineageEntry, PersistAssetVersionRequest,
     PersistImportedAssetRequest, PromoteAssetVersionRequest, PromoteAssetVersionSummary,
-    PromotedSourceView, VersionSummary,
+    PromotedSourceView, PromptVersionId, VersionSummary,
 };
 use rusqlite::{params, Connection};
 use std::path::{Path, PathBuf};
@@ -52,11 +52,11 @@ impl AssetService for LocalLibraryService {
                 "
                 INSERT INTO generation_events (
                     id, asset_id, output_version_id, provider, provider_model, operation_type,
-                    prompt, negative_prompt, input_asset_version_id, parameters_json,
+                    prompt, negative_prompt, input_asset_version_id, prompt_version_id, parameters_json,
                     raw_request_json, raw_response_json, status, started_at, completed_at,
                     error_code, error_message
                 )
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14, ?15, ?16)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?15, ?16, ?17)
                 ",
                 params![
                     event_id.0,
@@ -71,6 +71,7 @@ impl AssetService for LocalLibraryService {
                         .input_asset_version_id
                         .as_ref()
                         .map(|id| id.0.as_str()),
+                    request.prompt_version_id.as_ref().map(|id| id.0.as_str()),
                     request.parameters_json,
                     request.raw_request_json,
                     request.raw_response_json,
@@ -486,7 +487,7 @@ pub(super) fn load_generation_event(
         .query_row(
             "
             SELECT id, asset_id, output_version_id, provider, provider_model, operation_type,
-                   prompt, parameters_json, status
+                   prompt, prompt_version_id, parameters_json, status
             FROM generation_events
             WHERE id = ?1
             ",
@@ -508,9 +509,9 @@ pub(super) fn load_generation_event(
                     provider_model: row.get(4)?,
                     operation_type,
                     prompt: row.get(6)?,
-                    prompt_version_id: None,
-                    parameters_json: row.get(7)?,
-                    status: row.get(8)?,
+                    prompt_version_id: row.get::<_, Option<String>>(7)?.map(PromptVersionId),
+                    parameters_json: row.get(8)?,
+                    status: row.get(9)?,
                 })
             },
         )
