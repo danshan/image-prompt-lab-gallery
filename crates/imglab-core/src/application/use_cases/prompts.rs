@@ -139,18 +139,38 @@ fn parse_prompt_variables(
     let default_values = parse_json_object("default_values_json", default_values_json)?;
 
     match schema {
-        Value::Array(items) => items
-            .iter()
-            .map(|item| variable_from_schema_item(item, &default_values))
-            .collect(),
-        Value::Object(fields) => fields
-            .iter()
-            .map(|(name, config)| variable_from_object_schema(name, config, &default_values))
-            .collect(),
+        Value::Array(items) => variables_from_schema_array(&items, &default_values),
+        Value::Object(fields) => {
+            if let Some(variables) = fields.get("variables") {
+                let items = variables.as_array().ok_or_else(|| {
+                    DomainError::InvalidGenerationParameters {
+                        message: "variables_schema_json.variables must be an array".to_string(),
+                    }
+                })?;
+                variables_from_schema_array(items, &default_values)
+            } else {
+                fields
+                    .iter()
+                    .map(|(name, config)| {
+                        variable_from_object_schema(name, config, &default_values)
+                    })
+                    .collect()
+            }
+        }
         _ => Err(DomainError::InvalidGenerationParameters {
             message: "variables_schema_json must be an array or object".to_string(),
         }),
     }
+}
+
+fn variables_from_schema_array(
+    items: &[Value],
+    default_values: &Value,
+) -> DomainResult<Vec<PromptTemplateVariable>> {
+    items
+        .iter()
+        .map(|item| variable_from_schema_item(item, default_values))
+        .collect()
 }
 
 fn variable_from_schema_item(
@@ -181,7 +201,7 @@ fn variable_from_schema_item(
             .get("required")
             .and_then(Value::as_bool)
             .unwrap_or(false),
-        default_value: prompt_default_value(&name, object.get("default_value"), default_values),
+        default_value: prompt_default_value(&name, schema_default_value(object), default_values),
         name,
     })
 }
@@ -207,9 +227,7 @@ fn variable_from_object_schema(
         .and_then(|object| object.get("required"))
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let schema_default = config
-        .as_object()
-        .and_then(|object| object.get("default_value"));
+    let schema_default = config.as_object().and_then(schema_default_value);
 
     Ok(PromptTemplateVariable {
         name: name.trim().to_string(),
@@ -217,6 +235,12 @@ fn variable_from_object_schema(
         required,
         default_value: prompt_default_value(name, schema_default, default_values),
     })
+}
+
+fn schema_default_value(object: &serde_json::Map<String, Value>) -> Option<&Value> {
+    object
+        .get("defaultValue")
+        .or_else(|| object.get("default_value"))
 }
 
 fn prompt_default_value(
