@@ -136,3 +136,56 @@ fn maps_prompt_lineage_view() {
     assert_eq!(view.prompt_version_number, 3);
     assert_eq!(view.prompt_version_name, "v3");
 }
+
+#[test]
+fn maps_asset_detail_prompt_lineage() {
+    let view = asset_detail_view(
+        imglab_core::AssetDetailView {
+            id: imglab_core::AssetId("asset-1".to_string()),
+            title: None,
+            description: None,
+            schema_prompt: None,
+            category: None,
+            rating: None,
+            status: "generated".to_string(),
+            created_at: "2026-05-24T00:00:00Z".to_string(),
+            updated_at: "2026-05-24T00:00:00Z".to_string(),
+            prompt: None,
+            negative_prompt: None,
+            provider: None,
+            model_label: None,
+            parameters_json: None,
+            tags: Vec::new(),
+            albums: Vec::new(),
+            review_pending_count: 0,
+            current_version_id: None,
+            current_version_number: None,
+            current_version_name: None,
+            focused_version_id: None,
+            focused_version_tree_name: None,
+            focused_version: None,
+            versions: Vec::new(),
+            version_tree: Vec::new(),
+            version_tree_issues: Vec::new(),
+            lineage: Vec::new(),
+            prompt_lineage: Some(imglab_core::PromptLineageView {
+                prompt_id: imglab_core::PromptId("prompt-1".to_string()),
+                prompt_name: "Lighting study".to_string(),
+                prompt_version_id: imglab_core::PromptVersionId("prompt-version-1".to_string()),
+                prompt_version_number: 3,
+                prompt_version_name: "p3".to_string(),
+            }),
+            source_reference: None,
+            promoted_from: None,
+            file: None,
+        },
+        std::path::Path::new("/tmp/library"),
+    );
+
+    let lineage = view.prompt_lineage.expect("prompt lineage");
+    assert_eq!(lineage.prompt_id, "prompt-1");
+    assert_eq!(lineage.prompt_name, "Lighting study");
+    assert_eq!(lineage.prompt_version_id, "prompt-version-1");
+    assert_eq!(lineage.prompt_version_number, 3);
+    assert_eq!(lineage.prompt_version_name, "p3");
+}

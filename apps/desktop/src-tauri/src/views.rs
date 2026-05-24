@@ -400,6 +400,7 @@ pub(crate) struct AssetDetailView {
     pub(crate) version_tree: Vec<VersionTreeNodeView>,
     pub(crate) version_tree_issues: Vec<VersionTreeIssueView>,
     pub(crate) lineage: Vec<LineageEntryView>,
+    pub(crate) prompt_lineage: Option<PromptLineageView>,
     pub(crate) source_reference: Option<ReferenceSourceView>,
     pub(crate) promoted_from: Option<PromotedSourceView>,
     pub(crate) file: Option<FileContextView>,

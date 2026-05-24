@@ -7,11 +7,12 @@ use super::{
     operation_from_str,
     storage::file_digest,
 };
+use crate::domain::prompt::prompt_version_name;
 use crate::{
     version_name, AlbumId, AlbumKind, AssetDetailView, AssetId, AssetInspectorDetailView,
     AssetVersionId, CanonicalMetadataView, DomainResult, FileContextView, GenerationEventId,
-    PendingSuggestionSummaryView, ReferenceSourceView, TaskId, TaskOriginView, TaskStatus,
-    TaskType, VersionSummary,
+    PendingSuggestionSummaryView, PromptId, PromptLineageView, PromptVersionId,
+    ReferenceSourceView, TaskId, TaskOriginView, TaskStatus, TaskType, VersionSummary,
 };
 use rusqlite::{params, Connection};
 use std::path::{Path, PathBuf};
@@ -54,6 +55,11 @@ pub(super) fn get_asset_detail(
         .map(|version_id| load_reference_source(connection, version_id, asset_id))
         .transpose()?
         .flatten();
+    let prompt_lineage = event
+        .as_ref()
+        .and_then(|event| event.prompt_version_id.as_ref())
+        .map(|version_id| load_prompt_lineage(connection, version_id))
+        .transpose()?;
     let lineage = current_version
         .as_ref()
         .map(|version| load_asset_scoped_lineage(connection, version))
@@ -103,6 +109,7 @@ pub(super) fn get_asset_detail(
         version_tree: version_tree_model.roots,
         version_tree_issues: version_tree_model.issues,
         lineage,
+        prompt_lineage,
         source_reference,
         promoted_from,
         file,
@@ -162,6 +169,7 @@ struct GenerationEventDetail {
     negative_prompt: Option<String>,
     parameters_json: String,
     input_asset_version_id: Option<AssetVersionId>,
+    prompt_version_id: Option<PromptVersionId>,
 }
 
 fn load_asset_detail_base(
@@ -201,7 +209,7 @@ fn load_generation_event_detail(
         .query_row(
             "
             SELECT provider, provider_model, prompt, negative_prompt, parameters_json,
-                   input_asset_version_id
+                   input_asset_version_id, prompt_version_id
             FROM generation_events
             WHERE id = ?1
             ",
@@ -214,6 +222,34 @@ fn load_generation_event_detail(
                     negative_prompt: row.get(3)?,
                     parameters_json: row.get(4)?,
                     input_asset_version_id: row.get::<_, Option<String>>(5)?.map(AssetVersionId),
+                    prompt_version_id: row.get::<_, Option<String>>(6)?.map(PromptVersionId),
+                })
+            },
+        )
+        .map_err(database_error)
+}
+
+fn load_prompt_lineage(
+    connection: &Connection,
+    version_id: &PromptVersionId,
+) -> DomainResult<PromptLineageView> {
+    connection
+        .query_row(
+            "
+            SELECT pd.id, pd.name, pv.id, pv.version_number
+            FROM prompt_versions pv
+            INNER JOIN prompt_documents pd ON pd.id = pv.prompt_id
+            WHERE pv.id = ?1
+            ",
+            params![version_id.0],
+            |row| {
+                let version_number: u32 = row.get(3)?;
+                Ok(PromptLineageView {
+                    prompt_id: PromptId(row.get(0)?),
+                    prompt_name: row.get(1)?,
+                    prompt_version_id: PromptVersionId(row.get(2)?),
+                    prompt_version_number: version_number,
+                    prompt_version_name: prompt_version_name(version_number),
                 })
             },
         )

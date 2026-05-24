@@ -820,6 +820,7 @@ pub struct AssetDetailView {
     pub version_tree: Vec<VersionTreeNode>,
     pub version_tree_issues: Vec<VersionTreeIssue>,
     pub lineage: Vec<LineageEntry>,
+    pub prompt_lineage: Option<PromptLineageView>,
     pub source_reference: Option<ReferenceSourceView>,
     pub promoted_from: Option<PromotedSourceView>,
     pub file: Option<FileContextView>,

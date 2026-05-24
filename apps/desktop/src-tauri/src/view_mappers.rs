@@ -429,6 +429,7 @@ pub(crate) fn asset_detail_view(
                 generation_event: entry.generation_event.map(generation_event_view),
             })
             .collect(),
+        prompt_lineage: summary.prompt_lineage.map(prompt_lineage_view),
         source_reference: summary
             .source_reference
             .map(|source| reference_source_view(source, library_path)),

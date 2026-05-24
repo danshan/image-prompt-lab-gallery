@@ -512,6 +512,87 @@ fn generation_event_round_trips_prompt_version_id_through_lineage() {
 }
 
 #[test]
+fn asset_detail_exposes_prompt_lineage_for_focused_generation_event() {
+    use crate::application::ports::{AssetRepository, PromptRepository};
+
+    let root = test_root("asset-detail-prompt-lineage");
+    let registry = test_root("asset-detail-prompt-lineage-registry").join("registry.sqlite");
+    let service = LocalLibraryService::new(registry);
+    service
+        .create_library(CreateLibraryRequest {
+            root_path: root.clone(),
+            name: "Asset Detail Prompt Lineage".to_string(),
+        })
+        .expect("init library");
+
+    let prompt = service
+        .create_prompt_document(CreatePromptDocumentRequest {
+            library_path: root.clone(),
+            name: "Botanical".to_string(),
+            draft_body: "A botanical prompt".to_string(),
+            draft_negative_prompt: None,
+            draft_style_prompt: None,
+            variables_schema_json: "[]".to_string(),
+            default_values_json: "{}".to_string(),
+            parameter_preset_json: "{}".to_string(),
+            notes: None,
+        })
+        .expect("create prompt");
+    let prompt_version = service
+        .save_prompt_version(SavePromptVersionRequest {
+            library_path: root.clone(),
+            prompt_id: prompt.id.0.clone(),
+        })
+        .expect("save prompt version");
+
+    let source = test_root("asset-detail-prompt-lineage-source").join("image.png");
+    fs::create_dir_all(source.parent().expect("source parent")).expect("create source parent");
+    fs::write(&source, png_bytes(32, 32)).expect("write png");
+    let (asset, version) = service
+        .import_asset(ImportAssetRequest {
+            library_path: root.clone(),
+            source_path: source,
+        })
+        .expect("import asset");
+    let event = AssetService::record_generation_event(
+        &service,
+        CreateGenerationEventRequest {
+            library_path: root.clone(),
+            asset_id: Some(asset.id.clone()),
+            output_version_id: Some(version.id.clone()),
+            provider: "fake".to_string(),
+            provider_model: "fake-model".to_string(),
+            operation_type: GenerationOperation::TextToImage,
+            prompt: "A rendered prompt".to_string(),
+            negative_prompt: None,
+            input_asset_version_id: None,
+            prompt_version_id: Some(prompt_version.id.clone()),
+            parameters_json: "{}".to_string(),
+            raw_request_json: None,
+            raw_response_json: None,
+            status: "completed".to_string(),
+            error_code: None,
+            error_message: None,
+        },
+    )
+    .expect("record generation event");
+    service
+        .mark_version_generated(&root, &asset.id, &version.id, &event.id)
+        .expect("mark generated");
+
+    let detail = service
+        .get_asset_detail(&root, &asset.id, Some(&version.id))
+        .expect("asset detail");
+    let lineage = detail.prompt_lineage.expect("prompt lineage");
+
+    assert_eq!(lineage.prompt_id, prompt.id);
+    assert_eq!(lineage.prompt_name, "Botanical");
+    assert_eq!(lineage.prompt_version_id, prompt_version.id);
+    assert_eq!(lineage.prompt_version_number, 1);
+    assert_eq!(lineage.prompt_version_name, "v1");
+}
+
+#[test]
 fn generation_event_round_trips_missing_prompt_version_id_as_none() {
     use crate::application::ports::AssetRepository;
 
