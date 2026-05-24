@@ -1,6 +1,6 @@
 import type { ReviewFieldName } from "./workflows/review/state.js";
 
-export type View = "gallery" | "albums" | "review" | "queue" | "settings";
+export type View = "gallery" | "albums" | "prompts" | "review" | "queue" | "settings";
 export type TaskPanel = "compose" | "queue" | "detail";
 
 export const GALLERY_REFRESH_DEBOUNCE_MS = 250;
@@ -110,6 +110,64 @@ export type GenerationEvent = {
   prompt: string;
   parametersJson: string;
   status: string;
+};
+
+export type PromptDocument = {
+  id: string;
+  name: string;
+  kind: string;
+  status: string;
+  draftBody: string;
+  draftNegativePrompt: string | null;
+  draftStylePrompt: string | null;
+  variablesSchemaJson: string;
+  defaultValuesJson: string;
+  parameterPresetJson: string;
+  notes: string | null;
+  latestVersionId: string | null;
+  latestVersionNumber: number | null;
+  latestVersionName: string | null;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+};
+
+export type PromptVersion = {
+  id: string;
+  promptId: string;
+  versionNumber: number;
+  versionName: string;
+  body: string;
+  negativePrompt: string | null;
+  stylePrompt: string | null;
+  variablesSchemaJson: string;
+  defaultValuesJson: string;
+  parameterPresetJson: string;
+  notes: string | null;
+  createdAt: string;
+};
+
+export type RenderPromptRun = {
+  promptVersionId: string;
+  promptId: string;
+  versionNumber: number;
+  versionName: string;
+  renderedPrompt: string;
+  renderedNegativePrompt: string | null;
+  valuesJson: string;
+  parameterPresetJson: string;
+};
+
+export type PromptOutputHistoryItem = {
+  generationEventId: string;
+  assetId: string | null;
+  outputVersionId: string | null;
+  taskId: string | null;
+  provider: string;
+  providerModel: string;
+  status: string;
+  promptSnapshot: string;
+  createdAt: string;
 };
 
 export type LineageEntry = {

@@ -117,6 +117,7 @@ export function WorkspaceToolbar({
   const viewLabels: Record<View, { title: string; eyebrow: string }> = {
     gallery: { title: "Gallery", eyebrow: "Image assets" },
     albums: { title: "Albums", eyebrow: "Curation sets" },
+    prompts: { title: "Prompts", eyebrow: "Prompt workspace" },
     review: { title: "Review Inbox", eyebrow: "Metadata suggestions" },
     queue: { title: "Tasks Queue", eyebrow: "Generation operations" },
     settings: { title: "Settings", eyebrow: "Library administration" },

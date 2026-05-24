@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   applyGalleryQuery,
   beginDetailLoad,
@@ -67,6 +67,7 @@ import {
   StudioOverviewBand,
   TaskWorkspace,
   WorkspaceToolbar,
+  PromptWorkspace,
 } from "./screens/workflows";
 import { StarRatingControl, StarRatingDisplay } from "./components/rating";
 import {
@@ -113,6 +114,10 @@ import {
   useLibrarySettingsControllerState,
   type SettingsSection,
 } from "./workflows/settings";
+import {
+  usePromptWorkspaceActions,
+  usePromptWorkspaceControllerState,
+} from "./workflows/prompts";
 import { initialUpdateState } from "./types";
 import type {
   Album,
@@ -256,6 +261,7 @@ export function StudioAppController() {
     activeTaskPanel,
     setActiveTaskPanel,
   } = useTaskGenerationControllerState(runningInTauri);
+  const promptWorkspaceState = usePromptWorkspaceControllerState(runningInTauri);
   const {
     status,
     setStatus,
@@ -403,6 +409,28 @@ export function StudioAppController() {
     detailState,
     loadAssetDetail,
   });
+  const {
+    refreshPrompts,
+    selectPrompt,
+    createPrompt,
+    saveDraft: savePromptDraft,
+    saveVersion: savePromptVersion,
+    selectPromptVersion,
+    renderSelectedPrompt,
+    runSelectedPrompt,
+    newPromptDraft,
+  } = usePromptWorkspaceActions({
+    runningInTauri,
+    library,
+    ...promptWorkspaceState,
+    setTasks,
+    setSelectedTaskId,
+    setActiveView,
+    setActiveTaskPanel,
+    setStatus,
+    setRecoverableError,
+    refreshTasks,
+  });
 
 
   const {
@@ -518,6 +546,12 @@ export function StudioAppController() {
     setSuggestionHistory,
     setDetailState,
   });
+
+  useEffect(() => {
+    if (activeView === "prompts") {
+      void refreshPrompts();
+    }
+  }, [activeView, library?.rootPath, promptWorkspaceState.promptSearch]);
 
   async function refreshAlbums() {
     if (!runningInTauri || !library) {
@@ -654,6 +688,12 @@ export function StudioAppController() {
     setTaskDetail(null);
     setReviewForm(cleared.reviewForm);
     setSuggestions(runningInTauri ? [] : mockSuggestions);
+    promptWorkspaceState.setPrompts([]);
+    promptWorkspaceState.setSelectedPromptId(null);
+    promptWorkspaceState.setPromptVersions([]);
+    promptWorkspaceState.setSelectedPromptVersionId(null);
+    promptWorkspaceState.setPromptOutputHistory([]);
+    promptWorkspaceState.setPromptRenderResult(null);
     setQuery(resetGalleryQuery());
     setRecoverableError(null);
     setStatus(nextLibrary ? "Library switched" : "No library selected");
@@ -1250,6 +1290,34 @@ export function StudioAppController() {
               selectTask(taskId);
               changeView("queue");
             }}
+          />
+        )}
+        {activeView === "prompts" && (
+          <PromptWorkspace
+            prompts={promptWorkspaceState.prompts}
+            search={promptWorkspaceState.promptSearch}
+            selectedPromptId={promptWorkspaceState.selectedPromptId}
+            draft={promptWorkspaceState.promptDraftForm}
+            versions={promptWorkspaceState.promptVersions}
+            selectedVersionId={promptWorkspaceState.selectedPromptVersionId}
+            history={promptWorkspaceState.promptOutputHistory}
+            runForm={promptWorkspaceState.promptRunForm}
+            renderResult={promptWorkspaceState.promptRenderResult}
+            loading={promptWorkspaceState.promptsLoading}
+            versionsLoading={promptWorkspaceState.promptVersionsLoading}
+            saving={promptWorkspaceState.promptSaving}
+            running={promptWorkspaceState.promptRunning}
+            onSearchChange={promptWorkspaceState.setPromptSearch}
+            onRefresh={() => void refreshPrompts()}
+            onSelectPrompt={(promptId) => void selectPrompt(promptId)}
+            onDraftChange={promptWorkspaceState.setPromptDraftForm}
+            onNewPrompt={newPromptDraft}
+            onSaveDraft={() => void savePromptDraft()}
+            onSaveVersion={() => void savePromptVersion()}
+            onSelectVersion={(versionId) => void selectPromptVersion(versionId)}
+            onRunFormChange={promptWorkspaceState.setPromptRunForm}
+            onRender={() => void renderSelectedPrompt()}
+            onRun={() => void runSelectedPrompt()}
           />
         )}
         {activeView === "queue" && (

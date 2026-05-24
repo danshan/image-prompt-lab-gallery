@@ -1,7 +1,7 @@
 import { LibraryContextPanel, StudioRail } from "./studio-shell";
 import { Icon, type IconName } from "./studio-icons";
 
-export type StudioView = "gallery" | "albums" | "review" | "queue" | "settings";
+export type StudioView = "gallery" | "albums" | "prompts" | "review" | "queue" | "settings";
 
 type LibraryNavItem = {
   id: string;
@@ -73,6 +73,7 @@ export function Sidebar({
         <nav className="nav">
           <NavButton active={activeView === "gallery"} icon="image" label="Gallery" onClick={() => onViewChange("gallery")} />
           <NavButton active={activeView === "albums"} icon="album" label="Albums" onClick={() => onViewChange("albums")} />
+          <NavButton active={activeView === "prompts"} icon="list" label="Prompts" onClick={() => onViewChange("prompts")} />
           <NavButton
             active={activeView === "review"}
             icon="review"

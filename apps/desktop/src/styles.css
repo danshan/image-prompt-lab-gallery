@@ -3030,6 +3030,216 @@ button.filter-chip {
   grid-template-columns: minmax(300px, 0.42fr) minmax(320px, 0.58fr) minmax(320px, 0.62fr);
 }
 
+.prompt-workspace {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(220px, 0.32fr) minmax(360px, 0.72fr) minmax(300px, 0.46fr);
+  min-height: 0;
+}
+
+.prompt-library-panel,
+.prompt-editor-panel,
+.prompt-run-panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  padding: 10px;
+}
+
+.panel-header.compact h3,
+.panel-header.compact p {
+  margin: 0;
+}
+
+.panel-header.compact p {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.prompt-search-row {
+  align-items: center;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+}
+
+.prompt-search-row .button-icon {
+  color: var(--color-text-muted);
+}
+
+.prompt-list,
+.prompt-history-list {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.prompt-list-item,
+.prompt-version-item {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+  text-align: left;
+}
+
+.prompt-list-item strong,
+.prompt-list-item small,
+.prompt-version-item strong,
+.prompt-version-item span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prompt-list-item small,
+.prompt-version-item span,
+.muted-inline {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.prompt-list-item.active,
+.prompt-version-item.active {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px rgba(40, 92, 196, 0.12);
+}
+
+.prompt-status {
+  color: var(--color-success);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.prompt-editor-header {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.prompt-editor-header label,
+.prompt-editor-grid label,
+.prompt-run-controls label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.prompt-editor-header span,
+.prompt-editor-grid span,
+.prompt-run-controls span {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.prompt-editor-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-height: 0;
+  overflow: auto;
+}
+
+.prompt-editor-grid textarea,
+.prompt-run-controls textarea {
+  min-height: 76px;
+  resize: vertical;
+}
+
+.prompt-body-field,
+.prompt-notes-field {
+  grid-column: 1 / -1;
+}
+
+.prompt-body-field textarea {
+  min-height: 118px;
+}
+
+.prompt-version-strip,
+.prompt-render-preview,
+.prompt-history-panel {
+  border-top: 1px solid var(--color-border);
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+}
+
+.prompt-version-list {
+  display: flex;
+  gap: 8px;
+  min-height: 40px;
+  overflow-x: auto;
+}
+
+.prompt-version-item {
+  flex: 0 0 132px;
+}
+
+.prompt-run-controls {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+}
+
+.prompt-run-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.prompt-section-title {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.prompt-section-title span {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.prompt-render-preview pre {
+  background: #f6f3ee;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 8px;
+  white-space: pre-wrap;
+}
+
+.prompt-render-preview small {
+  color: var(--color-text-muted);
+}
+
+.prompt-history-item {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+}
+
+.prompt-history-item span,
+.prompt-history-item small {
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .task-panel-tabs {
   display: none;
 }
@@ -3202,6 +3412,7 @@ button.filter-chip {
 
   .albums-workspace,
   .review-workspace,
+  .prompt-workspace,
   .task-workspace,
   .settings-workspace {
     grid-template-columns: 1fr;
