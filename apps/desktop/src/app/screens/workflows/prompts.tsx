@@ -132,7 +132,7 @@ export function PromptWorkspace({
             <span>Default values JSON</span>
             <textarea value={draft.defaultValuesJson} onChange={(event) => onDraftChange({ ...draft, defaultValuesJson: event.target.value })} />
           </label>
-          <label>
+          <label className="prompt-parameter-preset-field">
             <span>Parameter preset JSON</span>
             <textarea value={draft.parameterPresetJson} onChange={(event) => onDraftChange({ ...draft, parameterPresetJson: event.target.value })} />
           </label>

@@ -3044,8 +3044,9 @@ button.filter-chip {
 .prompt-workspace {
   display: grid;
   gap: 12px;
-  grid-template-columns: minmax(220px, 0.32fr) minmax(360px, 0.72fr) minmax(300px, 0.46fr);
+  grid-template-columns: minmax(160px, 0.72fr) minmax(300px, 1.36fr) minmax(200px, 0.92fr);
   min-height: 0;
+  width: 100%;
 }
 
 .prompt-library-panel,
@@ -3134,9 +3135,9 @@ button.filter-chip {
 
 .prompt-editor-header {
   align-items: end;
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
-  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .prompt-editor-header label,
@@ -3145,6 +3146,15 @@ button.filter-chip {
   display: grid;
   gap: 5px;
   min-width: 0;
+}
+
+.prompt-editor-header label {
+  flex: 1 1 280px;
+}
+
+.prompt-editor-header .row-actions {
+  flex: 0 1 auto;
+  justify-content: flex-end;
 }
 
 .prompt-editor-header span,
@@ -3175,6 +3185,10 @@ button.filter-chip {
 
 .prompt-body-field textarea {
   min-height: 118px;
+}
+
+.prompt-parameter-preset-field textarea {
+  min-height: 144px;
 }
 
 .prompt-version-strip,
@@ -3253,11 +3267,12 @@ button.filter-chip {
 
 @media (max-width: 1599px) {
   .prompt-workspace {
-    grid-template-columns: minmax(220px, 0.34fr) minmax(0, 1fr);
+    grid-template-columns: minmax(120px, 0.72fr) minmax(220px, 1.38fr) minmax(150px, 0.9fr);
   }
 
-  .prompt-run-panel {
-    grid-column: 1 / -1;
+  .prompt-editor-grid,
+  .prompt-run-row {
+    grid-template-columns: 1fr;
   }
 }
 
