@@ -119,3 +119,20 @@ fn generation_draft_without_prompt_version_remains_legacy_compatible() {
     assert!(task.input["promptVersionId"].is_null());
     assert_eq!(task.input["prompt"], "legacy prompt");
 }
+
+#[test]
+fn maps_prompt_lineage_view() {
+    let view = prompt_lineage_view(imglab_core::PromptLineageView {
+        prompt_id: imglab_core::PromptId("prompt-1".to_string()),
+        prompt_name: "Lighting study".to_string(),
+        prompt_version_id: imglab_core::PromptVersionId("prompt-version-1".to_string()),
+        prompt_version_number: 3,
+        prompt_version_name: "v3".to_string(),
+    });
+
+    assert_eq!(view.prompt_id, "prompt-1");
+    assert_eq!(view.prompt_name, "Lighting study");
+    assert_eq!(view.prompt_version_id, "prompt-version-1");
+    assert_eq!(view.prompt_version_number, 3);
+    assert_eq!(view.prompt_version_name, "v3");
+}

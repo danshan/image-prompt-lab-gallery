@@ -207,8 +207,90 @@ pub(crate) fn generation_event_view(
         provider_model: summary.provider_model,
         operation_type: operation_value(summary.operation_type),
         prompt: summary.prompt,
+        prompt_version_id: summary.prompt_version_id.map(|id| id.0),
         parameters_json: summary.parameters_json,
         status: summary.status,
+    }
+}
+
+pub(crate) fn prompt_document_view(summary: imglab_core::PromptDocumentView) -> PromptDocumentView {
+    PromptDocumentView {
+        id: summary.id.0,
+        name: summary.name,
+        kind: summary.kind,
+        status: summary.status,
+        draft_body: summary.draft_body,
+        draft_negative_prompt: summary.draft_negative_prompt,
+        draft_style_prompt: summary.draft_style_prompt,
+        variables_schema_json: summary.variables_schema_json,
+        default_values_json: summary.default_values_json,
+        parameter_preset_json: summary.parameter_preset_json,
+        notes: summary.notes,
+        latest_version_id: summary.latest_version_id.map(|id| id.0),
+        latest_version_number: summary.latest_version_number,
+        latest_version_name: summary.latest_version_name,
+        created_at: summary.created_at,
+        updated_at: summary.updated_at,
+        archived_at: summary.archived_at,
+    }
+}
+
+pub(crate) fn prompt_version_view(summary: imglab_core::PromptVersionView) -> PromptVersionView {
+    PromptVersionView {
+        id: summary.id.0,
+        prompt_id: summary.prompt_id.0,
+        version_number: summary.version_number,
+        version_name: summary.version_name,
+        body: summary.body,
+        negative_prompt: summary.negative_prompt,
+        style_prompt: summary.style_prompt,
+        variables_schema_json: summary.variables_schema_json,
+        default_values_json: summary.default_values_json,
+        parameter_preset_json: summary.parameter_preset_json,
+        notes: summary.notes,
+        created_at: summary.created_at,
+    }
+}
+
+#[allow(dead_code)]
+pub(crate) fn prompt_lineage_view(summary: imglab_core::PromptLineageView) -> PromptLineageView {
+    PromptLineageView {
+        prompt_id: summary.prompt_id.0,
+        prompt_name: summary.prompt_name,
+        prompt_version_id: summary.prompt_version_id.0,
+        prompt_version_number: summary.prompt_version_number,
+        prompt_version_name: summary.prompt_version_name,
+    }
+}
+
+pub(crate) fn render_prompt_run_view(
+    summary: imglab_core::RenderPromptRunResult,
+) -> RenderPromptRunView {
+    RenderPromptRunView {
+        prompt_version_id: summary.prompt_version_id.0,
+        prompt_id: summary.prompt_id.0,
+        version_number: summary.version_number,
+        version_name: summary.version_name,
+        rendered_prompt: summary.rendered_prompt,
+        rendered_negative_prompt: summary.rendered_negative_prompt,
+        values_json: summary.values_json,
+        parameter_preset_json: summary.parameter_preset_json,
+    }
+}
+
+pub(crate) fn prompt_output_history_item_view(
+    summary: imglab_core::PromptOutputHistoryItem,
+) -> PromptOutputHistoryItemView {
+    PromptOutputHistoryItemView {
+        generation_event_id: summary.generation_event_id.0,
+        asset_id: summary.asset_id.map(|id| id.0),
+        output_version_id: summary.output_version_id.map(|id| id.0),
+        task_id: summary.task_id.map(|id| id.0),
+        provider: summary.provider,
+        provider_model: summary.provider_model,
+        status: summary.status,
+        prompt_snapshot: summary.prompt_snapshot,
+        created_at: summary.created_at,
     }
 }
 

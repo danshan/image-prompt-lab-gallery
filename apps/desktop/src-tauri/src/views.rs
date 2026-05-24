@@ -256,8 +256,86 @@ pub(crate) struct GenerationEventView {
     pub(crate) provider_model: String,
     pub(crate) operation_type: String,
     pub(crate) prompt: String,
+    pub(crate) prompt_version_id: Option<String>,
     pub(crate) parameters_json: String,
     pub(crate) status: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PromptDocumentView {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) kind: String,
+    pub(crate) status: String,
+    pub(crate) draft_body: String,
+    pub(crate) draft_negative_prompt: Option<String>,
+    pub(crate) draft_style_prompt: Option<String>,
+    pub(crate) variables_schema_json: String,
+    pub(crate) default_values_json: String,
+    pub(crate) parameter_preset_json: String,
+    pub(crate) notes: Option<String>,
+    pub(crate) latest_version_id: Option<String>,
+    pub(crate) latest_version_number: Option<u32>,
+    pub(crate) latest_version_name: Option<String>,
+    pub(crate) created_at: String,
+    pub(crate) updated_at: String,
+    pub(crate) archived_at: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PromptVersionView {
+    pub(crate) id: String,
+    pub(crate) prompt_id: String,
+    pub(crate) version_number: u32,
+    pub(crate) version_name: String,
+    pub(crate) body: String,
+    pub(crate) negative_prompt: Option<String>,
+    pub(crate) style_prompt: Option<String>,
+    pub(crate) variables_schema_json: String,
+    pub(crate) default_values_json: String,
+    pub(crate) parameter_preset_json: String,
+    pub(crate) notes: Option<String>,
+    pub(crate) created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+pub(crate) struct PromptLineageView {
+    pub(crate) prompt_id: String,
+    pub(crate) prompt_name: String,
+    pub(crate) prompt_version_id: String,
+    pub(crate) prompt_version_number: u32,
+    pub(crate) prompt_version_name: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RenderPromptRunView {
+    pub(crate) prompt_version_id: String,
+    pub(crate) prompt_id: String,
+    pub(crate) version_number: u32,
+    pub(crate) version_name: String,
+    pub(crate) rendered_prompt: String,
+    pub(crate) rendered_negative_prompt: Option<String>,
+    pub(crate) values_json: String,
+    pub(crate) parameter_preset_json: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PromptOutputHistoryItemView {
+    pub(crate) generation_event_id: String,
+    pub(crate) asset_id: Option<String>,
+    pub(crate) output_version_id: Option<String>,
+    pub(crate) task_id: Option<String>,
+    pub(crate) provider: String,
+    pub(crate) provider_model: String,
+    pub(crate) status: String,
+    pub(crate) prompt_snapshot: String,
+    pub(crate) created_at: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -537,6 +615,72 @@ pub(crate) struct GenerateImageInput {
     pub(crate) input_file: Option<PathBuf>,
     pub(crate) input_version_id: Option<String>,
     pub(crate) parameters_json: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ListPromptDocumentsInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) query: Option<String>,
+    pub(crate) include_archived: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CreatePromptDocumentInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) name: String,
+    pub(crate) draft_body: String,
+    pub(crate) draft_negative_prompt: Option<String>,
+    pub(crate) draft_style_prompt: Option<String>,
+    pub(crate) variables_schema_json: String,
+    pub(crate) default_values_json: String,
+    pub(crate) parameter_preset_json: String,
+    pub(crate) notes: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UpdatePromptDraftInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) prompt_id: String,
+    pub(crate) name: String,
+    pub(crate) draft_body: String,
+    pub(crate) draft_negative_prompt: Option<String>,
+    pub(crate) draft_style_prompt: Option<String>,
+    pub(crate) variables_schema_json: String,
+    pub(crate) default_values_json: String,
+    pub(crate) parameter_preset_json: String,
+    pub(crate) notes: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SavePromptVersionInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) prompt_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ListPromptVersionsInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) prompt_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RenderPromptRunInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) prompt_version_id: String,
+    pub(crate) values_json: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ListPromptOutputHistoryInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) prompt_version_id: String,
 }
 
 #[derive(Debug, Deserialize)]
