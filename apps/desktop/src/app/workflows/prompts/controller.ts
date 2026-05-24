@@ -151,6 +151,50 @@ export function usePromptWorkspaceActions({
     }
   }
 
+  async function openPromptVersion(promptId: string, versionId: string) {
+    setPromptsLoading(true);
+    setPromptVersionsLoading(true);
+    try {
+      if (!runningInTauri || !library) {
+        const prompt = mockPromptDocuments.find((item) => item.id === promptId) ?? null;
+        const versions = mockPromptVersions.filter((version) => version.promptId === promptId);
+        if (prompt && !prompts.some((item) => item.id === prompt.id)) {
+          setPrompts((current) => [prompt, ...current]);
+        }
+        setSelectedPromptId(prompt?.id ?? null);
+        setPromptDraftForm(createPromptDraftForm(prompt));
+        setPromptVersions(versions);
+        await selectPromptVersion(versionId, versions);
+        return;
+      }
+      const documents = await invokeCommand<PromptDocument[]>("list_prompt_documents", {
+        input: {
+          libraryPath: library.rootPath,
+          query: null,
+          includeArchived: true,
+        },
+      });
+      const prompt = documents.find((item) => item.id === promptId) ?? null;
+      const versions = await invokeCommand<PromptVersion[]>("list_prompt_versions", {
+        input: {
+          libraryPath: library.rootPath,
+          promptId,
+        },
+      });
+      setPrompts(documents);
+      setSelectedPromptId(prompt?.id ?? null);
+      setPromptDraftForm(createPromptDraftForm(prompt));
+      setPromptVersions(versions);
+      await selectPromptVersion(versionId, versions);
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    } finally {
+      setPromptsLoading(false);
+      setPromptVersionsLoading(false);
+    }
+  }
+
   async function createPrompt(): Promise<PromptDocument | null> {
     const name = promptDraftForm.name.trim() || "Untitled Prompt";
     const body = promptDraftForm.body.trim();
@@ -413,6 +457,7 @@ export function usePromptWorkspaceActions({
     saveDraft,
     saveVersion,
     selectPromptVersion,
+    openPromptVersion,
     renderSelectedPrompt,
     runSelectedPrompt,
     newPromptDraft,

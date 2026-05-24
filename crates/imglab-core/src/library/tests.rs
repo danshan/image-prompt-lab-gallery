@@ -8,9 +8,9 @@ use crate::{
     GalleryReadService, GallerySort, GenerateImageRequest, GeneratedImage, GenerationResult,
     ImageProvider, ImportAssetRequest, ListPromptDocumentsRequest, ListPromptVersionsRequest,
     PromptVersionId, RenderPromptRunRequest, ReorderAlbumItemsRequest, ReorderAlbumsRequest,
-    ReviewMetadataSuggestionRequest, ReviewStatusFilter, SavePromptVersionRequest, SearchQuery,
-    SearchService, TaskOutputType, TaskService, TaskStatus, TaskType, UpdateAssetMetadataRequest,
-    UpdatePromptDraftRequest, UpdateTaskStatusRequest,
+    ReviewMetadataSuggestionRequest, ReviewStatusFilter, SaveGenerationPromptAsPromptRequest,
+    SavePromptVersionRequest, SearchQuery, SearchService, TaskOutputType, TaskService, TaskStatus,
+    TaskType, UpdateAssetMetadataRequest, UpdatePromptDraftRequest, UpdateTaskStatusRequest,
 };
 use std::time::Instant;
 use uuid::Uuid;
@@ -590,6 +590,90 @@ fn asset_detail_exposes_prompt_lineage_for_focused_generation_event() {
     assert_eq!(lineage.prompt_version_id, prompt_version.id);
     assert_eq!(lineage.prompt_version_number, 1);
     assert_eq!(lineage.prompt_version_name, "v1");
+}
+
+#[test]
+fn save_generation_prompt_as_prompt_creates_new_prompt_version_without_rewriting_event() {
+    use crate::application::ports::PromptRepository;
+
+    let root = test_root("save-generation-prompt-as-prompt");
+    let registry = test_root("save-generation-prompt-as-prompt-registry").join("registry.sqlite");
+    let service = LocalLibraryService::new(registry);
+    service
+        .create_library(CreateLibraryRequest {
+            root_path: root.clone(),
+            name: "Save Generation Prompt".to_string(),
+        })
+        .expect("init library");
+
+    let source = test_root("save-generation-prompt-as-prompt-source").join("image.png");
+    fs::create_dir_all(source.parent().expect("source parent")).expect("create source parent");
+    fs::write(&source, png_bytes(32, 32)).expect("write png");
+    let (asset, version) = service
+        .import_asset(ImportAssetRequest {
+            library_path: root.clone(),
+            source_path: source,
+        })
+        .expect("import asset");
+    let event = AssetService::record_generation_event(
+        &service,
+        CreateGenerationEventRequest {
+            library_path: root.clone(),
+            asset_id: Some(asset.id.clone()),
+            output_version_id: Some(version.id.clone()),
+            provider: "fake".to_string(),
+            provider_model: "fake-model".to_string(),
+            operation_type: GenerationOperation::TextToImage,
+            prompt: "A saved snapshot prompt".to_string(),
+            negative_prompt: Some("avoid blur".to_string()),
+            input_asset_version_id: None,
+            prompt_version_id: None,
+            parameters_json: r#"{"model":"fake-model","seed":42}"#.to_string(),
+            raw_request_json: None,
+            raw_response_json: None,
+            status: "completed".to_string(),
+            error_code: None,
+            error_message: None,
+        },
+    )
+    .expect("record generation event");
+
+    let saved = service
+        .save_generation_prompt_as_prompt(SaveGenerationPromptAsPromptRequest {
+            library_path: root.clone(),
+            generation_event_id: event.id.0.clone(),
+            name: "Snapshot Prompt".to_string(),
+        })
+        .expect("save prompt snapshot");
+
+    assert_eq!(saved.version_number, 1);
+    assert_eq!(saved.body, "A saved snapshot prompt");
+    assert_eq!(saved.negative_prompt.as_deref(), Some("avoid blur"));
+    assert_eq!(
+        saved.parameter_preset_json,
+        r#"{"model":"fake-model","seed":42}"#
+    );
+
+    let documents = service
+        .list_prompt_documents(ListPromptDocumentsRequest {
+            library_path: root.clone(),
+            query: Some("Snapshot".to_string()),
+            include_archived: false,
+        })
+        .expect("list prompt documents");
+    assert_eq!(documents.len(), 1);
+    assert_eq!(documents[0].id, saved.prompt_id);
+    assert_eq!(documents[0].latest_version_id.as_ref(), Some(&saved.id));
+
+    let connection = Connection::open(LocalLibraryService::database_path(&root)).expect("open db");
+    let stored_prompt_version_id: Option<String> = connection
+        .query_row(
+            "SELECT prompt_version_id FROM generation_events WHERE id = ?1",
+            params![event.id.0],
+            |row| row.get(0),
+        )
+        .expect("event prompt link");
+    assert!(stored_prompt_version_id.is_none());
 }
 
 #[test]

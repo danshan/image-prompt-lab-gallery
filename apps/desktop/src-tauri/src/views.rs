@@ -686,6 +686,14 @@ pub(crate) struct ListPromptOutputHistoryInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct SaveGenerationPromptAsPromptInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) generation_event_id: String,
+    pub(crate) name: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct DaemonTaskQueryInput {
     pub(crate) library_path: PathBuf,
 }

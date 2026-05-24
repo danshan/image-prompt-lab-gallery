@@ -1792,6 +1792,17 @@ button.filter-chip {
   padding: 0;
 }
 
+.prompt-lineage-link {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.prompt-lineage-link span {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
 .mini-button {
   min-height: 24px;
   padding: 2px 8px;

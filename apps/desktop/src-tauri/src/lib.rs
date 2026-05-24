@@ -90,6 +90,7 @@ pub fn run() {
             commands::prompts::list_prompt_versions,
             commands::prompts::render_prompt_run,
             commands::prompts::list_prompt_output_history,
+            commands::prompts::save_generation_prompt_as_prompt,
             commands::daemon::daemon_health,
             commands::daemon::enqueue_generation_tasks,
             commands::daemon::list_daemon_tasks,

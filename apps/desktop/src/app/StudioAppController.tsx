@@ -136,6 +136,7 @@ import type {
   LibraryBackup,
   LibraryStatus,
   LightboxImage,
+  PromptVersion,
   PromoteAssetVersionResult,
   ProviderHealth,
   ReferenceSource,
@@ -416,6 +417,7 @@ export function StudioAppController() {
     saveDraft: savePromptDraft,
     saveVersion: savePromptVersion,
     selectPromptVersion,
+    openPromptVersion,
     renderSelectedPrompt,
     runSelectedPrompt,
     newPromptDraft,
@@ -1132,6 +1134,47 @@ export function StudioAppController() {
     }
   }
 
+  async function openPromptVersionFromInspector(promptId: string, versionId: string) {
+    changeView("prompts");
+    await openPromptVersion(promptId, versionId);
+  }
+
+  async function savePromptSnapshotFromInspector(detail: AssetDetail) {
+    if (!library) {
+      setRecoverableError("Open a real library before saving a prompt snapshot.");
+      return;
+    }
+    if (!runningInTauri) {
+      setRecoverableError("Save as Prompt requires a real library.");
+      return;
+    }
+    const focusedVersionId = detail.focusedVersionId ?? detail.currentVersionId;
+    const event =
+      detail.lineage.find((entry) => entry.version.id === focusedVersionId)?.generationEvent ??
+      detail.lineage.find((entry) => entry.generationEvent)?.generationEvent ??
+      null;
+    if (!event) {
+      setRecoverableError("No generation event is available for this prompt snapshot.");
+      return;
+    }
+    const name = detail.title?.trim() || "Saved Prompt";
+    try {
+      const version = await invokeCommand<PromptVersion>("save_generation_prompt_as_prompt", {
+        input: {
+          libraryPath: library.rootPath,
+          generationEventId: event.id,
+          name,
+        },
+      });
+      changeView("prompts");
+      await openPromptVersion(version.promptId, version.id);
+      setStatus("Prompt snapshot saved");
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
   const detail = detailState.detail;
   const composerInputVersion =
     composerInputVersionId && detail
@@ -1400,6 +1443,8 @@ export function StudioAppController() {
           onSelectVersion={selectAssetVersion}
           onPreviewImage={setLightboxImage}
           onGenerateFromReference={openComposerForReferenceGeneration}
+          onOpenPromptVersion={(promptId, versionId) => void openPromptVersionFromInspector(promptId, versionId)}
+          onSavePromptSnapshot={(assetDetail) => void savePromptSnapshotFromInspector(assetDetail)}
           onGenerateVariation={(versionId) => {
             versionId =
               versionId ??

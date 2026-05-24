@@ -367,6 +367,13 @@ pub struct SavePromptAsPromptRequest {
 }
 
 #[derive(Debug, Clone)]
+pub struct SaveGenerationPromptAsPromptRequest {
+    pub library_path: PathBuf,
+    pub generation_event_id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct CreateTaskInput {
     pub task_type: TaskType,
     pub provider: Option<String>,

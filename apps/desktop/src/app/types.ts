@@ -170,6 +170,14 @@ export type PromptOutputHistoryItem = {
   createdAt: string;
 };
 
+export type PromptLineage = {
+  promptId: string;
+  promptName: string;
+  promptVersionId: string;
+  promptVersionNumber: number;
+  promptVersionName: string;
+};
+
 export type LineageEntry = {
   version: Version;
   generationEvent: GenerationEvent | null;
@@ -285,6 +293,7 @@ export type AssetDetail = {
   versionTree?: VersionTreeNode[];
   versionTreeIssues?: VersionTreeIssue[];
   lineage: LineageEntry[];
+  promptLineage?: PromptLineage | null;
   sourceReference?: ReferenceSource | null;
   promotedFrom?: PromotedSource | null;
   file: FileContext | null;

@@ -66,6 +66,8 @@ export function Inspector({
   onSelectVersion,
   onPreviewImage,
   onGenerateFromReference,
+  onOpenPromptVersion,
+  onSavePromptSnapshot,
   onGenerateVariation,
   onPromoteVersion,
 }: {
@@ -80,6 +82,8 @@ export function Inspector({
   onSelectVersion: (versionId: string) => void;
   onPreviewImage: (image: LightboxImage) => void;
   onGenerateFromReference: (reference: ReferenceSource) => void;
+  onOpenPromptVersion: (promptId: string, versionId: string) => void;
+  onSavePromptSnapshot: (detail: AssetDetail) => void;
   onGenerateVariation: (versionId?: string | null) => void;
   onPromoteVersion: (versionId?: string | null) => void;
 }) {
@@ -201,7 +205,26 @@ export function Inspector({
       </section>
       <InspectorSection title="Prompt">
         <p>{detail.prompt ?? "Prompt is unavailable for this version."}</p>
-        <button className="text-button">Show full prompt</button>
+        {detail.promptLineage ? (
+          <div className="prompt-lineage-link">
+            <span>Prompt version</span>
+            <button
+              className="text-button"
+              onClick={() =>
+                onOpenPromptVersion(
+                  detail.promptLineage!.promptId,
+                  detail.promptLineage!.promptVersionId,
+                )
+              }
+            >
+              {detail.promptLineage.promptName} / {detail.promptLineage.promptVersionName}
+            </button>
+          </div>
+        ) : detail.prompt ? (
+          <button className="text-button" onClick={() => onSavePromptSnapshot(detail)}>
+            Save as Prompt
+          </button>
+        ) : null}
       </InspectorSection>
       <InspectorSection title="Rating">
         <StarRatingControl rating={detail.rating} onChange={onUpdateRating} />

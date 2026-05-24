@@ -4,8 +4,8 @@ use crate::{
     CreatePromptDocumentRequest, DomainError, DomainResult, ListPromptDocumentsRequest,
     ListPromptOutputHistoryRequest, ListPromptVersionsRequest, LoadPromptVersionRequest,
     PromptDocumentView, PromptOutputHistoryItem, PromptVersionView, RenderPromptRunRequest,
-    RenderPromptRunResult, SavePromptAsPromptRequest, SavePromptVersionRequest,
-    UpdatePromptDraftRequest,
+    RenderPromptRunResult, SaveGenerationPromptAsPromptRequest, SavePromptAsPromptRequest,
+    SavePromptVersionRequest, UpdatePromptDraftRequest,
 };
 use serde_json::Value;
 
@@ -81,6 +81,13 @@ where
                 parameter_preset_json: "{}".to_string(),
                 notes: request.notes,
             })
+    }
+
+    pub fn save_generation_prompt_as_prompt(
+        &self,
+        request: SaveGenerationPromptAsPromptRequest,
+    ) -> DomainResult<PromptVersionView> {
+        self.repository.save_generation_prompt_as_prompt(request)
     }
 
     pub fn render_prompt_run(

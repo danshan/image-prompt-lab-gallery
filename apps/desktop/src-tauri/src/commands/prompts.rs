@@ -119,3 +119,18 @@ pub(crate) fn list_prompt_output_history(
         })
         .map_err(Into::into)
 }
+
+#[tauri::command]
+pub(crate) fn save_generation_prompt_as_prompt(
+    input: SaveGenerationPromptAsPromptInput,
+) -> Result<PromptVersionView, CommandError> {
+    desktop_app()
+        .prompts()
+        .save_generation_prompt_as_prompt(imglab_core::SaveGenerationPromptAsPromptRequest {
+            library_path: input.library_path,
+            generation_event_id: input.generation_event_id,
+            name: input.name,
+        })
+        .map(prompt_version_view)
+        .map_err(Into::into)
+}

@@ -126,6 +126,11 @@ pub trait PromptRepository {
         &self,
         request: ListPromptOutputHistoryRequest,
     ) -> DomainResult<Vec<PromptOutputHistoryItem>>;
+
+    fn save_generation_prompt_as_prompt(
+        &self,
+        request: crate::SaveGenerationPromptAsPromptRequest,
+    ) -> DomainResult<crate::PromptVersionView>;
 }
 
 pub trait GalleryRepository {

@@ -6,7 +6,8 @@ use crate::{
     CreatePromptDocumentRequest, DomainError, DomainResult, ListPromptDocumentsRequest,
     ListPromptOutputHistoryRequest, ListPromptVersionsRequest, LoadPromptVersionRequest,
     PromptDocumentView, PromptId, PromptOutputHistoryItem, PromptVersionId, PromptVersionView,
-    SavePromptVersionRequest, TaskId, TaskOutputType, UpdatePromptDraftRequest,
+    SaveGenerationPromptAsPromptRequest, SavePromptVersionRequest, TaskId, TaskOutputType,
+    UpdatePromptDraftRequest,
 };
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde_json::Value;
@@ -266,6 +267,104 @@ impl PromptRepository for LocalLibraryService {
             .map_err(database_error)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(database_error)
     }
+
+    fn save_generation_prompt_as_prompt(
+        &self,
+        request: SaveGenerationPromptAsPromptRequest,
+    ) -> DomainResult<PromptVersionView> {
+        let connection = LocalLibraryService::open_library_database(&request.library_path)?;
+        let manifest = read_library_manifest(&request.library_path)?;
+        let snapshot = load_generation_prompt_snapshot(&connection, &request.generation_event_id)?;
+        let prompt_id = PromptId(Uuid::new_v4().to_string());
+        let version_id = PromptVersionId(Uuid::new_v4().to_string());
+        let now = timestamp_string();
+        let notes = Some(format!(
+            "Saved from generation event {}",
+            request.generation_event_id
+        ));
+
+        let transaction = connection.unchecked_transaction().map_err(database_error)?;
+        transaction
+            .execute(
+                "
+                INSERT INTO prompt_documents (
+                    id, library_id, name, kind, status, draft_body,
+                    draft_negative_prompt, draft_style_prompt, draft_variables_schema_json,
+                    draft_default_values_json, draft_parameter_preset_json, notes,
+                    created_at, updated_at, archived_at
+                )
+                VALUES (?1, ?2, ?3, 'image_generation', 'active', ?4, ?5, NULL, '[]', '{}', ?6, ?7, ?8, ?8, NULL)
+                ",
+                params![
+                    prompt_id.0,
+                    manifest.id,
+                    request.name,
+                    snapshot.prompt,
+                    snapshot.negative_prompt,
+                    snapshot.parameters_json,
+                    notes,
+                    now,
+                ],
+            )
+            .map_err(database_error)?;
+        transaction
+            .execute(
+                "
+                INSERT INTO prompt_versions (
+                    id, prompt_id, version_number, body, negative_prompt, style_prompt,
+                    variables_schema_json, default_values_json, parameter_preset_json,
+                    notes, created_at
+                )
+                VALUES (?1, ?2, 1, ?3, ?4, NULL, '[]', '{}', ?5, ?6, ?7)
+                ",
+                params![
+                    version_id.0,
+                    prompt_id.0,
+                    snapshot.prompt,
+                    snapshot.negative_prompt,
+                    snapshot.parameters_json,
+                    notes,
+                    now,
+                ],
+            )
+            .map_err(database_error)?;
+        transaction.commit().map_err(database_error)?;
+
+        load_prompt_version(&connection, &version_id)
+    }
+}
+
+struct GenerationPromptSnapshot {
+    prompt: String,
+    negative_prompt: Option<String>,
+    parameters_json: String,
+}
+
+fn load_generation_prompt_snapshot(
+    connection: &Connection,
+    generation_event_id: &str,
+) -> DomainResult<GenerationPromptSnapshot> {
+    connection
+        .query_row(
+            "
+            SELECT prompt, negative_prompt, parameters_json
+            FROM generation_events
+            WHERE id = ?1
+            ",
+            params![generation_event_id],
+            |row| {
+                Ok(GenerationPromptSnapshot {
+                    prompt: row.get(0)?,
+                    negative_prompt: row.get(1)?,
+                    parameters_json: row.get(2)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(database_error)?
+        .ok_or_else(|| DomainError::InvalidGenerationParameters {
+            message: format!("invalid generation event reference: {generation_event_id}"),
+        })
 }
 
 fn load_prompt_document(
