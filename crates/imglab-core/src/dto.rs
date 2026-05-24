@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 pub use crate::domain::asset::version_name;
 pub use crate::domain::shared::{
-    AlbumId, AssetId, AssetVersionId, GenerationEventId, LibraryId, MetadataSuggestionId,
-    TaskAttemptId, TaskEventId, TaskId, TaskOutputId,
+    AlbumId, AssetId, AssetVersionId, GenerationEventId, LibraryId, MetadataSuggestionId, PromptId,
+    PromptVersionId, TaskAttemptId, TaskEventId, TaskId, TaskOutputId,
 };
 pub use crate::domain::task::{TaskErrorClassification, TaskOutputType, TaskStatus, TaskType};
 
@@ -215,6 +215,65 @@ pub struct GenerationEventSummary {
     pub prompt: String,
     pub parameters_json: String,
     pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromptDocumentView {
+    pub id: PromptId,
+    pub name: String,
+    pub kind: String,
+    pub status: String,
+    pub draft_body: String,
+    pub draft_negative_prompt: Option<String>,
+    pub draft_style_prompt: Option<String>,
+    pub variables_schema_json: String,
+    pub default_values_json: String,
+    pub parameter_preset_json: String,
+    pub notes: Option<String>,
+    pub latest_version_id: Option<PromptVersionId>,
+    pub latest_version_number: Option<u32>,
+    pub latest_version_name: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub archived_at: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromptVersionView {
+    pub id: PromptVersionId,
+    pub prompt_id: PromptId,
+    pub version_number: u32,
+    pub version_name: String,
+    pub body: String,
+    pub negative_prompt: Option<String>,
+    pub style_prompt: Option<String>,
+    pub variables_schema_json: String,
+    pub default_values_json: String,
+    pub parameter_preset_json: String,
+    pub notes: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromptLineageView {
+    pub prompt_id: PromptId,
+    pub prompt_name: String,
+    pub prompt_version_id: PromptVersionId,
+    pub prompt_version_number: u32,
+    pub prompt_version_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromptOutputHistoryItem {
+    pub generation_event_id: GenerationEventId,
+    pub asset_id: Option<AssetId>,
+    pub output_version_id: Option<AssetVersionId>,
+    pub task_id: Option<TaskId>,
+    pub provider: String,
+    pub provider_model: String,
+    pub status: String,
+    pub prompt_snapshot: String,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone)]

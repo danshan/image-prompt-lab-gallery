@@ -17,6 +17,12 @@ pub struct MetadataSuggestionId(pub String);
 pub struct AlbumId(pub String);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromptId(pub String);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromptVersionId(pub String);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskId(pub String);
 
 #[derive(Debug, Clone, PartialEq, Eq)]

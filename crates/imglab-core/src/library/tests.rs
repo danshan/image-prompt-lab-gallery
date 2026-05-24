@@ -63,6 +63,54 @@ fn move_version_to_legacy_state(
 }
 
 #[test]
+fn prompt_template_rendering_requires_declared_values() {
+    use crate::domain::prompt::{render_prompt_template, PromptTemplateVariable};
+
+    let variables = vec![PromptTemplateVariable {
+        name: "subject".to_string(),
+        label: Some("Subject".to_string()),
+        required: true,
+        default_value: None,
+    }];
+    let values = serde_json::json!({});
+
+    let error = render_prompt_template("A {{subject}} study", &variables, &values)
+        .expect_err("missing required variable should fail");
+
+    assert!(error.to_string().contains("subject"));
+}
+
+#[test]
+fn prompt_template_rendering_rejects_undeclared_variables() {
+    use crate::domain::prompt::render_prompt_template;
+
+    let error = render_prompt_template("A {{subject}} study", &[], &serde_json::json!({}))
+        .expect_err("undeclared variable should fail");
+
+    assert!(error.to_string().contains("subject"));
+}
+
+#[test]
+fn prompt_template_rendering_uses_runtime_values() {
+    use crate::domain::prompt::{render_prompt_template, PromptTemplateVariable};
+
+    let variables = vec![PromptTemplateVariable {
+        name: "subject".to_string(),
+        label: Some("Subject".to_string()),
+        required: true,
+        default_value: Some("orchid".to_string()),
+    }];
+    let rendered = render_prompt_template(
+        "A {{subject}} study",
+        &variables,
+        &serde_json::json!({ "subject": "fern" }),
+    )
+    .expect("render prompt");
+
+    assert_eq!(rendered, "A fern study");
+}
+
+#[test]
 fn creates_managed_library_layout_and_registry() {
     let root = test_root("create-library");
     let registry = test_root("registry").join("registry.sqlite");

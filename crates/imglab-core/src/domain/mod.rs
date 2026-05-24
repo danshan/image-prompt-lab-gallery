@@ -3,5 +3,6 @@ pub mod asset;
 pub mod generation;
 pub mod library;
 pub mod metadata_review;
+pub mod prompt;
 pub mod shared;
 pub mod task;
