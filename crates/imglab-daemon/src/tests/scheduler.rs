@@ -67,7 +67,31 @@ fn scheduler_tick_executes_fake_image_task_and_links_outputs() {
 fn scheduler_tick_preserves_prompt_version_id_on_image_generation_event() {
     let mut state = test_state("worker-prompt-version");
     let library_id = create_open_library(&mut state, "worker-prompt-version-library");
-    let prompt_version_id = "prompt-version-linked";
+    let library_path = state.library_path(&library_id).expect("library path");
+    let prompt = state
+        .app
+        .prompts()
+        .create_prompt_document(CreatePromptDocumentRequest {
+            library_path: library_path.clone(),
+            name: "Daemon prompt".to_string(),
+            draft_body: "rendered prompt snapshot".to_string(),
+            draft_negative_prompt: Some("rendered negative prompt snapshot".to_string()),
+            draft_style_prompt: None,
+            variables_schema_json: r#"{"variables":[]}"#.to_string(),
+            default_values_json: "{}".to_string(),
+            parameter_preset_json: "{}".to_string(),
+            notes: None,
+        })
+        .expect("create prompt");
+    let prompt_version = state
+        .app
+        .prompts()
+        .save_prompt_version(SavePromptVersionRequest {
+            library_path: library_path.clone(),
+            prompt_id: prompt.id.0,
+        })
+        .expect("save prompt version");
+    let prompt_version_id = prompt_version.id.0;
     let create_response = handle_http_request_with_state(
         &json_request(
             "POST",
@@ -80,7 +104,7 @@ fn scheduler_tick_preserves_prompt_version_id_on_image_generation_event() {
                 "input": {
                     "prompt": "rendered prompt snapshot",
                     "negativePrompt": "rendered negative prompt snapshot",
-                    "promptVersionId": prompt_version_id
+                    "promptVersionId": prompt_version_id.clone()
                 }
             }),
         ),
@@ -101,7 +125,6 @@ fn scheduler_tick_preserves_prompt_version_id_on_image_generation_event() {
     .expect("executed task");
     assert_eq!(task.status, TaskStatus::Completed);
 
-    let library_path = state.library_path(&library_id).expect("library path");
     let detail = state
         .tasks()
         .get_task_detail(&library_path, &TaskId(task_id))
@@ -112,7 +135,7 @@ fn scheduler_tick_preserves_prompt_version_id_on_image_generation_event() {
             .prompt_version_id
             .as_ref()
             .map(|id| id.0.as_str()),
-        Some(prompt_version_id)
+        Some(prompt_version_id.as_str())
     );
     assert_eq!(generation_event.prompt, "rendered prompt snapshot");
 }

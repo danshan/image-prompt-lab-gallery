@@ -1,6 +1,7 @@
 use super::*;
 use imglab_core::interface_contracts::dto::{
-    AppendTaskAttemptRequest, CreateLibraryRequest, CreateTaskInput,
+    AppendTaskAttemptRequest, CreateLibraryRequest, CreatePromptDocumentRequest, CreateTaskInput,
+    SavePromptVersionRequest,
 };
 use std::net::{Ipv4Addr, SocketAddrV4};
 
