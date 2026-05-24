@@ -105,15 +105,17 @@ SQLite 是权威索引. Sidecar/export files 只用于迁移, 调试和外部工
 
 ### 4.1 默认协作流程
 
-用户明确偏好的流程是:
+用户明确要求的强制流程是:
 
-1. 使用 `superpowers:brainstorming` 做前期需求分析和讨论.
-2. 对产品, 架构或行为变化, 通过 OpenSpec 完成 proposal, design, tasks, specs.
-3. 实施 change.
-4. 验证.
-5. 需要 closeout 时同步 specs, archive change, 再按用户要求 commit / push.
+1. 使用 `superpowers:brainstorming` 做前期需求分析和需求细节描述.
+2. 如果任务涉及页面设计, 交互布局, visual system, desktop workflow UX 或用户可见界面调整, 必须使用 `ui-ux-pro-max` skill 完成设计分析和交互布局方案.
+3. 对产品, 架构, 行为变化, 持久化契约, workflow ownership 或用户可见 UX, 必须通过 OpenSpec 完成 proposal, design, tasks, specs.
+4. 按 OpenSpec artifact 实施 change.
+5. 验证.
+6. 需要 closeout 时同步 specs, archive change, 再按用户要求 commit / push.
+7. 任何 release 或 push 后, 必须检查 GitHub CI, 并确认对应 pushed head SHA 或 release-triggered workflow 成功后才可报告完成.
 
-如果任务只是 trivial 修复, 查询或纯解释, 可以直接处理. 如果任务会改变产品行为, 架构边界, 持久化契约, workflow state ownership 或用户可见 UX, 默认先走 brainstorming + OpenSpec, 除非用户明确要求跳过.
+如果任务只是 trivial 修复, 查询或纯解释, 可以直接处理. 如果任务会改变产品行为, 架构边界, 持久化契约, workflow state ownership 或用户可见 UX, 默认先走 brainstorming + OpenSpec, 涉及界面时追加 `ui-ux-pro-max`, 除非用户明确要求跳过.
 
 ### 4.2 Superpowers 使用
 
@@ -122,7 +124,13 @@ SQLite 是权威索引. Sidecar/export files 只用于迁移, 调试和外部工
 - 不要在没有设计认可的情况下直接进入大规模实现.
 - 如果只是继续已经认可的 OpenSpec change, 使用对应 OpenSpec skill 或当前 artifact 继续推进.
 
-### 4.3 OpenSpec 使用
+### 4.3 UI / UX 设计流程
+
+- 涉及页面, 交互布局, navigation, dense desktop workflow, visual hierarchy, responsive behavior 或 component-level UX 时, 必须使用 `ui-ux-pro-max` skill.
+- `ui-ux-pro-max` 产出的设计判断需要落到 OpenSpec design / tasks 或 implementation notes, 避免只停留在视觉建议.
+- 如果用户要求完全重做界面, 默认先产出可检查的高保真 demo 或等价设计稿, 再改生产代码.
+
+### 4.4 OpenSpec 使用
 
 本仓库使用 OpenSpec workflow. 配置位于 `openspec/config.yaml`, 当前要求 OpenSpec 产出使用简体中文.
 
@@ -145,6 +153,13 @@ openspec validate --specs --strict
 - 将 change 移动到 `openspec/changes/archive/YYYY-MM-DD-<change-name>/`.
 
 OpenSpec CLI 可能输出 `edge.openspec.dev` 或 PostHog telemetry 网络噪声. 以 exit status 和本地 artifact/spec 状态作为判断依据.
+
+### 4.5 Release / Push 后 CI Gate
+
+- 任何 `git push`, release tag push, GitHub Release publish 或 release workflow 触发后, 都必须检查 GitHub Actions.
+- CI 检查必须尽量锚定刚推送的 head SHA, tag 或 release-triggered run, 不以旧 run 的绿色状态替代当前变更验证.
+- 推荐使用 `gh run list`, `gh run watch --exit-status` 和 `gh run view` 确认相关 workflow / job 成功.
+- 如果因网络, 权限或 GitHub 状态无法确认 CI, 最终状态必须明确标记为未确认, 不得报告为完成.
 
 ## 5. 代码修改原则
 
