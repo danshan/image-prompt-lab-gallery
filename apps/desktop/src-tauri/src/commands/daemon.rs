@@ -120,6 +120,8 @@ pub(crate) fn generation_draft_to_daemon_task(
                 "prompt": input.prompt,
                 "negativePrompt": input.negative_prompt,
                 "promptVersionId": input.prompt_version_id,
+                "model": input.model,
+                "valuesJson": input.values_json,
                 "inputFile": input.input_file,
                 "inputVersionId": input.input_version_id,
                 "parametersJson": parameters,

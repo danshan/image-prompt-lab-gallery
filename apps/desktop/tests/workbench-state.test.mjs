@@ -41,6 +41,7 @@ import {
   moveItem,
   moveQueuedTaskOrder,
   openAlbumQuery,
+  parseParameterPreset,
   parseTaskDraftImport,
   pendingReviewItems,
   removeReviewFormTag,
@@ -167,6 +168,18 @@ test("parseTaskDraftImport keeps multi-line prompts inside one task", () => {
   assert.equal(drafts[0].prompt, "line one\nline two\nline three");
   assert.equal(drafts[0].provider, "fake");
   assert.equal(drafts[0].parametersJson, "{\n  \"size\": \"1024x1024\"\n}");
+});
+
+test("parseParameterPreset preserves provider model and operation", () => {
+  assert.deepEqual(
+    parseParameterPreset(JSON.stringify({ provider: "fake", model: "fake-model-v2", operation: "image_to_image" })),
+    { provider: "fake", model: "fake-model-v2", operation: "image_to_image" },
+  );
+  assert.deepEqual(parseParameterPreset("{"), {
+    provider: "codex-cli",
+    model: "",
+    operation: "text_to_image",
+  });
 });
 
 test("moveQueuedTaskOrder only reorders queued tasks", () => {

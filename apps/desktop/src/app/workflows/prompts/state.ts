@@ -1,5 +1,5 @@
 import { useState, type Dispatch, type SetStateAction } from "react";
-import type { PromptDocument, PromptOutputHistoryItem, PromptVersion, RenderPromptRun } from "../../types";
+import type { PromptDocument, PromptOutputHistoryItem, PromptVersion, RenderPromptRun } from "../../types.js";
 
 export type PromptDraftForm = {
   name: string;
@@ -15,6 +15,7 @@ export type PromptDraftForm = {
 export type PromptRunForm = {
   valuesJson: string;
   provider: string;
+  model: string;
   operation: "text_to_image" | "image_to_image";
   parametersJson: string;
 };
@@ -62,6 +63,7 @@ export const emptyPromptDraftForm: PromptDraftForm = {
 export const emptyPromptRunForm: PromptRunForm = {
   valuesJson: "{}",
   provider: "codex-cli",
+  model: "",
   operation: "text_to_image",
   parametersJson: JSON.stringify({ provider: "codex-cli", operation: "text_to_image" }, null, 2),
 };
@@ -244,6 +246,7 @@ export function createPromptRunForm(version: PromptVersion | null): PromptRunFor
   return {
     valuesJson: version?.defaultValuesJson || "{}",
     provider: preset.provider,
+    model: preset.model,
     operation: preset.operation,
     parametersJson: version?.parameterPresetJson || "{}",
   };
@@ -259,14 +262,15 @@ export function promptDocumentMatchesQuery(prompt: PromptDocument, query: string
   );
 }
 
-export function parseParameterPreset(value: string): Pick<PromptRunForm, "provider" | "operation"> {
+export function parseParameterPreset(value: string): Pick<PromptRunForm, "provider" | "model" | "operation"> {
   try {
-    const parsed = JSON.parse(value) as { provider?: unknown; operation?: unknown };
+    const parsed = JSON.parse(value) as { provider?: unknown; model?: unknown; operation?: unknown };
     return {
       provider: typeof parsed.provider === "string" && parsed.provider.trim() ? parsed.provider : "codex-cli",
+      model: typeof parsed.model === "string" ? parsed.model : "",
       operation: parsed.operation === "image_to_image" ? "image_to_image" : "text_to_image",
     };
   } catch {
-    return { provider: "codex-cli", operation: "text_to_image" };
+    return { provider: "codex-cli", model: "", operation: "text_to_image" };
   }
 }

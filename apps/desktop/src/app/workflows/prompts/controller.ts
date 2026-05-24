@@ -151,12 +151,12 @@ export function usePromptWorkspaceActions({
     }
   }
 
-  async function createPrompt() {
+  async function createPrompt(): Promise<PromptDocument | null> {
     const name = promptDraftForm.name.trim() || "Untitled Prompt";
     const body = promptDraftForm.body.trim();
     if (!body) {
       setRecoverableError("Enter a prompt body before creating a prompt.");
-      return;
+      return null;
     }
     setPromptSaving(true);
     try {
@@ -166,7 +166,7 @@ export function usePromptWorkspaceActions({
         await selectPrompt(created.id, [created, ...prompts]);
         setStatus("Prompt created");
         setRecoverableError(null);
-        return;
+        return created;
       }
       const created = await invokeCommand<PromptDocument>("create_prompt_document", {
         input: promptDraftInput(library.rootPath, { ...promptDraftForm, name }),
@@ -175,19 +175,20 @@ export function usePromptWorkspaceActions({
       await selectPrompt(created.id, [created, ...prompts]);
       setStatus("Prompt created");
       setRecoverableError(null);
+      return created;
     } catch (error) {
       setRecoverableError(errorMessage(error));
+      return null;
     } finally {
       setPromptSaving(false);
     }
   }
 
-  async function saveDraft() {
+  async function saveDraft(): Promise<boolean> {
     const promptId = selectedPromptId;
     const current = prompts.find((item) => item.id === promptId) ?? null;
     if (!promptId || !current) {
-      await createPrompt();
-      return;
+      return Boolean(await createPrompt());
     }
     setPromptSaving(true);
     try {
@@ -200,7 +201,7 @@ export function usePromptWorkspaceActions({
         setPrompts((items) => items.map((item) => (item.id === updated.id ? updated : item)));
         setStatus("Prompt draft saved");
         setRecoverableError(null);
-        return;
+        return true;
       }
       const updated = await invokeCommand<PromptDocument>("update_prompt_draft", {
         input: {
@@ -212,8 +213,10 @@ export function usePromptWorkspaceActions({
       setPromptDraftForm(createPromptDraftForm(updated));
       setStatus("Prompt draft saved");
       setRecoverableError(null);
+      return true;
     } catch (error) {
       setRecoverableError(errorMessage(error));
+      return false;
     } finally {
       setPromptSaving(false);
     }
@@ -250,7 +253,10 @@ export function usePromptWorkspaceActions({
         setRecoverableError(null);
         return;
       }
-      await saveDraft();
+      const draftSaved = await saveDraft();
+      if (!draftSaved) {
+        return;
+      }
       const version = await invokeCommand<PromptVersion>("save_prompt_version", {
         input: {
           libraryPath: library.rootPath,
@@ -363,6 +369,8 @@ export function usePromptWorkspaceActions({
               prompt: rendered.renderedPrompt,
               negativePrompt: rendered.renderedNegativePrompt,
               promptVersionId: rendered.promptVersionId,
+              model: promptRunForm.model.trim() || null,
+              valuesJson: rendered.valuesJson,
               operation: promptRunForm.operation,
               inputFile: null,
               inputVersionId: null,

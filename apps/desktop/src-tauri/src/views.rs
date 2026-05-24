@@ -718,6 +718,8 @@ pub(crate) struct GenerationTaskDraftInput {
     pub(crate) prompt: String,
     pub(crate) negative_prompt: Option<String>,
     pub(crate) prompt_version_id: Option<String>,
+    pub(crate) model: Option<String>,
+    pub(crate) values_json: Option<String>,
     pub(crate) operation: Option<String>,
     pub(crate) input_file: Option<PathBuf>,
     pub(crate) input_version_id: Option<String>,

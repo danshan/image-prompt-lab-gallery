@@ -3240,6 +3240,16 @@ button.filter-chip {
   white-space: nowrap;
 }
 
+@media (max-width: 1599px) {
+  .prompt-workspace {
+    grid-template-columns: minmax(220px, 0.34fr) minmax(0, 1fr);
+  }
+
+  .prompt-run-panel {
+    grid-column: 1 / -1;
+  }
+}
+
 .task-panel-tabs {
   display: none;
 }
@@ -3416,6 +3426,10 @@ button.filter-chip {
   .task-workspace,
   .settings-workspace {
     grid-template-columns: 1fr;
+  }
+
+  .prompt-run-panel {
+    grid-column: auto;
   }
 
   .album-list-panel,

@@ -201,6 +201,16 @@ export function PromptWorkspace({
               </select>
             </label>
             <label>
+              <span>Model</span>
+              <input
+                value={runForm.model}
+                onChange={(event) => onRunFormChange({ ...runForm, model: event.target.value })}
+                placeholder="Provider default"
+              />
+            </label>
+          </div>
+          <div className="prompt-run-row">
+            <label>
               <span>Operation</span>
               <select
                 className="select-control"

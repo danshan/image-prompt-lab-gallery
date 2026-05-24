@@ -94,6 +94,8 @@ fn generation_draft_preserves_prompt_version_link() {
         "prompt": "rendered prompt",
         "negativePrompt": "avoid blur",
         "promptVersionId": "prompt-version-1",
+        "model": "fake-model-v2",
+        "valuesJson": "{\"subject\":\"fern\"}",
         "parametersJson": "{\"steps\":24}"
     }))
     .expect("draft");
@@ -101,6 +103,8 @@ fn generation_draft_preserves_prompt_version_link() {
     let task = generation_draft_to_daemon_task(draft).expect("task");
 
     assert_eq!(task.input["promptVersionId"], "prompt-version-1");
+    assert_eq!(task.input["model"], "fake-model-v2");
+    assert_eq!(task.input["valuesJson"], "{\"subject\":\"fern\"}");
     assert_eq!(task.input["prompt"], "rendered prompt");
     assert_eq!(task.input["negativePrompt"], "avoid blur");
     assert_eq!(task.input["parametersJson"]["steps"], 24);
