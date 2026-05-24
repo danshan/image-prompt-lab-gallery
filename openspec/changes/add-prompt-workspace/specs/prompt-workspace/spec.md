@@ -41,6 +41,12 @@
 - **WHEN** 用户对已有 version 的 prompt document 执行 Save version
 - **THEN** 系统使用该 prompt document 内的下一个 version number 创建 prompt version
 
+#### Scenario: Version 保存完整 Prompt Snapshot
+
+- **WHEN** 用户执行 Save version
+- **THEN** prompt version snapshot 保存当前 draft body, negative prompt, style prompt, template variables, default values, parameter preset 和 notes
+- **AND** 后续 draft 更新不得改变该 version snapshot
+
 #### Scenario: Prompt Version 不可修改
 
 - **WHEN** prompt version 已经创建
@@ -61,6 +67,13 @@
 - **WHEN** prompt version body 引用声明过的 variables 且 required values 均可解析
 - **THEN** 系统生成 rendered prompt snapshot
 
+#### Scenario: Run-Time Values 不修改 Prompt Version
+
+- **WHEN** 用户使用 run-time variable values render prompt version
+- **THEN** run-time values 只属于本次 generation run context
+- **AND** 系统不得修改 prompt version snapshot
+- **AND** 系统不得修改 prompt version default values
+
 #### Scenario: Required Variable 缺失
 
 - **WHEN** required variable 没有 run-time value 且没有 default value
@@ -80,7 +93,20 @@
 #### Scenario: 从 Prompt Version Enqueue Task
 
 - **WHEN** 用户从 prompt version 发起 generation
-- **THEN** task input 包含 prompt version id, rendered prompt snapshot, variables, provider, model 和 parameters
+- **THEN** task input 包含 prompt version id, rendered prompt snapshot, variables, provider, model, operation 和 parameters
+
+#### Scenario: Preset Defaults 支持 Run-Time Overrides
+
+- **WHEN** 用户从 prompt version 发起 generation
+- **THEN** 系统使用 prompt version parameter preset 填充 provider, model, operation 和 parameters 默认值
+- **AND** 用户提供的 run-time overrides 可以覆盖 provider, model, operation 和 parameters
+- **AND** prompt version parameter preset 不因 run-time overrides 被修改
+
+#### Scenario: Prompt Run 使用 Shared Generation Planning
+
+- **WHEN** 用户从 prompt version 发起 generation
+- **THEN** 系统通过 shared generation planning 执行 provider normalization, operation inference 和 capability checks
+- **AND** planning 失败时不创建 generation task
 
 #### Scenario: Generation Event 保存 Prompt Link
 
