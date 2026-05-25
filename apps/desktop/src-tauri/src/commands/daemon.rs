@@ -77,12 +77,76 @@ pub(crate) fn get_daemon_task_detail(
 ) -> Result<DaemonTaskDetailView, CommandError> {
     let client = ensure_daemon_client(&state)?;
     let detail = client.get_task(&input.task_id)?;
-    let tail = client.tail_task_log(&input.task_id)?;
+    let (log_tail, log_tail_truncated) =
+        task_log_tail_or_unavailable(client.tail_task_log(&input.task_id));
     Ok(daemon_task_detail_view(
         detail,
-        tail.content,
-        tail.truncated,
+        log_tail,
+        log_tail_truncated,
     ))
+}
+
+fn task_log_tail_or_unavailable(tail: Result<DaemonLogTail, CommandError>) -> (String, bool) {
+    match tail {
+        Ok(tail) => (tail.content, tail.truncated),
+        Err(error) if is_stale_task_log_path_error(&error) => (
+            "Task log tail is unavailable because this attempt log belongs to a different daemon log root. Task detail, attempts, timeline, and outputs are still available."
+                .to_string(),
+            false,
+        ),
+        Err(error) => (
+            format!("Task log tail is unavailable: {}", error.message),
+            false,
+        ),
+    }
+}
+
+fn is_stale_task_log_path_error(error: &CommandError) -> bool {
+    error.code == "InvalidGenerationParameters"
+        && error.message.contains("outside app-owned log root")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn task_detail_log_tail_uses_available_log_content() {
+        let (content, truncated) = task_log_tail_or_unavailable(Ok(DaemonLogTail {
+            content: "line 1\nline 2".to_string(),
+            truncated: true,
+        }));
+
+        assert_eq!(content, "line 1\nline 2");
+        assert!(truncated);
+    }
+
+    #[test]
+    fn task_detail_log_tail_tolerates_stale_daemon_log_root() {
+        let (content, truncated) = task_log_tail_or_unavailable(Err(CommandError {
+            code: "InvalidGenerationParameters".to_string(),
+            message: "invalid generation parameters: task log path is outside app-owned log root"
+                .to_string(),
+            recoverable: true,
+        }));
+
+        assert!(content.contains("different daemon log root"));
+        assert!(content.contains("Task detail"));
+        assert!(!content.contains("invalid generation parameters"));
+        assert!(!truncated);
+    }
+
+    #[test]
+    fn task_detail_log_tail_reports_other_tail_failures_as_unavailable() {
+        let (content, truncated) = task_log_tail_or_unavailable(Err(CommandError {
+            code: "DaemonIo".to_string(),
+            message: "connection closed".to_string(),
+            recoverable: true,
+        }));
+
+        assert_eq!(content, "Task log tail is unavailable: connection closed");
+        assert!(!truncated);
+    }
 }
 
 #[tauri::command]

@@ -12,7 +12,7 @@ mod views;
 use app_logs::{AppLogContentView, AppLogView, ReadAppLogInput};
 use automation_daemon::AutomationDaemonStatusView;
 use daemon_client::{
-    BatchCreateTasksInput, DaemonScheduleInput, DaemonScheduleRuleInput,
+    BatchCreateTasksInput, DaemonLogTail, DaemonScheduleInput, DaemonScheduleRuleInput,
     DaemonScheduledGenerationJob, DaemonScheduledGenerationRun, DaemonSidecar, DaemonTask,
     DaemonTaskAttempt, DaemonTaskDetail, DaemonTaskEvent, DaemonTaskInput, DaemonTaskOutput,
 };
