@@ -1,8 +1,12 @@
 use crate::*;
 use std::fs;
+use std::process::Stdio;
+use std::thread;
+use std::time::{Duration, Instant};
 
 const LAUNCH_AGENT_LABEL: &str = "com.imagepromptlab.daemon";
 const PLIST_NAME: &str = "com.imagepromptlab.daemon.plist";
+const LAUNCHCTL_TIMEOUT: Duration = Duration::from_secs(4);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -161,10 +165,29 @@ fn run_launchctl(args: &[&str]) -> Result<(), CommandError> {
     if !cfg!(target_os = "macos") {
         return Ok(());
     }
-    let status = Command::new("launchctl")
+    let mut child = Command::new("launchctl")
         .args(args)
-        .status()
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
         .map_err(daemon_service_io_error)?;
+    let started_at = Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait().map_err(daemon_service_io_error)? {
+            break status;
+        }
+        if started_at.elapsed() >= LAUNCHCTL_TIMEOUT {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(CommandError {
+                code: "AutomationDaemonServiceTimeout".to_string(),
+                message: format!("launchctl timed out after {:?}", LAUNCHCTL_TIMEOUT),
+                recoverable: true,
+            });
+        }
+        thread::sleep(Duration::from_millis(50));
+    };
     if status.success() {
         Ok(())
     } else {

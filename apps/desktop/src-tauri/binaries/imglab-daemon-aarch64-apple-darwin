@@ -1,0 +1,3 @@
+#!/bin/sh
+echo "imglab-daemon release binary placeholder. Run the desktop release build to replace this file." >&2
+exit 127

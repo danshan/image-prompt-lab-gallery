@@ -1,11 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Image Prompt Lab",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "identifier": "dev.honghao.image-prompt-lab",
   "build": {
     "beforeDevCommand": "cargo build -p imglab-daemon && npm run dev",
-    "beforeBuildCommand": "cargo build -p imglab-daemon && npm run build",
+    "beforeBuildCommand": "cargo build --release -p imglab-daemon && mkdir -p src-tauri/binaries && cp ../../target/release/imglab-daemon src-tauri/binaries/imglab-daemon-aarch64-apple-darwin && npm run build",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },
@@ -36,6 +36,7 @@
     "active": true,
     "targets": ["app"],
     "icon": [],
+    "externalBin": ["binaries/imglab-daemon"],
     "createUpdaterArtifacts": true,
     "macOS": {
       "signingIdentity": "-"

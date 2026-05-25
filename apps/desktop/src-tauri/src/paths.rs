@@ -64,7 +64,7 @@ pub(crate) fn daemon_runtime_dir() -> PathBuf {
 
 pub(crate) fn daemon_binary_path() -> Result<PathBuf, CommandError> {
     if let Some(path) = std::env::var_os("IMGLAB_DAEMON_BIN").map(PathBuf::from) {
-        return Ok(path);
+        return existing_daemon_binary_path(path);
     }
     if let Some(path) = workspace_debug_daemon_binary() {
         return Ok(path);
@@ -81,7 +81,25 @@ pub(crate) fn daemon_binary_path() -> Result<PathBuf, CommandError> {
             recoverable: true,
         });
     };
-    Ok(dir.join("imglab-daemon"))
+    let candidate_names = daemon_binary_candidate_names();
+    let mut candidates = Vec::new();
+    for name in &candidate_names {
+        candidates.push(dir.join(name));
+        if let Some(contents_dir) = dir.parent() {
+            candidates.push(contents_dir.join("Resources").join(name));
+        }
+    }
+    candidates
+        .into_iter()
+        .find(|path| path.is_file())
+        .ok_or_else(|| CommandError {
+            code: "DaemonBinaryMissing".to_string(),
+            message: format!(
+                "daemon binary was not found. Build it with `cargo build -p imglab-daemon` or set IMGLAB_DAEMON_BIN to an existing {} binary",
+                daemon_binary_name()
+            ),
+            recoverable: true,
+        })
 }
 
 pub(crate) fn should_start_managed_daemon() -> bool {
@@ -96,16 +114,44 @@ pub(crate) fn workspace_debug_daemon_binary() -> Option<PathBuf> {
     }
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir.parent()?.parent()?.parent()?;
-    let binary_name = if cfg!(target_os = "windows") {
-        "imglab-daemon.exe"
-    } else {
-        "imglab-daemon"
-    };
     let path = workspace_root
         .join("target")
         .join("debug")
-        .join(binary_name);
+        .join(daemon_binary_name());
     path.exists().then_some(path)
+}
+
+fn existing_daemon_binary_path(path: PathBuf) -> Result<PathBuf, CommandError> {
+    if path.is_file() {
+        return Ok(path);
+    }
+    Err(CommandError {
+        code: "DaemonBinaryMissing".to_string(),
+        message: format!("daemon binary does not exist: {}", path.display()),
+        recoverable: true,
+    })
+}
+
+fn daemon_binary_name() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "imglab-daemon.exe"
+    } else {
+        "imglab-daemon"
+    }
+}
+
+fn daemon_binary_candidate_names() -> Vec<String> {
+    let binary_name = daemon_binary_name();
+    let mut names = vec![binary_name.to_string()];
+    if let Some(target_triple) = option_env!("TAURI_ENV_TARGET_TRIPLE") {
+        let platform_name = if cfg!(target_os = "windows") {
+            format!("imglab-daemon-{target_triple}.exe")
+        } else {
+            format!("imglab-daemon-{target_triple}")
+        };
+        names.push(platform_name);
+    }
+    names
 }
 
 pub(crate) fn normalize_library_root_path(path: PathBuf) -> Result<PathBuf, CommandError> {
