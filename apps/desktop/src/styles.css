@@ -4593,6 +4593,14 @@ button.filter-chip {
   overflow: hidden;
 }
 
+.workflow-surface .review-list-panel {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .workflow-surface .album-list,
 .workflow-surface .review-list,
 .workflow-surface .prompt-list,
