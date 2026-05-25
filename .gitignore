@@ -12,3 +12,4 @@ DerivedData/
 **/.test-dist/
 
 apps/desktop/src-tauri/gen/
+.codex/screenshots/

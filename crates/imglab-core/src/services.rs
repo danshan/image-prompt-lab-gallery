@@ -165,6 +165,11 @@ pub trait TaskService {
         library_path: &std::path::Path,
         task_id: &TaskId,
     ) -> DomainResult<TaskDetail>;
+    fn claim_queued_task(
+        &self,
+        library_path: &std::path::Path,
+        task_id: &TaskId,
+    ) -> DomainResult<Option<TaskSummary>>;
     fn update_task_status(&self, request: UpdateTaskStatusRequest) -> DomainResult<TaskSummary>;
     fn append_task_event(&self, request: AppendTaskEventRequest) -> DomainResult<TaskEvent>;
     fn append_task_attempt(&self, request: AppendTaskAttemptRequest) -> DomainResult<TaskAttempt>;

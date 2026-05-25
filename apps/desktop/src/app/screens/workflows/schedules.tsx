@@ -41,7 +41,9 @@ export function SchedulesWorkspace({
   const [draft, setDraft] = useState<ScheduleDraft>(() =>
     defaultScheduleDraftForProvider(defaultProvider, manualAlbums[0]?.id ?? ""),
   );
+  const [editingJobId, setEditingJobId] = useState<string | null>(null);
   const selectedJob = jobs.find((job) => job.id === selectedJobId) ?? jobs[0] ?? null;
+  const editingJob = editingJobId ? jobs.find((job) => job.id === editingJobId) ?? null : null;
   const selectedRuns = useMemo(
     () => runs.filter((run) => run.jobId === selectedJob?.id),
     [runs, selectedJob?.id],
@@ -52,6 +54,7 @@ export function SchedulesWorkspace({
   }
 
   function loadJobIntoDraft(job: ScheduledGenerationJob) {
+    setEditingJobId(job.id);
     setDraft({
       name: job.name,
       promptMode: job.promptMode,
@@ -69,6 +72,11 @@ export function SchedulesWorkspace({
       hours: job.scheduleRule.hours ?? 6,
       localTimeHhMm: job.scheduleRule.localTimeHhMm ?? "09:00",
     });
+  }
+
+  function resetDraftForNewJob() {
+    setEditingJobId(null);
+    setDraft(defaultScheduleDraftForProvider(defaultProvider, manualAlbums[0]?.id ?? ""));
   }
 
   return (
@@ -90,10 +98,10 @@ export function SchedulesWorkspace({
             {jobs.map((job) => (
               <button
                 key={job.id}
-                className={job.id === selectedJob?.id ? "task-row selected" : "task-row"}
+                className={job.id === selectedJob?.id ? "task-row schedule-job-row selected" : "task-row schedule-job-row"}
                 onClick={() => onSelectJob(job.id)}
               >
-                <span>
+                <span className="task-row-main">
                   <strong>{job.name}</strong>
                   <small>{job.imageProvider} · {job.promptMode} · {formatScheduleRule(job.scheduleRule)}</small>
                 </span>
@@ -107,9 +115,10 @@ export function SchedulesWorkspace({
       <section className="task-panel">
         <div className="panel-heading">
           <div>
-            <h3>Create Schedule</h3>
-            <p>Fixed or dynamic prompt, with selected job editing</p>
+            <h3>{editingJob ? "Edit Schedule" : "Create Schedule"}</h3>
+            <p>{editingJob ? `Editing ${editingJob.name}` : "Fixed or dynamic prompt, with selected job editing"}</p>
           </div>
+          {editingJob && <button onClick={resetDraftForNewJob}>New schedule</button>}
         </div>
         <div className="form-grid compact-form">
           <label>
@@ -223,12 +232,20 @@ export function SchedulesWorkspace({
             <span>Tags</span>
             <input value={draft.tags} onChange={(event) => updateDraft({ tags: event.target.value })} placeholder="comma,separated" />
           </label>
-          <button className="primary-button span-2" disabled={!library || !draft.targetAlbumId} onClick={() => onCreateJob(draft)}>
-            Create schedule
-          </button>
-          <button className="span-2" disabled={!library || !draft.targetAlbumId || !selectedJob} onClick={() => selectedJob && onUpdateJob(selectedJob.id, draft)}>
-            Update selected schedule
-          </button>
+          {editingJob ? (
+            <>
+              <button className="primary-button span-2" disabled={!library || !draft.targetAlbumId} onClick={() => onUpdateJob(editingJob.id, draft)}>
+                Update schedule
+              </button>
+              <button className="span-2" onClick={resetDraftForNewJob}>
+                New schedule
+              </button>
+            </>
+          ) : (
+            <button className="primary-button span-2" disabled={!library || !draft.targetAlbumId} onClick={() => onCreateJob(draft)}>
+              Create schedule
+            </button>
+          )}
         </div>
       </section>
 

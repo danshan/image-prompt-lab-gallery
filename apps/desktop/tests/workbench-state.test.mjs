@@ -84,9 +84,15 @@ test("settings sections include providers diagnostics", () => {
 });
 
 test("settings sections include automation management", () => {
-  assert.deepEqual(settingsSections, ["libraries", "archived", "automation", "providers", "updates", "logs"]);
+  assert.deepEqual(settingsSections, ["libraries", "archived", "automation", "taskQueue", "providers", "updates", "logs"]);
   assert.equal(dictionaries.en.workflow.automation, "Automation");
   assert.equal(dictionaries["zh-CN"].workflow.automation, "自动化");
+});
+
+test("settings sections include task queue concurrency", () => {
+  assert.ok(settingsSections.includes("taskQueue"));
+  assert.equal(dictionaries.en.workflow.taskQueue, "Task Queue");
+  assert.equal(dictionaries["zh-CN"].workflow.taskQueue, "任务队列");
 });
 
 test("settings sections include archived content management", () => {

@@ -1098,6 +1098,15 @@ button.filter-chip {
   box-shadow: 0 0 0 2px rgba(11, 133, 137, 0.14);
 }
 
+.schedule-job-row {
+  column-gap: 14px;
+  text-align: left;
+}
+
+.schedule-job-row .status-pill {
+  justify-self: end;
+}
+
 .task-row-main {
   background: transparent;
   border: 0;
@@ -1499,6 +1508,41 @@ button.filter-chip {
   display: grid;
   gap: 12px;
   padding: 12px;
+}
+
+.settings-control-panel {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px;
+}
+
+.settings-number-input {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) 120px;
+}
+
+.settings-number-input span {
+  color: var(--color-text-muted);
+}
+
+.settings-number-input input {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text);
+  min-width: 0;
+  padding: 7px 9px;
+}
+
+.muted-copy {
+  color: var(--color-text-muted);
+  margin: 0;
 }
 
 .automation-library-table .library-table-row {
@@ -4582,15 +4626,21 @@ button.filter-chip {
 }
 
 .workflow-surface .album-list-panel,
+.workflow-surface .review-detail-panel,
+.workflow-surface .prompt-library-panel,
+.workflow-surface .tasks-queue-panel,
+.workflow-surface .settings-logs-panel {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .workflow-surface .review-list-panel,
 .workflow-surface .prompt-library-panel,
 .workflow-surface .tasks-queue-panel,
 .workflow-surface .settings-logs-panel {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  min-height: 0;
-  overflow: hidden;
 }
 
 .workflow-surface .review-list-panel {
@@ -4599,6 +4649,10 @@ button.filter-chip {
   height: 100%;
   min-height: 0;
   overflow: hidden;
+}
+
+.workflow-surface .review-detail-panel {
+  overflow: auto;
 }
 
 .workflow-surface .album-list,
@@ -4706,6 +4760,7 @@ button.filter-chip {
 
   .workflow-surface .album-list-panel,
   .workflow-surface .review-list-panel,
+  .workflow-surface .review-detail-panel,
   .workflow-surface .prompt-library-panel,
   .workflow-surface .tasks-queue-panel,
   .workflow-surface .settings-logs-panel {

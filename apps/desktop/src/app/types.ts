@@ -94,6 +94,14 @@ export type AutomationDaemonStatus = {
   recoverableError: string | null;
 };
 
+export type TaskQueueSettings = {
+  maxParallelTasks: number;
+  defaultMaxParallelTasks: number;
+  minParallelTasks: number;
+  maxParallelTasksLimit: number;
+  effectiveMaxParallelTasks: number;
+};
+
 export type GalleryAsset = {
   id: string;
   title: string | null;

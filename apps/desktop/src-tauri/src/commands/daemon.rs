@@ -190,6 +190,21 @@ pub(crate) fn duplicate_daemon_task(
 }
 
 #[tauri::command]
+pub(crate) fn get_task_queue_settings(
+    state: tauri::State<'_, DesktopState>,
+) -> Result<DaemonTaskQueueSettings, CommandError> {
+    ensure_daemon_client(&state)?.task_queue_settings()
+}
+
+#[tauri::command]
+pub(crate) fn update_task_queue_settings(
+    input: UpdateTaskQueueSettingsInput,
+    state: tauri::State<'_, DesktopState>,
+) -> Result<DaemonTaskQueueSettings, CommandError> {
+    ensure_daemon_client(&state)?.update_task_queue_settings(input.max_parallel_tasks)
+}
+
+#[tauri::command]
 pub(crate) fn create_scheduled_generation_job(
     input: DaemonScheduleMutationInput,
     state: tauri::State<'_, DesktopState>,

@@ -9,29 +9,18 @@ pub(crate) fn execute_task(
     task_id: &TaskId,
     retry_policy: &RetryPolicy,
 ) -> DomainResult<TaskSummary> {
-    let detail = state.tasks().get_task_detail(library_path, task_id)?;
-    if detail.task.status != TaskStatus::Queued {
-        return Ok(detail.task);
-    }
+    let Some(claimed_task) = state.tasks().claim_queued_task(library_path, task_id)? else {
+        return Ok(state.tasks().get_task_detail(library_path, task_id)?.task);
+    };
     fs::create_dir_all(&state.log_root).map_err(|error| io_error(&state.log_root, error))?;
     let log_path = state.log_root.join(format!(
         "imglab-task-{}-attempt-{}.log",
         task_id.0,
-        detail.task.attempt_count + 1
+        claimed_task.attempt_count + 1
     ));
     fs::write(&log_path, format!("starting task {}\n", task_id.0))
         .map_err(|error| io_error(&log_path, error))?;
 
-    state.tasks().update_task_status(UpdateTaskStatusRequest {
-        library_path: library_path.to_path_buf(),
-        task_id: task_id.clone(),
-        status: TaskStatus::Running,
-        next_retry_at: None,
-        last_error_code: None,
-        last_error_message: None,
-        error_classification: None,
-        wait_reason: None,
-    })?;
     let attempt = state
         .tasks()
         .append_task_attempt(imglab_core::AppendTaskAttemptRequest {
@@ -50,7 +39,7 @@ pub(crate) fn execute_task(
             payload_json: Some(format!("{{\"attempt_id\":\"{}\"}}", attempt.id.0)),
         })?;
 
-    match execute_task_body(state, library_path, task_id, &detail.task, &log_path) {
+    match execute_task_body(state, library_path, task_id, &claimed_task, &log_path) {
         Ok(()) => complete_successful_attempt(state, library_path, task_id, &attempt.id, &log_path),
         Err(error) => {
             if cancel_marker_path(&log_path).exists()

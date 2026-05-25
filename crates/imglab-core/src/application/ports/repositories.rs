@@ -247,6 +247,11 @@ pub trait TaskRepository {
     fn create_tasks(&self, request: BatchCreateTasksRequest) -> DomainResult<Vec<TaskSummary>>;
     fn list_tasks(&self, library_path: &Path) -> DomainResult<Vec<TaskSummary>>;
     fn get_task_detail(&self, library_path: &Path, task_id: &TaskId) -> DomainResult<TaskDetail>;
+    fn claim_queued_task(
+        &self,
+        library_path: &Path,
+        task_id: &TaskId,
+    ) -> DomainResult<Option<TaskSummary>>;
     fn update_task_status(&self, request: UpdateTaskStatusRequest) -> DomainResult<TaskSummary>;
     fn append_task_event(&self, request: AppendTaskEventRequest) -> DomainResult<TaskEvent>;
     fn append_task_attempt(&self, request: AppendTaskAttemptRequest) -> DomainResult<TaskAttempt>;

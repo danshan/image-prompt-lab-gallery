@@ -15,6 +15,7 @@ use daemon_client::{
     BatchCreateTasksInput, DaemonLogTail, DaemonScheduleInput, DaemonScheduleRuleInput,
     DaemonScheduledGenerationJob, DaemonScheduledGenerationRun, DaemonSidecar, DaemonTask,
     DaemonTaskAttempt, DaemonTaskDetail, DaemonTaskEvent, DaemonTaskInput, DaemonTaskOutput,
+    DaemonTaskQueueSettings,
 };
 use errors::*;
 use imglab_core::{
@@ -117,6 +118,8 @@ pub fn run() {
             commands::daemon::cancel_daemon_task,
             commands::daemon::retry_daemon_task,
             commands::daemon::duplicate_daemon_task,
+            commands::daemon::get_task_queue_settings,
+            commands::daemon::update_task_queue_settings,
             commands::daemon::create_scheduled_generation_job,
             commands::daemon::update_scheduled_generation_job,
             commands::daemon::list_scheduled_generation_jobs,

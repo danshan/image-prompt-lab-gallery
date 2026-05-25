@@ -21,6 +21,14 @@ impl TaskRepository for LocalLibraryService {
         TaskService::get_task_detail(self, library_path, task_id)
     }
 
+    fn claim_queued_task(
+        &self,
+        library_path: &Path,
+        task_id: &TaskId,
+    ) -> DomainResult<Option<TaskSummary>> {
+        TaskService::claim_queued_task(self, library_path, task_id)
+    }
+
     fn update_task_status(&self, request: UpdateTaskStatusRequest) -> DomainResult<TaskSummary> {
         TaskService::update_task_status(self, request)
     }

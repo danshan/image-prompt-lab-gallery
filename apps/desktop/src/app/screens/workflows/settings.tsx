@@ -46,11 +46,12 @@ import type {
   ReferenceSource,
   Suggestion,
   TaskDraft,
+  TaskQueueSettings,
   TaskPanel,
   UpdateState,
   View,
 } from "../../types";
-import { libraryMaintenanceActions, type SettingsSection } from "../../workflows/settings";
+import { libraryMaintenanceActions, settingsSections, type SettingsSection } from "../../workflows/settings";
 import type { Dictionary } from "../../i18n/dictionaries";
 export function SettingsWorkspace({
   library,
@@ -95,6 +96,11 @@ export function SettingsWorkspace({
   updateState,
   automationDaemonStatus,
   automationDaemonLoading,
+  taskQueueSettings,
+  taskQueueSettingsInput,
+  taskQueueSettingsLoading,
+  taskQueueSettingsSaving,
+  taskQueueSettingsError,
   onRefreshLogs,
   onSelectLog,
   onCheckUpdate,
@@ -106,6 +112,9 @@ export function SettingsWorkspace({
   onRestartAutomationDaemon,
   onRepairAutomationDaemon,
   onSetLibraryAutomationEnabled,
+  onTaskQueueSettingsInputChange,
+  onRefreshTaskQueueSettings,
+  onSaveTaskQueueSettings,
   dictionary,
 }: {
   library: Library | null;
@@ -150,6 +159,11 @@ export function SettingsWorkspace({
   updateState: UpdateState;
   automationDaemonStatus: AutomationDaemonStatus | null;
   automationDaemonLoading: boolean;
+  taskQueueSettings: TaskQueueSettings | null;
+  taskQueueSettingsInput: string;
+  taskQueueSettingsLoading: boolean;
+  taskQueueSettingsSaving: boolean;
+  taskQueueSettingsError: string | null;
   onRefreshLogs: () => void;
   onSelectLog: (path: string) => void;
   onCheckUpdate: () => void;
@@ -161,13 +175,15 @@ export function SettingsWorkspace({
   onRestartAutomationDaemon: () => void;
   onRepairAutomationDaemon: () => void;
   onSetLibraryAutomationEnabled: (library: Library, enabled: boolean) => void;
+  onTaskQueueSettingsInputChange: (value: string) => void;
+  onRefreshTaskQueueSettings: () => void;
+  onSaveTaskQueueSettings: () => void;
   dictionary: Dictionary;
 }) {
-  const sections: SettingsSection[] = ["libraries", "archived", "automation", "providers", "updates", "logs"];
   return (
     <section className="settings-workspace">
       <nav className="settings-tabs" aria-label={dictionary.views.settings.title}>
-        {sections.map((section) => (
+        {settingsSections.map((section) => (
           <button
             key={section}
             className={section === activeSection ? "active" : ""}
@@ -180,11 +196,13 @@ export function SettingsWorkspace({
                 ? "Archived"
                 : section === "automation"
                   ? dictionary.workflow.automation
-                  : section === "providers"
-                    ? dictionary.workflow.providers
-                    : section === "updates"
-                      ? dictionary.workflow.appUpdates
-                      : dictionary.workflow.logs}
+                  : section === "taskQueue"
+                    ? dictionary.workflow.taskQueue
+                    : section === "providers"
+                      ? dictionary.workflow.providers
+                      : section === "updates"
+                        ? dictionary.workflow.appUpdates
+                        : dictionary.workflow.logs}
           </button>
         ))}
       </nav>
@@ -236,6 +254,18 @@ export function SettingsWorkspace({
           onRestartAutomationDaemon={onRestartAutomationDaemon}
           onRepairAutomationDaemon={onRepairAutomationDaemon}
           onSetLibraryAutomationEnabled={onSetLibraryAutomationEnabled}
+          dictionary={dictionary}
+        />
+      ) : activeSection === "taskQueue" ? (
+        <SettingsTaskQueueView
+          settings={taskQueueSettings}
+          value={taskQueueSettingsInput}
+          loading={taskQueueSettingsLoading}
+          saving={taskQueueSettingsSaving}
+          error={taskQueueSettingsError}
+          onValueChange={onTaskQueueSettingsInputChange}
+          onRefresh={onRefreshTaskQueueSettings}
+          onSave={onSaveTaskQueueSettings}
           dictionary={dictionary}
         />
       ) : activeSection === "providers" ? (
@@ -688,6 +718,78 @@ function SettingsAutomationView({
             ))}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function SettingsTaskQueueView({
+  settings,
+  value,
+  loading,
+  saving,
+  error,
+  onValueChange,
+  onRefresh,
+  onSave,
+  dictionary,
+}: {
+  settings: TaskQueueSettings | null;
+  value: string;
+  loading: boolean;
+  saving: boolean;
+  error: string | null;
+  onValueChange: (value: string) => void;
+  onRefresh: () => void;
+  onSave: () => void;
+  dictionary: Dictionary;
+}) {
+  const parsed = Number(value);
+  const invalid = value.trim() === "" || !Number.isInteger(parsed)
+    || (settings ? parsed < settings.minParallelTasks || parsed > settings.maxParallelTasksLimit : false);
+  return (
+    <div className="settings-section">
+      <div className="panel-header">
+        <div>
+          <h3>{dictionary.workflow.taskQueue}</h3>
+          <p>{dictionary.workflow.taskQueueHint}</p>
+        </div>
+        <span className={`status ${error ? "failed" : settings ? "completed" : "queued"}`}>
+          {loading ? dictionary.workflow.loading : error ? dictionary.workflow.offline : settings ? dictionary.workflow.ready : dictionary.workflow.offline}
+        </span>
+      </div>
+      <div className="settings-control-panel">
+        <label className="settings-number-input">
+          <span>{dictionary.workflow.maxParallelTasks}</span>
+          <input
+            type="number"
+            min={settings?.minParallelTasks ?? 1}
+            max={settings?.maxParallelTasksLimit ?? 8}
+            step={1}
+            value={value}
+            onChange={(event) => onValueChange(event.target.value)}
+          />
+        </label>
+        <div className="meta-grid">
+          <span>{dictionary.workflow.current}</span>
+          <strong>{settings?.maxParallelTasks ?? "-"}</strong>
+          <span>{dictionary.workflow.defaultValue}</span>
+          <strong>{settings?.defaultMaxParallelTasks ?? "-"}</strong>
+          <span>{dictionary.workflow.allowedRange}</span>
+          <strong>{settings ? `${settings.minParallelTasks}-${settings.maxParallelTasksLimit}` : "-"}</strong>
+          <span>{dictionary.workflow.effective}</span>
+          <strong>{settings?.effectiveMaxParallelTasks ?? "-"}</strong>
+        </div>
+        <p className="muted-copy">{dictionary.workflow.taskQueueProviderLimitHint}</p>
+        {error && <p className="error-text">{error}</p>}
+        <div className="row-actions">
+          <button onClick={onRefresh} disabled={loading || saving}>
+            {loading ? dictionary.workflow.refreshingWithEllipsis : dictionary.workflow.refresh}
+          </button>
+          <button className="primary-button" onClick={onSave} disabled={loading || saving || invalid}>
+            {saving ? dictionary.workflow.savingWithEllipsis : dictionary.workflow.save}
+          </button>
+        </div>
       </div>
     </div>
   );

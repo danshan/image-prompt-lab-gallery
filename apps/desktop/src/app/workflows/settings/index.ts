@@ -5,4 +5,4 @@ export {
   useLibrarySettingsControllerState,
 } from "./controller";
 export { SettingsWorkspace } from "./screen";
-export { defaultSettingsSection, libraryMaintenanceActions, type SettingsSection } from "./state";
+export { defaultSettingsSection, libraryMaintenanceActions, settingsSections, type SettingsSection } from "./state";

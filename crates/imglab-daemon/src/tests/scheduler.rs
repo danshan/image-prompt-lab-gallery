@@ -139,13 +139,47 @@ fn schedule_api_run_now_queues_task_and_reconciles_completion() {
     assert_eq!(executed.status, TaskStatus::Completed);
 
     let changed = run_schedule_tick(&mut state).expect("reconcile schedule");
-    assert!(changed.iter().any(|run| {
-        run.image_task_id.as_ref() == Some(&TaskId(task_id.clone()))
-            && run.status == ScheduledGenerationRunStatus::Completed
-            && run.output_asset_count == 1
-            && run.album_added_asset_count == 1
-            && run.tagged_asset_count == 1
-    }));
+    let completed_run = changed
+        .iter()
+        .find(|run| {
+            run.image_task_id.as_ref() == Some(&TaskId(task_id.clone()))
+                && run.status == ScheduledGenerationRunStatus::Completed
+                && run.output_asset_count == 1
+                && run.album_added_asset_count == 1
+                && run.tagged_asset_count == 1
+        })
+        .expect("completed run");
+    let album_items = state
+        .gallery()
+        .query_gallery(
+            &library_path,
+            imglab_core::GalleryQuery {
+                album_id: Some(album.id.clone()),
+                sort: imglab_core::GallerySort::AlbumOrder,
+                ..Default::default()
+            },
+        )
+        .expect("album gallery");
+    assert_eq!(album_items.len(), 1);
+    assert!(album_items[0].tags.contains(&"scheduled".to_string()));
+    assert!(album_items[0].tags.contains(&"fake".to_string()));
+
+    let unchanged = run_schedule_tick(&mut state).expect("reconcile again");
+    assert!(unchanged.is_empty());
+    let runs = state
+        .schedules()
+        .list_runs(
+            &library_path,
+            &imglab_core::ScheduledGenerationJobId(job_id),
+        )
+        .expect("runs");
+    let persisted_run = runs
+        .iter()
+        .find(|run| run.id == completed_run.id)
+        .expect("persisted run");
+    assert_eq!(persisted_run.output_asset_count, 1);
+    assert_eq!(persisted_run.album_added_asset_count, 1);
+    assert_eq!(persisted_run.tagged_asset_count, 1);
 }
 
 #[test]
@@ -911,18 +945,204 @@ fn scheduler_tick_skips_canceled_tasks() {
 }
 
 #[test]
+fn scheduler_tick_executes_multiple_tasks_up_to_global_limit() {
+    let mut state = test_state("worker-multiple");
+    let library_id = create_open_library(&mut state, "worker-multiple-library");
+    let library_path = state.library_path(&library_id).expect("library path");
+    let create_response = handle_http_request_with_state(
+        &json_request(
+            "POST",
+            TASKS_BATCH_PATH,
+            serde_json::json!({
+                "libraryId": library_id,
+                "tasks": [
+                    {
+                        "taskType": "image_generation",
+                        "provider": "fake",
+                        "operation": "text_to_image",
+                        "input": { "prompt": "first" }
+                    },
+                    {
+                        "taskType": "image_generation",
+                        "provider": "fake",
+                        "operation": "text_to_image",
+                        "input": { "prompt": "second" }
+                    },
+                    {
+                        "taskType": "image_generation",
+                        "provider": "fake",
+                        "operation": "text_to_image",
+                        "input": { "prompt": "third" }
+                    }
+                ]
+            }),
+        ),
+        "secret",
+        &mut state,
+    );
+    assert_eq!(create_response.status_code, 200);
+    let config = TaskSchedulerConfig {
+        global_concurrency_limit: 2,
+        ..Default::default()
+    };
+
+    let executed =
+        run_scheduler_tick_batch(&mut state, &config, &RetryPolicy::default()).expect("run tick");
+
+    assert_eq!(executed.len(), 2);
+    assert!(executed
+        .iter()
+        .all(|task| task.status == TaskStatus::Completed));
+    let tasks = state.tasks().list_tasks(&library_path).expect("tasks");
+    let queued = tasks
+        .iter()
+        .find(|task| task.status == TaskStatus::Queued)
+        .expect("queued task");
+    assert_eq!(
+        queued.wait_reason.as_deref(),
+        Some("Waiting for global concurrency slot")
+    );
+}
+
+#[test]
+fn scheduler_tick_keeps_provider_slot_wait_reason_when_global_slots_remain() {
+    let mut state = test_state("provider-slot");
+    let library_id = create_open_library(&mut state, "provider-slot-library");
+    let library_path = state.library_path(&library_id).expect("library path");
+    let tasks = state
+        .tasks()
+        .create_tasks(BatchCreateTasksRequest {
+            library_path: library_path.clone(),
+            library_id: LibraryId(library_id),
+            tasks: vec![
+                CreateTaskInput {
+                    task_type: TaskType::ImageGeneration,
+                    provider: Some("codex-cli".to_string()),
+                    operation: Some(GenerationOperation::TextToImage),
+                    priority: 0,
+                    concurrency_group: Some("codex-cli".to_string()),
+                    max_attempts: 3,
+                    input_json: "{\"prompt\":\"running\"}".to_string(),
+                },
+                CreateTaskInput {
+                    task_type: TaskType::ImageGeneration,
+                    provider: Some("codex-cli".to_string()),
+                    operation: Some(GenerationOperation::TextToImage),
+                    priority: 0,
+                    concurrency_group: Some("codex-cli".to_string()),
+                    max_attempts: 3,
+                    input_json: "{\"prompt\":\"queued\"}".to_string(),
+                },
+            ],
+        })
+        .expect("create tasks");
+    state
+        .tasks()
+        .update_task_status(UpdateTaskStatusRequest {
+            library_path: library_path.clone(),
+            task_id: tasks[0].id.clone(),
+            status: TaskStatus::Running,
+            next_retry_at: None,
+            last_error_code: None,
+            last_error_message: None,
+            error_classification: None,
+            wait_reason: None,
+        })
+        .expect("mark running");
+    let config = TaskSchedulerConfig {
+        global_concurrency_limit: 2,
+        ..Default::default()
+    };
+
+    let executed =
+        run_scheduler_tick_batch(&mut state, &config, &RetryPolicy::default()).expect("run tick");
+
+    assert!(executed.is_empty());
+    let queued = state
+        .tasks()
+        .get_task_detail(&library_path, &tasks[1].id)
+        .expect("detail")
+        .task;
+    assert_eq!(
+        queued.wait_reason.as_deref(),
+        Some("Waiting for codex-cli slot")
+    );
+}
+
+#[test]
+fn scheduler_tick_does_not_start_new_tasks_when_running_exceeds_lowered_limit() {
+    let mut state = test_state("lowered-limit");
+    let library_id = create_open_library(&mut state, "lowered-limit-library");
+    let library_path = state.library_path(&library_id).expect("library path");
+    let tasks = state
+        .tasks()
+        .create_tasks(BatchCreateTasksRequest {
+            library_path: library_path.clone(),
+            library_id: LibraryId(library_id),
+            tasks: vec![
+                CreateTaskInput {
+                    task_type: TaskType::ImageGeneration,
+                    provider: Some("fake".to_string()),
+                    operation: Some(GenerationOperation::TextToImage),
+                    priority: 0,
+                    concurrency_group: Some("fake".to_string()),
+                    max_attempts: 3,
+                    input_json: "{\"prompt\":\"running\"}".to_string(),
+                },
+                CreateTaskInput {
+                    task_type: TaskType::ImageGeneration,
+                    provider: Some("fake".to_string()),
+                    operation: Some(GenerationOperation::TextToImage),
+                    priority: 0,
+                    concurrency_group: Some("fake".to_string()),
+                    max_attempts: 3,
+                    input_json: "{\"prompt\":\"queued\"}".to_string(),
+                },
+            ],
+        })
+        .expect("create tasks");
+    state
+        .tasks()
+        .update_task_status(UpdateTaskStatusRequest {
+            library_path: library_path.clone(),
+            task_id: tasks[0].id.clone(),
+            status: TaskStatus::Running,
+            next_retry_at: None,
+            last_error_code: None,
+            last_error_message: None,
+            error_classification: None,
+            wait_reason: None,
+        })
+        .expect("mark running");
+    let config = TaskSchedulerConfig {
+        global_concurrency_limit: 1,
+        ..Default::default()
+    };
+
+    let executed =
+        run_scheduler_tick_batch(&mut state, &config, &RetryPolicy::default()).expect("run tick");
+
+    assert!(executed.is_empty());
+    let queued = state
+        .tasks()
+        .get_task_detail(&library_path, &tasks[1].id)
+        .expect("detail")
+        .task;
+    assert_eq!(
+        queued.wait_reason.as_deref(),
+        Some("Waiting for global concurrency slot")
+    );
+}
+
+#[test]
 fn shared_scheduler_iteration_returns_no_work_without_open_libraries() {
     let state = test_state("scheduler-no-open-library");
     let shared = Arc::new(Mutex::new(state));
 
-    let executed = run_scheduler_loop_iteration(
-        &shared,
-        &TaskSchedulerConfig::default(),
-        &RetryPolicy::default(),
-    )
-    .expect("scheduler iteration");
+    let executed = run_scheduler_loop_iteration(&shared, &RetryPolicy::default())
+        .expect("scheduler iteration");
 
-    assert!(executed.is_none());
+    assert!(executed.is_empty());
 }
 
 #[test]
@@ -950,13 +1170,11 @@ fn shared_scheduler_iteration_executes_without_holding_api_state() {
         .to_string();
     let shared = Arc::new(Mutex::new(state));
 
-    let executed = run_scheduler_loop_iteration(
-        &shared,
-        &TaskSchedulerConfig::default(),
-        &RetryPolicy::default(),
-    )
-    .expect("scheduler iteration")
-    .expect("executed task");
+    let executed = run_scheduler_loop_iteration(&shared, &RetryPolicy::default())
+        .expect("scheduler iteration")
+        .into_iter()
+        .next()
+        .expect("executed task");
     assert_eq!(executed.status, TaskStatus::Completed);
 
     let detail_response = handle_http_request_with_shared_state(
@@ -997,13 +1215,11 @@ fn running_task_cancel_requests_best_effort_stop() {
     let shared = Arc::new(Mutex::new(state));
     let worker_state = Arc::clone(&shared);
     let worker = thread::spawn(move || {
-        run_scheduler_loop_iteration(
-            &worker_state,
-            &TaskSchedulerConfig::default(),
-            &RetryPolicy::default(),
-        )
-        .expect("scheduler iteration")
-        .expect("executed task")
+        run_scheduler_loop_iteration(&worker_state, &RetryPolicy::default())
+            .expect("scheduler iteration")
+            .into_iter()
+            .next()
+            .expect("executed task")
     });
 
     thread::sleep(Duration::from_millis(80));

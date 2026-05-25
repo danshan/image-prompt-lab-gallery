@@ -111,6 +111,7 @@ import {
 } from "./workflows/albums";
 import {
   defaultSettingsSection,
+  settingsSections,
   useAppOperationsActions,
   useAppOperationsControllerState,
   useLibrarySettingsActions,
@@ -151,6 +152,7 @@ import type {
   ScheduledGenerationRun,
   Suggestion,
   TaskDraft,
+  TaskQueueSettings,
   TaskPanel,
   UpdateCheck,
   UpdateState,
@@ -174,8 +176,6 @@ function initialDrawerOpenFromUrl(): boolean {
   }
   return new URLSearchParams(window.location.search).get("drawer") === "1";
 }
-
-const settingsSections: SettingsSection[] = ["libraries", "archived", "automation", "providers", "updates", "logs"];
 
 function initialSettingsSectionFromUrl(): SettingsSection | null {
   if (typeof window === "undefined") {
@@ -363,6 +363,11 @@ export function StudioAppController() {
   const [schedulesLoading, setSchedulesLoading] = useState(false);
   const [automationDaemonStatus, setAutomationDaemonStatus] = useState<AutomationDaemonStatus | null>(null);
   const [automationDaemonLoading, setAutomationDaemonLoading] = useState(false);
+  const [taskQueueSettings, setTaskQueueSettings] = useState<TaskQueueSettings | null>(null);
+  const [taskQueueSettingsInput, setTaskQueueSettingsInput] = useState("");
+  const [taskQueueSettingsLoading, setTaskQueueSettingsLoading] = useState(false);
+  const [taskQueueSettingsSaving, setTaskQueueSettingsSaving] = useState(false);
+  const [taskQueueSettingsError, setTaskQueueSettingsError] = useState<string | null>(null);
   const promptWorkspaceState = usePromptWorkspaceControllerState(runningInTauri);
   const [archivedContent, setArchivedContent] = useState<ArchivedContent[]>([]);
   const [archivedLoading, setArchivedLoading] = useState(false);
@@ -849,6 +854,61 @@ export function StudioAppController() {
     }
   }
 
+  async function refreshTaskQueueSettings() {
+    if (!runningInTauri) {
+      setTaskQueueSettingsLoading(false);
+      setTaskQueueSettings(null);
+      setTaskQueueSettingsInput("");
+      setTaskQueueSettingsError("This action requires the Tauri desktop runtime. Start with npm run tauri dev.");
+      return;
+    }
+    setTaskQueueSettingsLoading(true);
+    setTaskQueueSettingsError(null);
+    try {
+      const settings = await invokeCommand<TaskQueueSettings>("get_task_queue_settings");
+      setTaskQueueSettings(settings);
+      setTaskQueueSettingsInput(String(settings.maxParallelTasks));
+      setRecoverableError(null);
+    } catch (error) {
+      const message = errorMessage(error);
+      setTaskQueueSettingsError(message);
+      setRecoverableError(message);
+    } finally {
+      setTaskQueueSettingsLoading(false);
+    }
+  }
+
+  async function saveTaskQueueSettings() {
+    const parsed = Number(taskQueueSettingsInput);
+    if (!Number.isInteger(parsed)) {
+      setTaskQueueSettingsError(dictionary.workflow.taskQueueInvalidInteger);
+      return;
+    }
+    if (taskQueueSettings && (parsed < taskQueueSettings.minParallelTasks || parsed > taskQueueSettings.maxParallelTasksLimit)) {
+      setTaskQueueSettingsError(
+        `${dictionary.workflow.taskQueueRangePrefix} ${taskQueueSettings.minParallelTasks}-${taskQueueSettings.maxParallelTasksLimit}.`,
+      );
+      return;
+    }
+    setTaskQueueSettingsSaving(true);
+    setTaskQueueSettingsError(null);
+    try {
+      const settings = await invokeCommand<TaskQueueSettings>("update_task_queue_settings", {
+        input: { maxParallelTasks: parsed },
+      });
+      setTaskQueueSettings(settings);
+      setTaskQueueSettingsInput(String(settings.maxParallelTasks));
+      setStatus(dictionary.workflow.taskQueueSaved);
+      setRecoverableError(null);
+    } catch (error) {
+      const message = errorMessage(error);
+      setTaskQueueSettingsError(message);
+      setRecoverableError(message);
+    } finally {
+      setTaskQueueSettingsSaving(false);
+    }
+  }
+
   async function setLibraryAutomationEnabled(targetLibrary: Library, enabled: boolean) {
     try {
       const updated = await invokeCommand<Library>("set_library_automation_enabled", {
@@ -993,6 +1053,9 @@ export function StudioAppController() {
   useEffect(() => {
     if (activeView === "settings" && settingsSection === "automation") {
       void refreshAutomationDaemonStatus();
+    }
+    if (activeView === "settings" && settingsSection === "taskQueue") {
+      void refreshTaskQueueSettings();
     }
   }, [activeView, settingsSection]);
 
@@ -1919,6 +1982,14 @@ export function StudioAppController() {
             updateState={updateState}
             automationDaemonStatus={automationDaemonStatus}
             automationDaemonLoading={automationDaemonLoading}
+            taskQueueSettings={taskQueueSettings}
+            taskQueueSettingsInput={taskQueueSettingsInput}
+            taskQueueSettingsLoading={taskQueueSettingsLoading}
+            taskQueueSettingsSaving={taskQueueSettingsSaving}
+            taskQueueSettingsError={taskQueueSettingsError}
+            onTaskQueueSettingsInputChange={setTaskQueueSettingsInput}
+            onRefreshTaskQueueSettings={() => void refreshTaskQueueSettings()}
+            onSaveTaskQueueSettings={() => void saveTaskQueueSettings()}
             onRefreshLogs={() => void refreshAppLogs()}
             onSelectLog={(path) => void readAppLog(path)}
             onCheckUpdate={() => void checkForAppUpdate()}

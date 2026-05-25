@@ -59,6 +59,52 @@ fn loopback_guard_rejects_non_loopback_addresses() {
 }
 
 #[test]
+fn task_queue_settings_read_update_validate_and_fallback() {
+    let mut state = test_state("task-queue-settings");
+
+    let read_response =
+        handle_http_request_with_state(&auth_get(TASK_QUEUE_SETTINGS_PATH), "secret", &mut state);
+    assert_eq!(read_response.status_code, 200);
+    let settings = json_value(&read_response);
+    assert_eq!(settings["maxParallelTasks"], 2);
+    assert_eq!(settings["defaultMaxParallelTasks"], 2);
+    assert_eq!(settings["minParallelTasks"], 1);
+    assert_eq!(settings["maxParallelTasksLimit"], 8);
+
+    let update_response = handle_http_request_with_state(
+        &json_request(
+            "PUT",
+            TASK_QUEUE_SETTINGS_PATH,
+            serde_json::json!({ "maxParallelTasks": 4 }),
+        ),
+        "secret",
+        &mut state,
+    );
+    assert_eq!(update_response.status_code, 200);
+    assert_eq!(json_value(&update_response)["maxParallelTasks"], 4);
+    assert_eq!(state.scheduler_config.global_concurrency_limit, 4);
+
+    let invalid_response = handle_http_request_with_state(
+        &json_request(
+            "PUT",
+            TASK_QUEUE_SETTINGS_PATH,
+            serde_json::json!({ "maxParallelTasks": 9 }),
+        ),
+        "secret",
+        &mut state,
+    );
+    assert_eq!(invalid_response.status_code, 400);
+    assert_eq!(state.scheduler_config.global_concurrency_limit, 4);
+
+    fs::write(&state.settings_path, "{not valid json").expect("write corrupted settings");
+    let recovered = DaemonState::new(state.registry_path.clone(), state.log_root.clone());
+    assert_eq!(
+        recovered.scheduler_config.global_concurrency_limit,
+        TaskSchedulerConfig::default().global_concurrency_limit
+    );
+}
+
+#[test]
 fn task_api_creates_lists_reorders_and_loads_detail() {
     let mut state = test_state("task-api");
     let library_id = create_open_library(&mut state, "task-api-library");

@@ -8,12 +8,11 @@ use imglab_core::application::ports::PromptExpansionProvider;
 
 pub fn spawn_scheduler_loop(
     state: SharedDaemonState,
-    config: TaskSchedulerConfig,
     retry_policy: RetryPolicy,
     interval: Duration,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || loop {
-        if let Err(error) = run_scheduler_loop_iteration(&state, &config, &retry_policy) {
+        if let Err(error) = run_scheduler_loop_iteration(&state, &retry_policy) {
             eprintln!("scheduler tick failed: {error}");
         }
         thread::sleep(interval);
@@ -31,20 +30,20 @@ pub fn spawn_schedule_loop(state: SharedDaemonState, interval: Duration) -> thre
 
 pub fn run_scheduler_loop_iteration(
     state: &SharedDaemonState,
-    config: &TaskSchedulerConfig,
     retry_policy: &RetryPolicy,
-) -> DomainResult<Option<TaskSummary>> {
+) -> DomainResult<Vec<TaskSummary>> {
     let guard = state
         .lock()
         .map_err(|_| DomainError::ConcurrentWriteConflict {
             message: "daemon state lock is poisoned".to_string(),
         })?;
     if guard.opened_libraries.is_empty() || !daemon_has_runnable_work(&guard)? {
-        return Ok(None);
+        return Ok(Vec::new());
     }
     let mut snapshot = guard.clone();
+    let config = guard.scheduler_config.clone();
     drop(guard);
-    run_scheduler_tick(&mut snapshot, config, retry_policy)
+    run_scheduler_tick_batch(&mut snapshot, &config, retry_policy)
 }
 
 pub fn run_schedule_loop_iteration(
@@ -261,6 +260,16 @@ pub fn run_scheduler_tick(
     config: &TaskSchedulerConfig,
     retry_policy: &RetryPolicy,
 ) -> DomainResult<Option<TaskSummary>> {
+    Ok(run_scheduler_tick_batch(state, config, retry_policy)?
+        .into_iter()
+        .next())
+}
+
+pub fn run_scheduler_tick_batch(
+    state: &mut DaemonState,
+    config: &TaskSchedulerConfig,
+    retry_policy: &RetryPolicy,
+) -> DomainResult<Vec<TaskSummary>> {
     let mut all_tasks = Vec::new();
     let mut task_libraries = BTreeMap::new();
     for library_path in state.opened_libraries.values() {
@@ -290,15 +299,30 @@ pub fn run_scheduler_tick(
         }
     }
 
-    let Some(task_id) = decision.selected_task_id else {
-        return Ok(None);
-    };
-    let library_path = task_libraries.get(&task_id.0).cloned().ok_or_else(|| {
-        DomainError::InvalidTaskReference {
-            id: task_id.0.clone(),
-        }
-    })?;
-    execute_task(state, &library_path, &task_id, retry_policy).map(Some)
+    let mut workers = Vec::new();
+    for task_id in decision.selected_task_ids {
+        let library_path = task_libraries.get(&task_id.0).cloned().ok_or_else(|| {
+            DomainError::InvalidTaskReference {
+                id: task_id.0.clone(),
+            }
+        })?;
+        let mut worker_state = state.clone();
+        let retry_policy = retry_policy.clone();
+        workers.push(thread::spawn(move || {
+            execute_task(&mut worker_state, &library_path, &task_id, &retry_policy)
+        }));
+    }
+
+    let mut executed = Vec::new();
+    for worker in workers {
+        let task = worker
+            .join()
+            .map_err(|_| DomainError::ConcurrentWriteConflict {
+                message: "task worker panicked".to_string(),
+            })??;
+        executed.push(task);
+    }
+    Ok(executed)
 }
 
 pub(crate) fn route_request(
@@ -313,6 +337,14 @@ pub(crate) fn route_request(
             let input: OpenLibraryInput = parse_json_body(body)?;
             let library = state.open_library(&input.library_path)?;
             Ok(Some(json_response(200, &LibraryView::from(library))))
+        }
+        ("GET", TASK_QUEUE_SETTINGS_PATH) => {
+            Ok(Some(json_response(200, &state.task_queue_settings_view())))
+        }
+        ("PUT", TASK_QUEUE_SETTINGS_PATH) => {
+            let input: UpdateTaskQueueSettingsInput = parse_json_body(body)?;
+            let settings = state.update_task_queue_settings(input)?;
+            Ok(Some(json_response(200, &settings)))
         }
         ("POST", TASKS_PATH) => {
             let input: SingleCreateTaskInput = parse_json_body(body)?;

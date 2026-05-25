@@ -26,6 +26,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 pub const API_VERSION: &str = "v1";
 pub const HEALTH_PATH: &str = "/v1/health";
 pub const CAPABILITIES_PATH: &str = "/v1/capabilities";
+const TASK_QUEUE_SETTINGS_PATH: &str = "/v1/settings/task-queue";
 const LIBRARY_OPEN_PATH: &str = "/v1/libraries/open";
 const TASKS_PATH: &str = "/v1/tasks";
 const TASKS_BATCH_PATH: &str = "/v1/tasks/batch";
@@ -56,7 +57,8 @@ pub use runtime_io::{
 pub use task_dto::{capabilities_view, health_view};
 pub use transport::{
     recover_open_libraries, run_schedule_loop_iteration, run_schedule_tick,
-    run_scheduler_loop_iteration, run_scheduler_tick, spawn_schedule_loop, spawn_scheduler_loop,
+    run_scheduler_loop_iteration, run_scheduler_tick, run_scheduler_tick_batch,
+    spawn_schedule_loop, spawn_scheduler_loop,
 };
 pub use views::{
     bind_loopback_listener, generate_session_token, is_loopback_addr, read_runtime_file,

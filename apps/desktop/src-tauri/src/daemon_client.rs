@@ -241,6 +241,16 @@ pub struct DaemonLogTail {
     pub truncated: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DaemonTaskQueueSettings {
+    pub max_parallel_tasks: usize,
+    pub default_max_parallel_tasks: usize,
+    pub min_parallel_tasks: usize,
+    pub max_parallel_tasks_limit: usize,
+    pub effective_max_parallel_tasks: usize,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DaemonErrorBody {
@@ -380,6 +390,20 @@ impl DaemonClient {
 
     pub fn tail_task_log(&self, task_id: &str) -> Result<DaemonLogTail, CommandError> {
         let response = self.request("GET", &format!("/v1/tasks/{task_id}/logs/tail"), None)?;
+        serde_json::from_str(&response).map_err(daemon_parse_error)
+    }
+
+    pub fn task_queue_settings(&self) -> Result<DaemonTaskQueueSettings, CommandError> {
+        let response = self.request("GET", "/v1/settings/task-queue", None)?;
+        serde_json::from_str(&response).map_err(daemon_parse_error)
+    }
+
+    pub fn update_task_queue_settings(
+        &self,
+        max_parallel_tasks: usize,
+    ) -> Result<DaemonTaskQueueSettings, CommandError> {
+        let body = serde_json::json!({ "maxParallelTasks": max_parallel_tasks });
+        let response = self.request("PUT", "/v1/settings/task-queue", Some(body))?;
         serde_json::from_str(&response).map_err(daemon_parse_error)
     }
 

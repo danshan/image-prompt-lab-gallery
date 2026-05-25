@@ -299,7 +299,7 @@ Define review-first metadata suggestion behavior before writing canonical asset 
 
 ### Requirement: Review Workspace 状态覆盖
 
-Review workspace SHALL 覆盖 pending list, selected detail, generated results, batch actions 和 task mirror 的 loading, empty, error 和 recovery states. Accept failure MUST 保留当前 local draft. Pending suggestions list SHALL remain vertically scrollable inside the Review Inbox panel when its content exceeds the available desktop workflow height, while header and batch controls remain reachable above the list.
+Review workspace SHALL 覆盖 pending list, selected detail, generated results, batch actions 和 task mirror 的 loading, empty, error 和 recovery states. Accept failure MUST 保留当前 local draft. Pending suggestions list SHALL remain vertically scrollable inside the Review Inbox panel when its content exceeds the available desktop workflow height, while header and batch controls remain reachable above the list. Review metadata selected detail SHALL remain vertically scrollable inside the desktop workflow surface when its content exceeds the available viewport height, so fields, actions 和 suggestion history remain reachable.
 
 #### Scenario: Accept Failure Preserves Draft
 - **WHEN** 用户接受 Review draft 时写入失败
@@ -317,3 +317,8 @@ Review workspace SHALL 覆盖 pending list, selected detail, generated results, 
 - **WHEN** Review Inbox pending suggestions exceed the available height of the left panel
 - **THEN** Review UI allows vertical scrolling within the pending suggestions list
 - **AND** batch actions and add-to-album controls remain reachable above the list
+
+#### Scenario: Review Metadata Detail Scrolls
+- **WHEN** Review metadata detail content exceeds the available desktop workflow height
+- **THEN** Review UI allows vertical scrolling within the selected detail area
+- **AND** title, category, description, schema prompt, tags, review actions 和 suggestion history remain reachable without horizontal scrolling

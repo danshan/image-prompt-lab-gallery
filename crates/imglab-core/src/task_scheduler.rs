@@ -42,6 +42,7 @@ pub struct TaskWaitReason {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskSchedulerDecision {
     pub selected_task_id: Option<TaskId>,
+    pub selected_task_ids: Vec<TaskId>,
     pub wait_reasons: Vec<TaskWaitReason>,
 }
 
@@ -59,7 +60,7 @@ pub fn evaluate_scheduler(
             )
         })
         .collect();
-    let running_count = running_tasks.len();
+    let mut running_count = running_tasks.len();
     let mut running_by_provider = BTreeMap::<String, usize>::new();
     for task in running_tasks {
         if let Some(provider) = &task.provider {
@@ -80,7 +81,7 @@ pub fn evaluate_scheduler(
             .then(left.created_at.cmp(&right.created_at))
     });
 
-    let mut selected_task_id = None;
+    let mut selected_task_ids = Vec::new();
     for task in queued_tasks {
         if running_count >= config.global_concurrency_limit {
             wait_reasons.push(TaskWaitReason {
@@ -99,9 +100,11 @@ pub fn evaluate_scheduler(
                 continue;
             }
         }
-        if selected_task_id.is_none() {
-            selected_task_id = Some(task.id.clone());
+        running_count += 1;
+        if let Some(provider) = &task.provider {
+            *running_by_provider.entry(provider.clone()).or_default() += 1;
         }
+        selected_task_ids.push(task.id.clone());
     }
 
     for task in tasks
@@ -119,7 +122,8 @@ pub fn evaluate_scheduler(
     }
 
     TaskSchedulerDecision {
-        selected_task_id,
+        selected_task_id: selected_task_ids.first().cloned(),
+        selected_task_ids,
         wait_reasons,
     }
 }
@@ -246,6 +250,38 @@ mod tests {
         );
 
         assert_eq!(decision.selected_task_id, Some(TaskId("next".to_string())));
+        assert_eq!(
+            decision.selected_task_ids,
+            vec![TaskId("next".to_string()), TaskId("high".to_string())]
+        );
+    }
+
+    #[test]
+    fn scheduler_selects_multiple_tasks_until_global_limit() {
+        let config = TaskSchedulerConfig {
+            global_concurrency_limit: 2,
+            ..Default::default()
+        };
+        let tasks = vec![
+            task("first", TaskStatus::Queued, Some("fake"), 0, 1),
+            task("second", TaskStatus::Queued, Some("fake"), 0, 2),
+            task("third", TaskStatus::Queued, Some("fake"), 0, 3),
+        ];
+
+        let decision = evaluate_scheduler(&tasks, &config, "2026-01-01T00:00:00Z");
+
+        assert_eq!(
+            decision.selected_task_ids,
+            vec![TaskId("first".to_string()), TaskId("second".to_string())]
+        );
+        assert_eq!(
+            decision.wait_reasons[0].reason,
+            "Waiting for global concurrency slot"
+        );
+        assert_eq!(
+            decision.wait_reasons[0].task_id,
+            TaskId("third".to_string())
+        );
     }
 
     #[test]

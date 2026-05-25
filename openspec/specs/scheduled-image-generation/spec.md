@@ -85,18 +85,23 @@ TBD - created by archiving change add-scheduled-image-generation. Update Purpose
 - **AND** job 从当前时间计算下一次 `next_run_at`
 
 ### Requirement: Output Album And Tags
-系统 SHALL 在 linked image generation task completed 后, 将 output assets 加入 job 的 target manual album, 并应用 job 中用户指定 tags. Post-processing MUST be idempotent.
+系统 SHALL 在 linked image generation task completed 后, 将所有 output assets 加入 job 的 target manual album, 并将 job 中用户指定 tags 写入 canonical asset tags. Post-processing MUST be idempotent, MUST update run output rows, and MUST keep run output counters consistent with persisted post-processing state.
 
 #### Scenario: Completed Task Post Processing
 - **WHEN** linked image generation task completed 且包含 output assets
 - **THEN** schedule runner 将每个 output asset 加入 target manual album
-- **AND** schedule runner 为每个 output asset 应用 job tags
-- **AND** run outputs 记录处理状态
+- **AND** schedule runner 为每个 output asset 应用 job tags as canonical asset tags
+- **AND** run outputs 记录 output asset, asset version, generation event, album added state 和 applied tags
+- **AND** run output counters reflect output assets, album-added assets 和 tagged assets
+
+#### Scenario: Run Now Uses Same Post Processing
+- **WHEN** 用户通过 run-now 创建 scheduled run 且 linked image generation task completed
+- **THEN** run-now reconciliation 使用与后台 schedule runner 相同的 output album 和 tag post-processing
 
 #### Scenario: Post Processing Restart
-- **WHEN** daemon 在 post-processing 中断后重启
-- **THEN** schedule runner 根据 run outputs 继续未完成 output 处理
-- **AND** 系统不得创建重复 run output row
+- **WHEN** daemon 在 post-processing 中断后重启并再次 reconcile 同一个 completed linked task
+- **THEN** schedule runner 根据 task output links 和 run outputs 继续未完成 output 处理
+- **AND** 系统不得创建重复 album membership, duplicate canonical tag relation 或重复 run output row
 
 #### Scenario: Target Album Deleted
 - **WHEN** job 的 target manual album 已不存在
@@ -105,11 +110,21 @@ TBD - created by archiving change add-scheduled-image-generation. Update Purpose
 - **AND** 系统不得继续创建 image generation task
 
 ### Requirement: Schedules Workflow
-Desktop SHALL provide a `Schedules` workflow for managing scheduled generation jobs and run history. Queue SHALL continue to show concrete image generation tasks, while Schedules owns recurring job management.
+Desktop SHALL provide a `Schedules` workflow for managing scheduled generation jobs and run history. Queue SHALL continue to show concrete image generation tasks, while Schedules owns recurring job management. Scheduled job rows SHALL present the job name and schedule metadata as left-aligned primary content with stable separation from job status. The job editor SHALL provide an explicit path to return from editing an existing job to creating a new job.
 
 #### Scenario: Manage Jobs
 - **WHEN** 用户打开 Schedules workflow
 - **THEN** UI 展示 schedule list, selected job editor 和 run history
+
+#### Scenario: Job Rows Are Scannable
+- **WHEN** Scheduled Jobs list 展示一个或多个 jobs
+- **THEN** 每个 job row 将 name 和 provider / prompt mode / schedule metadata 居左展示
+- **AND** status pill 与主内容之间保留稳定空隙, 不与 name 贴合
+
+#### Scenario: Return From Edit To Create
+- **WHEN** 用户点击现有 job 的 Edit 并进入编辑 draft
+- **THEN** Schedules editor 提供 New schedule 入口
+- **AND** 用户点击 New schedule 后, editor 回到可创建新 job 的默认 draft
 
 #### Scenario: Run History Links To Task
 - **WHEN** run 已创建 linked image task
@@ -118,4 +133,3 @@ Desktop SHALL provide a `Schedules` workflow for managing scheduled generation j
 #### Scenario: Prompt Mode Validation
 - **WHEN** 用户保存 fixed 或 dynamic prompt job
 - **THEN** UI 和 backend 校验对应 prompt mode 的必填字段
-

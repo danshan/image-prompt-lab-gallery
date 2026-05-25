@@ -37,6 +37,14 @@ where
         self.repository.get_task_detail(library_path, task_id)
     }
 
+    pub fn claim_queued_task(
+        &self,
+        library_path: &Path,
+        task_id: &TaskId,
+    ) -> DomainResult<Option<TaskSummary>> {
+        self.repository.claim_queued_task(library_path, task_id)
+    }
+
     pub fn update_task_status(
         &self,
         request: UpdateTaskStatusRequest,

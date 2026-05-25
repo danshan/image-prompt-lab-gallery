@@ -1,4 +1,4 @@
-use imglab_core::task_scheduler::{RetryPolicy, TaskSchedulerConfig};
+use imglab_core::task_scheduler::RetryPolicy;
 use imglab_daemon::{
     bind_loopback_listener, generate_session_token, recover_open_libraries, serve_forever_shared,
     spawn_schedule_loop, spawn_scheduler_loop, write_runtime_file, write_token_file, DaemonConfig,
@@ -56,7 +56,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let _scheduler = spawn_scheduler_loop(
         Arc::clone(&state),
-        TaskSchedulerConfig::default(),
         RetryPolicy::default(),
         DEFAULT_SCHEDULER_INTERVAL,
     );

@@ -101,6 +101,41 @@ impl TaskService for LocalLibraryService {
         })
     }
 
+    fn claim_queued_task(
+        &self,
+        library_path: &Path,
+        task_id: &TaskId,
+    ) -> DomainResult<Option<TaskSummary>> {
+        let connection = Self::open_library_database(library_path)?;
+        ensure_task_exists(&connection, task_id)?;
+        let now = timestamp_string();
+        let changed = connection
+            .execute(
+                "
+                UPDATE tasks
+                SET status = ?1,
+                    next_retry_at = NULL,
+                    last_error_code = NULL,
+                    last_error_message = NULL,
+                    error_classification = NULL,
+                    wait_reason = NULL,
+                    updated_at = ?2
+                WHERE id = ?3 AND status = ?4
+                ",
+                params![
+                    TaskStatus::Running.as_str(),
+                    now,
+                    task_id.0,
+                    TaskStatus::Queued.as_str(),
+                ],
+            )
+            .map_err(database_error)?;
+        if changed == 0 {
+            return Ok(None);
+        }
+        load_task_summary(&connection, task_id).map(Some)
+    }
+
     fn update_task_status(&self, request: UpdateTaskStatusRequest) -> DomainResult<TaskSummary> {
         let connection = Self::open_library_database(&request.library_path)?;
         ensure_task_exists(&connection, &request.task_id)?;

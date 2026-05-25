@@ -814,6 +814,12 @@ pub(crate) struct DaemonTaskActionInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct UpdateTaskQueueSettingsInput {
+    pub(crate) max_parallel_tasks: usize,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct DaemonScheduleQueryInput {
     pub(crate) library_path: PathBuf,
 }

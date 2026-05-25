@@ -1,6 +1,9 @@
 use crate::transport::recover_open_libraries;
 use crate::*;
 
+pub const MIN_TASK_QUEUE_CONCURRENCY: usize = 1;
+pub const MAX_TASK_QUEUE_CONCURRENCY: usize = 8;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeFile {
@@ -41,6 +44,28 @@ pub struct CapabilitiesView {
     pub task_types: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DaemonSettingsFile {
+    pub max_parallel_tasks: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskQueueSettingsView {
+    pub max_parallel_tasks: usize,
+    pub default_max_parallel_tasks: usize,
+    pub min_parallel_tasks: usize,
+    pub max_parallel_tasks_limit: usize,
+    pub effective_max_parallel_tasks: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateTaskQueueSettingsInput {
+    pub max_parallel_tasks: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpResponse {
     pub status_code: u16,
@@ -52,6 +77,8 @@ pub struct DaemonState {
     pub(crate) app: imglab_core::infrastructure::composition::SqliteImgLabApplication<
         imglab_core::FakeImageProvider,
     >,
+    pub(crate) scheduler_config: TaskSchedulerConfig,
+    pub(crate) settings_path: PathBuf,
     pub(crate) opened_libraries: BTreeMap<String, PathBuf>,
     pub(crate) recovered_libraries: BTreeSet<String>,
     pub(crate) log_root: PathBuf,
@@ -62,15 +89,20 @@ pub type SharedDaemonState = Arc<Mutex<DaemonState>>;
 impl DaemonState {
     pub fn new(registry_path: impl Into<PathBuf>, log_root: impl Into<PathBuf>) -> Self {
         let registry_path = registry_path.into();
+        let log_root = log_root.into();
+        let settings_path = daemon_settings_path(&log_root);
+        let scheduler_config = load_scheduler_config(&settings_path);
         Self {
             registry_path: registry_path.clone(),
             app: imglab_core::infrastructure::composition::sqlite_application(
                 registry_path,
                 imglab_core::FakeImageProvider::success("fake"),
             ),
+            scheduler_config,
+            settings_path,
             opened_libraries: BTreeMap::new(),
             recovered_libraries: BTreeSet::new(),
-            log_root: log_root.into(),
+            log_root,
         }
     }
 
@@ -141,6 +173,31 @@ impl DaemonState {
                 message: format!("library is not open: {library_id}"),
             })
     }
+
+    pub(crate) fn task_queue_settings_view(&self) -> TaskQueueSettingsView {
+        TaskQueueSettingsView {
+            max_parallel_tasks: self.scheduler_config.global_concurrency_limit,
+            default_max_parallel_tasks: TaskSchedulerConfig::default().global_concurrency_limit,
+            min_parallel_tasks: MIN_TASK_QUEUE_CONCURRENCY,
+            max_parallel_tasks_limit: MAX_TASK_QUEUE_CONCURRENCY,
+            effective_max_parallel_tasks: self.scheduler_config.global_concurrency_limit,
+        }
+    }
+
+    pub(crate) fn update_task_queue_settings(
+        &mut self,
+        input: UpdateTaskQueueSettingsInput,
+    ) -> DomainResult<TaskQueueSettingsView> {
+        validate_task_queue_concurrency(input.max_parallel_tasks)?;
+        persist_daemon_settings(
+            &self.settings_path,
+            &DaemonSettingsFile {
+                max_parallel_tasks: input.max_parallel_tasks,
+            },
+        )?;
+        self.scheduler_config.global_concurrency_limit = input.max_parallel_tasks;
+        Ok(self.task_queue_settings_view())
+    }
 }
 
 impl Clone for DaemonState {
@@ -151,11 +208,54 @@ impl Clone for DaemonState {
                 self.registry_path.clone(),
                 imglab_core::FakeImageProvider::success("fake"),
             ),
+            scheduler_config: self.scheduler_config.clone(),
+            settings_path: self.settings_path.clone(),
             opened_libraries: self.opened_libraries.clone(),
             recovered_libraries: self.recovered_libraries.clone(),
             log_root: self.log_root.clone(),
         }
     }
+}
+
+pub(crate) fn daemon_settings_path(log_root: &Path) -> PathBuf {
+    log_root
+        .parent()
+        .map(|parent| parent.join("daemon-settings.json"))
+        .unwrap_or_else(|| PathBuf::from("daemon-settings.json"))
+}
+
+pub(crate) fn load_scheduler_config(path: &Path) -> TaskSchedulerConfig {
+    let mut config = TaskSchedulerConfig::default();
+    let Ok(contents) = fs::read_to_string(path) else {
+        return config;
+    };
+    let Ok(settings) = serde_json::from_str::<DaemonSettingsFile>(&contents) else {
+        return config;
+    };
+    if validate_task_queue_concurrency(settings.max_parallel_tasks).is_ok() {
+        config.global_concurrency_limit = settings.max_parallel_tasks;
+    }
+    config
+}
+
+fn persist_daemon_settings(path: &Path, settings: &DaemonSettingsFile) -> DomainResult<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| crate::routes::io_error(parent, error))?;
+    }
+    let body =
+        serde_json::to_string_pretty(settings).map_err(crate::routes::serialization_error)?;
+    fs::write(path, body).map_err(|error| crate::routes::io_error(path, error))
+}
+
+pub(crate) fn validate_task_queue_concurrency(value: usize) -> DomainResult<()> {
+    if !(MIN_TASK_QUEUE_CONCURRENCY..=MAX_TASK_QUEUE_CONCURRENCY).contains(&value) {
+        return Err(DomainError::InvalidGenerationParameters {
+            message: format!(
+                "max parallel tasks must be between {MIN_TASK_QUEUE_CONCURRENCY} and {MAX_TASK_QUEUE_CONCURRENCY}"
+            ),
+        });
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
