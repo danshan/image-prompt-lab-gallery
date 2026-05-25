@@ -1,4 +1,5 @@
 mod app_logs;
+mod automation_daemon;
 mod commands;
 mod daemon_client;
 mod errors;
@@ -9,9 +10,11 @@ mod view_mappers;
 mod views;
 
 use app_logs::{AppLogContentView, AppLogView, ReadAppLogInput};
+use automation_daemon::AutomationDaemonStatusView;
 use daemon_client::{
-    BatchCreateTasksInput, DaemonSidecar, DaemonTask, DaemonTaskAttempt, DaemonTaskDetail,
-    DaemonTaskEvent, DaemonTaskInput, DaemonTaskOutput,
+    BatchCreateTasksInput, DaemonScheduleInput, DaemonScheduleRuleInput,
+    DaemonScheduledGenerationJob, DaemonScheduledGenerationRun, DaemonSidecar, DaemonTask,
+    DaemonTaskAttempt, DaemonTaskDetail, DaemonTaskEvent, DaemonTaskInput, DaemonTaskOutput,
 };
 use errors::*;
 use imglab_core::{
@@ -92,6 +95,12 @@ pub fn run() {
             commands::prompts::list_prompt_output_history,
             commands::prompts::save_generation_prompt_as_prompt,
             commands::daemon::daemon_health,
+            commands::daemon::automation_daemon_status,
+            commands::daemon::start_automation_daemon,
+            commands::daemon::stop_automation_daemon,
+            commands::daemon::restart_automation_daemon,
+            commands::daemon::repair_automation_daemon,
+            commands::daemon::set_library_automation_enabled,
             commands::daemon::enqueue_generation_tasks,
             commands::daemon::list_daemon_tasks,
             commands::daemon::get_daemon_task_detail,
@@ -99,6 +108,15 @@ pub fn run() {
             commands::daemon::cancel_daemon_task,
             commands::daemon::retry_daemon_task,
             commands::daemon::duplicate_daemon_task,
+            commands::daemon::create_scheduled_generation_job,
+            commands::daemon::update_scheduled_generation_job,
+            commands::daemon::list_scheduled_generation_jobs,
+            commands::daemon::enable_scheduled_generation_job,
+            commands::daemon::disable_scheduled_generation_job,
+            commands::daemon::delete_scheduled_generation_job,
+            commands::daemon::run_scheduled_generation_now,
+            commands::daemon::list_scheduled_generation_runs,
+            commands::daemon::get_scheduled_generation_run,
             commands::metadata::update_asset_metadata,
             commands::metadata::add_tag_to_asset,
             commands::albums::list_albums,

@@ -8,12 +8,13 @@ const viewIcons: Record<View, IconName> = {
   gallery: "image",
   albums: "album",
   prompts: "fileText",
+  schedules: "queue",
   review: "review",
   queue: "queue",
   settings: "settings",
 };
 
-const views: View[] = ["gallery", "albums", "prompts", "review", "queue", "settings"];
+const views: View[] = ["gallery", "albums", "prompts", "schedules", "review", "queue", "settings"];
 
 export function CommandBar({
   dictionary,

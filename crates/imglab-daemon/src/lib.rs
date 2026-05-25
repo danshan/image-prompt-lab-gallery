@@ -1,10 +1,15 @@
 use imglab_core::{
     classify_task_error, evaluate_scheduler, prepare_generation_request, AssetId,
-    BatchCreateTasksRequest, CreateMetadataSuggestionRequest, CreateTaskInput, DomainError,
-    DomainResult, GenerationOperation, GenerationRequestInput, LibraryId, LibrarySummary,
-    LocalLibraryService, ReorderQueuedTasksRequest, RetryPolicy, TaskAttempt, TaskDetail,
+    BatchAddAssetsToAlbumRequest, BatchCreateTasksRequest, CreateMetadataSuggestionRequest,
+    CreateScheduledGenerationRunRequest, CreateTaskInput, DomainError, DomainResult,
+    GenerationOperation, GenerationRequestInput, LibraryId, LibrarySummary, LocalLibraryService,
+    PromptExpansionRequest, ReorderQueuedTasksRequest, RetryPolicy, SchedulePromptMode,
+    ScheduledGenerationJobId, ScheduledGenerationJobStatus, ScheduledGenerationJobView,
+    ScheduledGenerationRunStatus, ScheduledGenerationRunView, TaskAttempt, TaskDetail,
     TaskErrorClassification, TaskEvent, TaskId, TaskOutput, TaskOutputType, TaskSchedulerConfig,
-    TaskStatus, TaskSummary, TaskType, UpdateTaskStatusRequest, CURRENT_SCHEMA_VERSION,
+    TaskStatus, TaskSummary, TaskType, UpdateScheduledGenerationJobRequest,
+    UpdateScheduledGenerationRunRequest, UpdateTaskStatusRequest,
+    UpsertScheduledGenerationRunOutputRequest, CURRENT_SCHEMA_VERSION,
 };
 use imglab_provider_codex::CodexCliImageProvider;
 use serde::{Deserialize, Serialize};
@@ -25,6 +30,7 @@ const LIBRARY_OPEN_PATH: &str = "/v1/libraries/open";
 const TASKS_PATH: &str = "/v1/tasks";
 const TASKS_BATCH_PATH: &str = "/v1/tasks/batch";
 const TASKS_REORDER_PATH: &str = "/v1/tasks/reorder";
+const SCHEDULES_PATH: &str = "/v1/schedules";
 const MAX_LOG_TAIL_BYTES: usize = 64 * 1024;
 pub const DEFAULT_SCHEDULER_INTERVAL: Duration = Duration::from_secs(2);
 
@@ -49,7 +55,8 @@ pub use runtime_io::{
 };
 pub use task_dto::{capabilities_view, health_view};
 pub use transport::{
-    recover_open_libraries, run_scheduler_loop_iteration, run_scheduler_tick, spawn_scheduler_loop,
+    recover_open_libraries, run_schedule_loop_iteration, run_schedule_tick,
+    run_scheduler_loop_iteration, run_scheduler_tick, spawn_schedule_loop, spawn_scheduler_loop,
 };
 pub use views::{
     bind_loopback_listener, generate_session_token, is_loopback_addr, read_runtime_file,

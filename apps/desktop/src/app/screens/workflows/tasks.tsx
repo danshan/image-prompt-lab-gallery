@@ -370,6 +370,7 @@ function TaskDetailPanel({
   if (!task) {
     return <section className="task-panel task-detail-panel empty-state">{dictionary.workflow.selectTask}</section>;
   }
+  const scheduleOrigin = scheduleOriginFromTaskInput(task.input);
   return (
     <section className="task-panel task-detail-panel">
       <div className="panel-header">
@@ -392,6 +393,19 @@ function TaskDetailPanel({
         <h4>{dictionary.workflow.inputSnapshot}</h4>
         <pre>{JSON.stringify(task.input ?? {}, null, 2)}</pre>
       </section>
+      {scheduleOrigin && (
+        <section className="detail-section">
+          <h4>Schedule origin</h4>
+          <div className="meta-grid">
+            <span>Job</span>
+            <strong>{scheduleOrigin.jobName ?? scheduleOrigin.jobId}</strong>
+            <span>Run</span>
+            <strong>{scheduleOrigin.runId}</strong>
+            <span>Scheduled for</span>
+            <strong>{scheduleOrigin.scheduledFor}</strong>
+          </div>
+        </section>
+      )}
       {task.lastErrorMessage && (
         <section className="detail-section">
           <h4>{dictionary.workflow.error}</h4>
@@ -431,4 +445,23 @@ function TaskDetailPanel({
       </section>
     </section>
   );
+}
+
+function scheduleOriginFromTaskInput(input: Record<string, unknown> | null) {
+  const schedule = input?.schedule;
+  if (!schedule || typeof schedule !== "object") {
+    return null;
+  }
+  const value = schedule as Record<string, unknown>;
+  const jobId = typeof value.jobId === "string" ? value.jobId : null;
+  const runId = typeof value.runId === "string" ? value.runId : null;
+  if (!jobId || !runId) {
+    return null;
+  }
+  return {
+    jobId,
+    runId,
+    jobName: typeof value.jobName === "string" ? value.jobName : null,
+    scheduledFor: typeof value.scheduledFor === "string" ? value.scheduledFor : "-",
+  };
 }

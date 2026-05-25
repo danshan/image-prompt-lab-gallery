@@ -29,6 +29,7 @@ import type {
   AppLog,
   AppLogContent,
   AssetDetail,
+  AutomationDaemonStatus,
   ConfidenceScore,
   DaemonTask,
   DaemonTaskDetail,
@@ -76,11 +77,19 @@ export function SettingsWorkspace({
   selectedLogContent,
   logContentLoading,
   updateState,
+  automationDaemonStatus,
+  automationDaemonLoading,
   onRefreshLogs,
   onSelectLog,
   onCheckUpdate,
   onInstallUpdate,
   onRestartApp,
+  onRefreshAutomationDaemon,
+  onStartAutomationDaemon,
+  onStopAutomationDaemon,
+  onRestartAutomationDaemon,
+  onRepairAutomationDaemon,
+  onSetLibraryAutomationEnabled,
   dictionary,
 }: {
   library: Library | null;
@@ -110,14 +119,22 @@ export function SettingsWorkspace({
   selectedLogContent: AppLogContent | null;
   logContentLoading: boolean;
   updateState: UpdateState;
+  automationDaemonStatus: AutomationDaemonStatus | null;
+  automationDaemonLoading: boolean;
   onRefreshLogs: () => void;
   onSelectLog: (path: string) => void;
   onCheckUpdate: () => void;
   onInstallUpdate: () => void;
   onRestartApp: () => void;
+  onRefreshAutomationDaemon: () => void;
+  onStartAutomationDaemon: () => void;
+  onStopAutomationDaemon: () => void;
+  onRestartAutomationDaemon: () => void;
+  onRepairAutomationDaemon: () => void;
+  onSetLibraryAutomationEnabled: (library: Library, enabled: boolean) => void;
   dictionary: Dictionary;
 }) {
-  const sections: SettingsSection[] = ["libraries", "providers", "updates", "logs"];
+  const sections: SettingsSection[] = ["libraries", "automation", "providers", "updates", "logs"];
   return (
     <section className="settings-workspace">
       <nav className="settings-tabs" aria-label={dictionary.views.settings.title}>
@@ -130,11 +147,13 @@ export function SettingsWorkspace({
           >
             {section === "libraries"
               ? dictionary.workflow.libraries
-              : section === "providers"
-                ? dictionary.workflow.providers
-                : section === "updates"
-                  ? dictionary.workflow.appUpdates
-                  : dictionary.workflow.logs}
+              : section === "automation"
+                ? dictionary.workflow.automation
+                : section === "providers"
+                  ? dictionary.workflow.providers
+                  : section === "updates"
+                    ? dictionary.workflow.appUpdates
+                    : dictionary.workflow.logs}
           </button>
         ))}
       </nav>
@@ -156,6 +175,19 @@ export function SettingsWorkspace({
           onReveal={onReveal}
           pendingLibraryActions={pendingLibraryActions}
           missingLibraryPaths={missingLibraryPaths}
+          dictionary={dictionary}
+        />
+      ) : activeSection === "automation" ? (
+        <SettingsAutomationView
+          libraries={libraries}
+          automationDaemonStatus={automationDaemonStatus}
+          automationDaemonLoading={automationDaemonLoading}
+          onRefreshAutomationDaemon={onRefreshAutomationDaemon}
+          onStartAutomationDaemon={onStartAutomationDaemon}
+          onStopAutomationDaemon={onStopAutomationDaemon}
+          onRestartAutomationDaemon={onRestartAutomationDaemon}
+          onRepairAutomationDaemon={onRepairAutomationDaemon}
+          onSetLibraryAutomationEnabled={onSetLibraryAutomationEnabled}
           dictionary={dictionary}
         />
       ) : activeSection === "providers" ? (
@@ -400,6 +432,119 @@ function LibraryActionIcon({ kind }: { kind: "rename" | "export" | "reveal" | "c
         </>
       )}
     </svg>
+  );
+}
+
+function SettingsAutomationView({
+  libraries,
+  automationDaemonStatus,
+  automationDaemonLoading,
+  onRefreshAutomationDaemon,
+  onStartAutomationDaemon,
+  onStopAutomationDaemon,
+  onRestartAutomationDaemon,
+  onRepairAutomationDaemon,
+  onSetLibraryAutomationEnabled,
+  dictionary,
+}: {
+  libraries: Library[];
+  automationDaemonStatus: AutomationDaemonStatus | null;
+  automationDaemonLoading: boolean;
+  onRefreshAutomationDaemon: () => void;
+  onStartAutomationDaemon: () => void;
+  onStopAutomationDaemon: () => void;
+  onRestartAutomationDaemon: () => void;
+  onRepairAutomationDaemon: () => void;
+  onSetLibraryAutomationEnabled: (library: Library, enabled: boolean) => void;
+  dictionary: Dictionary;
+}) {
+  const enabledLibraries = libraries.filter((item) => item.automationEnabled).length;
+  const daemonEnabled = automationDaemonStatus?.enabled ?? false;
+  const daemonHealthy = automationDaemonStatus?.healthy ?? false;
+  return (
+    <div className="settings-section">
+      <div className="panel-header">
+        <div>
+          <h3>{dictionary.workflow.automation}</h3>
+          <p>
+            {enabledLibraries} {enabledLibraries === 1 ? dictionary.workflow.automationLibrarySingular : dictionary.workflow.automationLibraryPlural}
+          </p>
+        </div>
+        <span className={`status ${daemonHealthy ? "completed" : daemonEnabled ? "queued" : "failed"}`}>
+          {daemonHealthy ? dictionary.workflow.online : daemonEnabled ? dictionary.workflow.enabled : dictionary.workflow.disabled}
+        </span>
+      </div>
+      <div className="automation-panel">
+        <div className="automation-status-grid">
+          <div className="meta-grid">
+            <span>{dictionary.workflow.daemon}</span>
+            <strong>{daemonEnabled ? dictionary.workflow.enabled : dictionary.workflow.disabled}</strong>
+            <span>{dictionary.workflow.health}</span>
+            <strong>{daemonHealthy ? dictionary.workflow.online : dictionary.workflow.offline}</strong>
+            <span>{dictionary.workflow.runtime}</span>
+            <strong className="mono-line">{automationDaemonStatus?.runtimePath ?? "-"}</strong>
+            <span>{dictionary.workflow.launchAgent}</span>
+            <strong className="mono-line">{automationDaemonStatus?.launchAgentPath ?? "-"}</strong>
+          </div>
+          {automationDaemonStatus?.recoverableError && (
+            <p className="error-text">{automationDaemonStatus.recoverableError}</p>
+          )}
+          <div className="row-actions">
+            <button onClick={onRefreshAutomationDaemon} disabled={automationDaemonLoading}>
+              {automationDaemonLoading ? dictionary.workflow.refreshingWithEllipsis : dictionary.workflow.refresh}
+            </button>
+            <button onClick={onStartAutomationDaemon} disabled={automationDaemonLoading || daemonEnabled}>
+              {dictionary.workflow.startDaemon}
+            </button>
+            <button onClick={onStopAutomationDaemon} disabled={automationDaemonLoading || !daemonEnabled}>
+              {dictionary.workflow.stopDaemon}
+            </button>
+            <button onClick={onRestartAutomationDaemon} disabled={automationDaemonLoading || !daemonEnabled}>
+              {dictionary.workflow.restart}
+            </button>
+            <button onClick={onRepairAutomationDaemon} disabled={automationDaemonLoading}>
+              {dictionary.workflow.repair}
+            </button>
+          </div>
+        </div>
+        <div className="library-section-heading library-list-heading">
+          <h4>{dictionary.workflow.automationLibraries}</h4>
+          <p>{dictionary.workflow.automationLibrariesHint}</p>
+        </div>
+        {libraries.length === 0 ? (
+          <div className="empty-state compact">{dictionary.workflow.noLibraryRegistered}</div>
+        ) : (
+          <div className="library-table automation-library-table" role="table" aria-label={dictionary.workflow.automationLibraries}>
+            <div className="library-table-row header" role="row">
+              <span>{dictionary.workflow.name}</span>
+              <span>{dictionary.workflow.path}</span>
+              <span>{dictionary.workflow.automation}</span>
+            </div>
+            {libraries.map((item) => (
+              <div key={item.id} className="library-table-row" role="row">
+                <span className="library-row-main">
+                  <strong>{item.name}</strong>
+                  <small>{item.automationEnabled ? dictionary.workflow.enabled : dictionary.workflow.disabled}</small>
+                </span>
+                <span className="mono-line" title={item.rootPath}>
+                  {item.rootPath}
+                </span>
+                <span className="row-actions library-row-actions">
+                  <label className="toggle-row">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(item.automationEnabled)}
+                      onChange={(event) => onSetLibraryAutomationEnabled(item, event.target.checked)}
+                    />
+                    <span>{item.automationEnabled ? dictionary.workflow.enabled : dictionary.workflow.disabled}</span>
+                  </label>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

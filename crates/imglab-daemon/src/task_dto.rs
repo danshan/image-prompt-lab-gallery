@@ -20,9 +20,8 @@ pub(crate) fn provider_capabilities_view() -> Vec<ProviderCapabilityView> {
         (&fake as &dyn ImageGenerationProvider),
     ]
     .into_iter()
-    .map(|provider| ProviderCapabilityView {
-        provider: provider.name().to_string(),
-        supported_operations: [
+    .map(|provider| {
+        let mut supported_operations = [
             GenerationOperation::TextToImage,
             GenerationOperation::ImageToImage,
         ]
@@ -30,7 +29,12 @@ pub(crate) fn provider_capabilities_view() -> Vec<ProviderCapabilityView> {
         .filter(|operation| provider.supports_operation(*operation))
         .map(generation_operation_as_str)
         .map(str::to_string)
-        .collect(),
+        .collect::<Vec<_>>();
+        supported_operations.push("prompt_expansion".to_string());
+        ProviderCapabilityView {
+            provider: provider.name().to_string(),
+            supported_operations,
+        }
     })
     .collect()
 }

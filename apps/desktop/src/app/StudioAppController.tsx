@@ -65,6 +65,8 @@ import {
   Inspector,
   ReviewWorkspace,
   SettingsWorkspace,
+  SchedulesWorkspace,
+  type ScheduleDraft,
   StudioOverviewBand,
   TaskWorkspace,
   WorkspaceToolbar,
@@ -127,6 +129,7 @@ import type {
   AppLogContent,
   AssetDetail,
   AssetView,
+  AutomationDaemonStatus,
   CommandError,
   DaemonTask,
   DaemonTaskDetail,
@@ -141,6 +144,8 @@ import type {
   PromoteAssetVersionResult,
   ProviderHealth,
   ReferenceSource,
+  ScheduledGenerationJob,
+  ScheduledGenerationRun,
   Suggestion,
   TaskDraft,
   TaskPanel,
@@ -150,7 +155,7 @@ import type {
   ConfidenceScore,
 } from "./types";
 
-const views: View[] = ["gallery", "albums", "prompts", "review", "queue", "settings"];
+const views: View[] = ["gallery", "albums", "prompts", "schedules", "review", "queue", "settings"];
 
 function initialViewFromUrl(): View {
   if (typeof window === "undefined") {
@@ -167,7 +172,7 @@ function initialDrawerOpenFromUrl(): boolean {
   return new URLSearchParams(window.location.search).get("drawer") === "1";
 }
 
-const settingsSections: SettingsSection[] = ["libraries", "providers", "updates", "logs"];
+const settingsSections: SettingsSection[] = ["libraries", "automation", "providers", "updates", "logs"];
 
 function initialSettingsSectionFromUrl(): SettingsSection | null {
   if (typeof window === "undefined") {
@@ -175,6 +180,53 @@ function initialSettingsSectionFromUrl(): SettingsSection | null {
   }
   const section = new URLSearchParams(window.location.search).get("settings");
   return settingsSections.includes(section as SettingsSection) ? (section as SettingsSection) : null;
+}
+
+function scheduleMutationInputFromDraft(draft: ScheduleDraft, libraryPath: string) {
+  const tags = draft.tags.split(",").map((tag) => tag.trim()).filter(Boolean);
+  const scheduleRule = draft.scheduleKind === "interval_minutes"
+    ? { kind: "interval_minutes", minutes: draft.minutes, hours: null, timezoneId: null, localTimeHhMm: null }
+    : draft.scheduleKind === "interval_hours"
+      ? { kind: "interval_hours", minutes: null, hours: draft.hours, timezoneId: null, localTimeHhMm: null }
+      : { kind: "daily_time", minutes: null, hours: null, timezoneId: "UTC", localTimeHhMm: draft.localTimeHhMm };
+  return {
+    libraryPath,
+    name: draft.name,
+    promptMode: draft.promptMode,
+    fixedPrompt: draft.promptMode === "fixed" ? draft.fixedPrompt : null,
+    negativePrompt: null,
+    basePrompt: draft.promptMode === "dynamic" ? draft.basePrompt : null,
+    dynamicPrompt: draft.promptMode === "dynamic" ? draft.dynamicPrompt : null,
+    parameters: {},
+    scheduleRule,
+    targetAlbumId: draft.targetAlbumId,
+    tags,
+    imageProvider: draft.imageProvider,
+    imageModel: draft.imageModel || (draft.imageProvider === "fake" ? "fake" : "codex"),
+    promptExpanderProvider: draft.promptMode === "dynamic" ? draft.promptExpanderProvider : null,
+    promptExpanderModel: draft.promptMode === "dynamic" ? draft.promptExpanderModel : null,
+    nextRunAt: String(Date.now()),
+  };
+}
+
+function scheduleDraftFromJob(job: ScheduledGenerationJob): ScheduleDraft {
+  return {
+    name: job.name,
+    promptMode: job.promptMode,
+    fixedPrompt: job.fixedPrompt ?? "",
+    basePrompt: job.basePrompt ?? "",
+    dynamicPrompt: job.dynamicPrompt ?? "",
+    targetAlbumId: job.targetAlbumId,
+    tags: job.tags.join(", "),
+    imageProvider: job.imageProvider,
+    imageModel: job.imageModel,
+    promptExpanderProvider: job.promptExpanderProvider ?? "codex-cli",
+    promptExpanderModel: job.promptExpanderModel ?? "codex",
+    scheduleKind: job.scheduleRule.kind,
+    minutes: job.scheduleRule.minutes ?? 30,
+    hours: job.scheduleRule.hours ?? 6,
+    localTimeHhMm: job.scheduleRule.localTimeHhMm ?? "09:00",
+  };
 }
 
 export function StudioAppController() {
@@ -302,6 +354,12 @@ export function StudioAppController() {
     activeTaskPanel,
     setActiveTaskPanel,
   } = useTaskGenerationControllerState(runningInTauri);
+  const [scheduledJobs, setScheduledJobs] = useState<ScheduledGenerationJob[]>([]);
+  const [scheduledRuns, setScheduledRuns] = useState<ScheduledGenerationRun[]>([]);
+  const [selectedScheduleJobId, setSelectedScheduleJobId] = useState<string | null>(null);
+  const [schedulesLoading, setSchedulesLoading] = useState(false);
+  const [automationDaemonStatus, setAutomationDaemonStatus] = useState<AutomationDaemonStatus | null>(null);
+  const [automationDaemonLoading, setAutomationDaemonLoading] = useState(false);
   const promptWorkspaceState = usePromptWorkspaceControllerState(runningInTauri);
   const {
     status,
@@ -474,6 +532,201 @@ export function StudioAppController() {
     refreshTasks,
   });
 
+  async function refreshSchedules() {
+    if (!runningInTauri || !library) {
+      setScheduledJobs([]);
+      setScheduledRuns([]);
+      return;
+    }
+    setSchedulesLoading(true);
+    try {
+      const jobs = await invokeCommand<ScheduledGenerationJob[]>("list_scheduled_generation_jobs", {
+        input: { libraryPath: library.rootPath },
+      });
+      setScheduledJobs(jobs);
+      const selectedJobId = selectedScheduleJobId && jobs.some((job) => job.id === selectedScheduleJobId)
+        ? selectedScheduleJobId
+        : jobs[0]?.id ?? null;
+      setSelectedScheduleJobId(selectedJobId);
+      if (selectedJobId) {
+        const runs = await invokeCommand<ScheduledGenerationRun[]>("list_scheduled_generation_runs", {
+          input: { jobId: selectedJobId },
+        });
+        setScheduledRuns(runs);
+      } else {
+        setScheduledRuns([]);
+      }
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    } finally {
+      setSchedulesLoading(false);
+    }
+  }
+
+  async function selectScheduleJob(jobId: string) {
+    setSelectedScheduleJobId(jobId);
+    if (!runningInTauri) {
+      return;
+    }
+    try {
+      const runs = await invokeCommand<ScheduledGenerationRun[]>("list_scheduled_generation_runs", {
+        input: { jobId },
+      });
+      setScheduledRuns((current) => [
+        ...current.filter((run) => run.jobId !== jobId),
+        ...runs,
+      ]);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
+  async function createScheduleJob(draft: ScheduleDraft) {
+    if (!library) {
+      setRecoverableError("Open a real library before creating schedules.");
+      return;
+    }
+    try {
+      const job = await invokeCommand<ScheduledGenerationJob>("create_scheduled_generation_job", {
+        input: scheduleMutationInputFromDraft(draft, library.rootPath),
+      });
+      setScheduledJobs((current) => [job, ...current.filter((item) => item.id !== job.id)]);
+      await selectScheduleJob(job.id);
+      setStatus("Schedule created");
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
+  async function updateScheduleJob(jobId: string, draft: ScheduleDraft) {
+    if (!library) {
+      setRecoverableError("Open a real library before updating schedules.");
+      return;
+    }
+    try {
+      const job = await invokeCommand<ScheduledGenerationJob>("update_scheduled_generation_job", {
+        input: {
+          ...scheduleMutationInputFromDraft(draft, library.rootPath),
+          jobId,
+        },
+      });
+      setScheduledJobs((current) => current.map((item) => (item.id === job.id ? job : item)));
+      setStatus("Schedule updated");
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
+  async function duplicateScheduleJob(job: ScheduledGenerationJob) {
+    if (!library) {
+      setRecoverableError("Open a real library before duplicating schedules.");
+      return;
+    }
+    const draft = scheduleDraftFromJob(job);
+    try {
+      const duplicated = await invokeCommand<ScheduledGenerationJob>("create_scheduled_generation_job", {
+        input: scheduleMutationInputFromDraft({ ...draft, name: `${draft.name} copy` }, library.rootPath),
+      });
+      setScheduledJobs((current) => [duplicated, ...current]);
+      await selectScheduleJob(duplicated.id);
+      setStatus("Schedule duplicated");
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
+  async function deleteScheduleJob(jobId: string) {
+    try {
+      await invokeCommand<void>("delete_scheduled_generation_job", {
+        input: { jobId },
+      });
+      setScheduledJobs((current) => current.filter((job) => job.id !== jobId));
+      setScheduledRuns((current) => current.filter((run) => run.jobId !== jobId));
+      setSelectedScheduleJobId((current) => (current === jobId ? null : current));
+      setStatus("Schedule deleted");
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
+  async function runScheduleNow(jobId: string) {
+    try {
+      const run = await invokeCommand<ScheduledGenerationRun>("run_scheduled_generation_now", {
+        input: { jobId },
+      });
+      setScheduledRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
+      await refreshTasks();
+      setStatus("Schedule run queued");
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
+  async function toggleScheduleJob(job: ScheduledGenerationJob) {
+    const command = job.status === "active" ? "disable_scheduled_generation_job" : "enable_scheduled_generation_job";
+    try {
+      const updated = await invokeCommand<ScheduledGenerationJob>(command, {
+        input: { jobId: job.id },
+      });
+      setScheduledJobs((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
+  async function refreshAutomationDaemonStatus() {
+    if (!runningInTauri) {
+      setAutomationDaemonStatus(null);
+      return;
+    }
+    setAutomationDaemonLoading(true);
+    try {
+      const daemonStatus = await invokeCommand<AutomationDaemonStatus>("automation_daemon_status");
+      setAutomationDaemonStatus(daemonStatus);
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    } finally {
+      setAutomationDaemonLoading(false);
+    }
+  }
+
+  async function runAutomationDaemonAction(
+    command: "start_automation_daemon" | "stop_automation_daemon" | "restart_automation_daemon" | "repair_automation_daemon",
+  ) {
+    setAutomationDaemonLoading(true);
+    try {
+      const daemonStatus = await invokeCommand<AutomationDaemonStatus>(command);
+      setAutomationDaemonStatus(daemonStatus);
+      setStatus("Automation daemon updated");
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    } finally {
+      setAutomationDaemonLoading(false);
+    }
+  }
+
+  async function setLibraryAutomationEnabled(targetLibrary: Library, enabled: boolean) {
+    try {
+      const updated = await invokeCommand<Library>("set_library_automation_enabled", {
+        input: { libraryId: targetLibrary.id, enabled },
+      });
+      setLibraries((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      if (library?.id === updated.id) {
+        setLibrary(updated);
+      }
+      setStatus(enabled ? "Library automation enabled" : "Library automation disabled");
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
+  }
 
   const {
     displayedGallery,
@@ -593,6 +846,18 @@ export function StudioAppController() {
       void refreshPrompts();
     }
   }, [activeView, library?.rootPath, promptWorkspaceState.promptSearch]);
+
+  useEffect(() => {
+    if (activeView === "schedules") {
+      void refreshSchedules();
+    }
+  }, [activeView, library?.rootPath]);
+
+  useEffect(() => {
+    if (activeView === "settings" && settingsSection === "automation") {
+      void refreshAutomationDaemonStatus();
+    }
+  }, [activeView, settingsSection]);
 
   async function refreshAlbums() {
     if (!runningInTauri || !library) {
@@ -1415,6 +1680,29 @@ export function StudioAppController() {
             dictionary={dictionary}
           />
         )}
+        {activeView === "schedules" && (
+          <SchedulesWorkspace
+            library={library}
+            albums={albums}
+            jobs={scheduledJobs}
+            runs={scheduledRuns}
+            selectedJobId={selectedScheduleJobId}
+            defaultProvider={provider}
+            loading={schedulesLoading}
+            onSelectJob={(jobId) => void selectScheduleJob(jobId)}
+            onRefresh={() => void refreshSchedules()}
+            onCreateJob={(draft) => void createScheduleJob(draft)}
+            onUpdateJob={(jobId, draft) => void updateScheduleJob(jobId, draft)}
+            onDuplicateJob={(job) => void duplicateScheduleJob(job)}
+            onDeleteJob={(jobId) => void deleteScheduleJob(jobId)}
+            onRunNow={(jobId) => void runScheduleNow(jobId)}
+            onToggleJob={(job) => void toggleScheduleJob(job)}
+            onOpenTask={(taskId) => {
+              selectTask(taskId);
+              changeView("queue");
+            }}
+          />
+        )}
         {activeView === "queue" && (
           <div className="workspace-fill">
             <TaskWorkspace
@@ -1469,11 +1757,19 @@ export function StudioAppController() {
             selectedLogContent={selectedLogContent}
             logContentLoading={logContentLoading}
             updateState={updateState}
+            automationDaemonStatus={automationDaemonStatus}
+            automationDaemonLoading={automationDaemonLoading}
             onRefreshLogs={() => void refreshAppLogs()}
             onSelectLog={(path) => void readAppLog(path)}
             onCheckUpdate={() => void checkForAppUpdate()}
             onInstallUpdate={() => void installAppUpdate()}
             onRestartApp={() => void restartApp()}
+            onRefreshAutomationDaemon={() => void refreshAutomationDaemonStatus()}
+            onStartAutomationDaemon={() => void runAutomationDaemonAction("start_automation_daemon")}
+            onStopAutomationDaemon={() => void runAutomationDaemonAction("stop_automation_daemon")}
+            onRestartAutomationDaemon={() => void runAutomationDaemonAction("restart_automation_daemon")}
+            onRepairAutomationDaemon={() => void runAutomationDaemonAction("repair_automation_daemon")}
+            onSetLibraryAutomationEnabled={(item, enabled) => void setLibraryAutomationEnabled(item, enabled)}
             dictionary={dictionary}
           />
         )}

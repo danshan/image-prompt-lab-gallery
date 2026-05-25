@@ -1,6 +1,6 @@
 import type { ReviewFieldName } from "./workflows/review/state.js";
 
-export type View = "gallery" | "albums" | "prompts" | "review" | "queue" | "settings";
+export type View = "gallery" | "albums" | "prompts" | "schedules" | "review" | "queue" | "settings";
 export type TaskPanel = "compose" | "queue" | "detail";
 
 export const GALLERY_REFRESH_DEBOUNCE_MS = 250;
@@ -24,6 +24,7 @@ export type Library = {
   name: string;
   rootPath: string;
   hidden: boolean;
+  automationEnabled?: boolean;
   schemaVersion: number;
 };
 
@@ -44,6 +45,14 @@ export type ProviderHealth = {
   availability: string;
   credentialState: string;
   supportedOperations: string[];
+  recoverableError: string | null;
+};
+
+export type AutomationDaemonStatus = {
+  enabled: boolean;
+  healthy: boolean;
+  launchAgentPath: string;
+  runtimePath: string;
   recoverableError: string | null;
 };
 
@@ -401,6 +410,57 @@ export type DaemonTaskDetail = {
   outputs: DaemonTaskOutput[];
   logTail: string;
   logTailTruncated: boolean;
+};
+
+export type ScheduleRule = {
+  kind: "interval_minutes" | "interval_hours" | "daily_time";
+  minutes: number | null;
+  hours: number | null;
+  timezoneId: string | null;
+  localTimeHhMm: string | null;
+};
+
+export type ScheduledGenerationJob = {
+  id: string;
+  libraryId: string;
+  name: string;
+  status: "active" | "paused" | "disabled";
+  promptMode: "fixed" | "dynamic";
+  fixedPrompt: string | null;
+  negativePrompt: string | null;
+  basePrompt: string | null;
+  dynamicPrompt: string | null;
+  promptExpanderProvider: string | null;
+  promptExpanderModel: string | null;
+  imageProvider: string;
+  imageModel: string;
+  parameters: Record<string, unknown> | null;
+  scheduleRule: ScheduleRule;
+  targetAlbumId: string;
+  tags: string[];
+  nextRunAt: string;
+  lastRunAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  pausedAt: string | null;
+};
+
+export type ScheduledGenerationRun = {
+  id: string;
+  jobId: string;
+  libraryId: string;
+  status: string;
+  scheduledFor: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  skipReason: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  expandedPrompt: string | null;
+  imageTaskId: string | null;
+  outputAssetCount: number;
+  taggedAssetCount: number;
+  albumAddedAssetCount: number;
 };
 
 export type CommandError = {

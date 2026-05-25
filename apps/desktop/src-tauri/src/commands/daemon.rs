@@ -6,6 +6,42 @@ pub(crate) fn daemon_health(state: tauri::State<'_, DesktopState>) -> Result<boo
 }
 
 #[tauri::command]
+pub(crate) fn automation_daemon_status() -> AutomationDaemonStatusView {
+    crate::automation_daemon::automation_daemon_status()
+}
+
+#[tauri::command]
+pub(crate) fn start_automation_daemon() -> Result<AutomationDaemonStatusView, CommandError> {
+    crate::automation_daemon::install_automation_daemon()
+}
+
+#[tauri::command]
+pub(crate) fn stop_automation_daemon() -> Result<AutomationDaemonStatusView, CommandError> {
+    crate::automation_daemon::uninstall_automation_daemon()
+}
+
+#[tauri::command]
+pub(crate) fn restart_automation_daemon() -> Result<AutomationDaemonStatusView, CommandError> {
+    crate::automation_daemon::restart_automation_daemon()
+}
+
+#[tauri::command]
+pub(crate) fn repair_automation_daemon() -> Result<AutomationDaemonStatusView, CommandError> {
+    crate::automation_daemon::repair_automation_daemon()
+}
+
+#[tauri::command]
+pub(crate) fn set_library_automation_enabled(
+    input: LibraryAutomationInput,
+) -> Result<LibraryView, CommandError> {
+    desktop_app()
+        .schedules()
+        .set_library_automation_enabled(&LibraryId(input.library_id), input.enabled)
+        .map(library_view)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
 pub(crate) fn enqueue_generation_tasks(
     input: EnqueueGenerationTasksInput,
     state: tauri::State<'_, DesktopState>,
@@ -87,6 +123,122 @@ pub(crate) fn duplicate_daemon_task(
     ensure_daemon_client(&state)?
         .duplicate_task(&input.task_id)
         .map(daemon_task_view)
+}
+
+#[tauri::command]
+pub(crate) fn create_scheduled_generation_job(
+    input: DaemonScheduleMutationInput,
+    state: tauri::State<'_, DesktopState>,
+) -> Result<DaemonScheduledGenerationJob, CommandError> {
+    let client = ensure_daemon_client(&state)?;
+    let library_id = client.open_library(&input.library_path)?;
+    client.create_schedule(schedule_mutation_to_daemon_input(input, library_id))
+}
+
+#[tauri::command]
+pub(crate) fn update_scheduled_generation_job(
+    input: DaemonScheduleMutationInput,
+    state: tauri::State<'_, DesktopState>,
+) -> Result<DaemonScheduledGenerationJob, CommandError> {
+    let client = ensure_daemon_client(&state)?;
+    let library_id = client.open_library(&input.library_path)?;
+    let job_id = input.job_id.clone().ok_or_else(|| CommandError {
+        code: "InvalidScheduleJob".to_string(),
+        message: "schedule job id is required for update".to_string(),
+        recoverable: true,
+    })?;
+    client.update_schedule(
+        &job_id,
+        schedule_mutation_to_daemon_input(input, library_id),
+    )
+}
+
+#[tauri::command]
+pub(crate) fn list_scheduled_generation_jobs(
+    input: DaemonScheduleQueryInput,
+    state: tauri::State<'_, DesktopState>,
+) -> Result<Vec<DaemonScheduledGenerationJob>, CommandError> {
+    let client = ensure_daemon_client(&state)?;
+    let library_id = client.open_library(&input.library_path)?;
+    client.list_schedules(&library_id)
+}
+
+#[tauri::command]
+pub(crate) fn enable_scheduled_generation_job(
+    input: DaemonScheduleActionInput,
+    state: tauri::State<'_, DesktopState>,
+) -> Result<DaemonScheduledGenerationJob, CommandError> {
+    ensure_daemon_client(&state)?.enable_schedule(&input.job_id)
+}
+
+#[tauri::command]
+pub(crate) fn disable_scheduled_generation_job(
+    input: DaemonScheduleActionInput,
+    state: tauri::State<'_, DesktopState>,
+) -> Result<DaemonScheduledGenerationJob, CommandError> {
+    ensure_daemon_client(&state)?.disable_schedule(&input.job_id)
+}
+
+#[tauri::command]
+pub(crate) fn delete_scheduled_generation_job(
+    input: DaemonScheduleActionInput,
+    state: tauri::State<'_, DesktopState>,
+) -> Result<(), CommandError> {
+    ensure_daemon_client(&state)?.delete_schedule(&input.job_id)
+}
+
+#[tauri::command]
+pub(crate) fn run_scheduled_generation_now(
+    input: DaemonScheduleActionInput,
+    state: tauri::State<'_, DesktopState>,
+) -> Result<DaemonScheduledGenerationRun, CommandError> {
+    ensure_daemon_client(&state)?.run_schedule_now(&input.job_id)
+}
+
+#[tauri::command]
+pub(crate) fn list_scheduled_generation_runs(
+    input: DaemonScheduleActionInput,
+    state: tauri::State<'_, DesktopState>,
+) -> Result<Vec<DaemonScheduledGenerationRun>, CommandError> {
+    ensure_daemon_client(&state)?.list_schedule_runs(&input.job_id)
+}
+
+#[tauri::command]
+pub(crate) fn get_scheduled_generation_run(
+    input: DaemonScheduleRunActionInput,
+    state: tauri::State<'_, DesktopState>,
+) -> Result<DaemonScheduledGenerationRun, CommandError> {
+    ensure_daemon_client(&state)?.get_schedule_run(&input.job_id, &input.run_id)
+}
+
+fn schedule_mutation_to_daemon_input(
+    input: DaemonScheduleMutationInput,
+    library_id: String,
+) -> DaemonScheduleInput {
+    DaemonScheduleInput {
+        library_id,
+        name: input.name,
+        prompt_mode: input.prompt_mode,
+        fixed_prompt: input.fixed_prompt,
+        negative_prompt: input.negative_prompt,
+        base_prompt: input.base_prompt,
+        dynamic_prompt: input.dynamic_prompt,
+        prompt_expander_provider: input.prompt_expander_provider,
+        prompt_expander_model: input.prompt_expander_model,
+        image_provider: input.image_provider,
+        image_model: input.image_model,
+        parameters: input.parameters,
+        schedule_rule: DaemonScheduleRuleInput {
+            kind: input.schedule_rule.kind,
+            minutes: input.schedule_rule.minutes,
+            hours: input.schedule_rule.hours,
+            timezone_id: input.schedule_rule.timezone_id,
+            local_time_hh_mm: input.schedule_rule.local_time_hh_mm,
+        },
+        target_album_id: input.target_album_id,
+        tags: input.tags,
+        next_run_at: input.next_run_at,
+    }
 }
 
 pub(crate) fn generation_draft_to_daemon_task(

@@ -1,8 +1,8 @@
-use imglab_core::application::ports::ImageGenerationProvider;
+use imglab_core::application::ports::{ImageGenerationProvider, PromptExpansionProvider};
 use imglab_core::domain::generation::{
     GeneratedImage, GenerationOperation, GenerationParameters, GenerationResult,
 };
-use imglab_core::{DomainError, DomainResult};
+use imglab_core::{DomainError, DomainResult, PromptExpansionRequest, PromptExpansionResult};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
@@ -45,12 +45,40 @@ impl CodexCliImageProvider {
         self
     }
 
+    fn provider_name(&self) -> &'static str {
+        "codex-cli"
+    }
+
     pub fn build_command(
         &self,
         parameters: &GenerationParameters,
     ) -> DomainResult<CodexCliCommand> {
         self.validate_parameters(parameters)?;
         let prompt = codex_prompt(parameters);
+        let args = vec![
+            "exec".to_string(),
+            "--cd".to_string(),
+            self.work_dir.display().to_string(),
+            "--sandbox".to_string(),
+            "workspace-write".to_string(),
+            "--skip-git-repo-check".to_string(),
+            "--json".to_string(),
+            prompt.clone(),
+        ];
+
+        Ok(CodexCliCommand {
+            program: self.codex_bin.clone(),
+            args,
+            prompt,
+        })
+    }
+
+    pub fn build_prompt_expansion_command(
+        &self,
+        request: &PromptExpansionRequest,
+    ) -> DomainResult<CodexCliCommand> {
+        validate_prompt_expansion_request(request)?;
+        let prompt = codex_prompt_expansion_prompt(request);
         let args = vec![
             "exec".to_string(),
             "--cd".to_string(),
@@ -78,7 +106,7 @@ impl CodexCliImageProvider {
         let files = parse_final_generated_image_paths(output);
         if files.is_empty() {
             return Err(DomainError::GenerationFailed {
-                provider: self.name().to_string(),
+                provider: self.provider_name().to_string(),
                 message: "codex output did not include a generated image path".to_string(),
             });
         }
@@ -87,7 +115,7 @@ impl CodexCliImageProvider {
         for file in files {
             if !file.is_file() {
                 return Err(DomainError::GenerationFailed {
-                    provider: self.name().to_string(),
+                    provider: self.provider_name().to_string(),
                     message: format!("codex output file does not exist: {}", file.display()),
                 });
             }
@@ -153,7 +181,7 @@ impl CodexCliImageProvider {
 
         let program = resolve_codex_program(&command.program).ok_or_else(|| {
             DomainError::GenerationFailed {
-                provider: self.name().to_string(),
+                provider: self.provider_name().to_string(),
                 message: format!(
                     "codex CLI executable not found. Set CODEX_CLI_BIN to the absolute codex path, or ensure codex is available in PATH. Requested: {}; log: {}",
                     command.program.display(),
@@ -175,7 +203,7 @@ impl CodexCliImageProvider {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|error| DomainError::GenerationFailed {
-                provider: self.name().to_string(),
+                provider: self.provider_name().to_string(),
                 message: format!(
                     "failed to run codex CLI: {error}; log: {}",
                     log_path.display()
@@ -194,17 +222,17 @@ impl CodexCliImageProvider {
             if should_cancel() {
                 let _ = child.kill();
                 let _ = child.wait();
-                let _ = join_stream(stdout_handle, &log_path, self.name());
-                let _ = join_stream(stderr_handle, &log_path, self.name());
+                let _ = join_stream(stdout_handle, &log_path, self.provider_name());
+                let _ = join_stream(stderr_handle, &log_path, self.provider_name());
                 return Err(DomainError::GenerationFailed {
-                    provider: self.name().to_string(),
+                    provider: self.provider_name().to_string(),
                     message: format!("codex CLI canceled by user; log: {}", log_path.display()),
                 });
             }
             match child
                 .try_wait()
                 .map_err(|error| DomainError::GenerationFailed {
-                    provider: self.name().to_string(),
+                    provider: self.provider_name().to_string(),
                     message: format!(
                         "failed to poll codex CLI: {error}; log: {}",
                         log_path.display()
@@ -214,13 +242,13 @@ impl CodexCliImageProvider {
                 None => thread::sleep(Duration::from_millis(100)),
             }
         };
-        let stdout = join_stream(stdout_handle, &log_path, self.name())?;
-        let stderr = join_stream(stderr_handle, &log_path, self.name())?;
+        let stdout = join_stream(stdout_handle, &log_path, self.provider_name())?;
+        let stderr = join_stream(stderr_handle, &log_path, self.provider_name())?;
         let combined_output = format!("{stdout}\n{stderr}");
 
         if !status.success() {
             return Err(DomainError::GenerationFailed {
-                provider: self.name().to_string(),
+                provider: self.provider_name().to_string(),
                 message: format!(
                     "codex CLI exited with {status}; log: {}; output: {combined_output}",
                     log_path.display()
@@ -236,6 +264,161 @@ impl CodexCliImageProvider {
         })
         .to_string();
         self.parse_output(&combined_output, raw_request_json, combined_output.clone())
+    }
+
+    pub fn expand_prompt_until_cancelled<F>(
+        &self,
+        request: &PromptExpansionRequest,
+        should_cancel: F,
+    ) -> DomainResult<PromptExpansionResult>
+    where
+        F: Fn() -> bool,
+    {
+        let command = self.build_prompt_expansion_command(request)?;
+        let log_path = self.log_path();
+        let output = self.run_codex_command(&command, &log_path, should_cancel)?;
+        let expanded_prompt =
+            parse_expanded_prompt(&output).ok_or_else(|| DomainError::GenerationFailed {
+                provider: self.provider_name().to_string(),
+                message: format!(
+                    "codex output did not include an expanded prompt block; log: {}",
+                    log_path.display()
+                ),
+            })?;
+        Ok(PromptExpansionResult {
+            expanded_prompt,
+            provider_metadata_json: serde_json::json!({
+                "provider": self.provider_name(),
+                "model": request.model,
+                "source": "codex-cli-prompt-expansion",
+                "logPath": log_path,
+            })
+            .to_string(),
+            raw_request_json: Some(
+                serde_json::json!({
+                    "program": command.program,
+                    "args": command.args,
+                    "prompt": command.prompt,
+                    "log_path": log_path,
+                })
+                .to_string(),
+            ),
+            raw_response_json: Some(output),
+        })
+    }
+
+    fn run_codex_command<F>(
+        &self,
+        command: &CodexCliCommand,
+        log_path: &Path,
+        should_cancel: F,
+    ) -> DomainResult<String>
+    where
+        F: Fn() -> bool,
+    {
+        if let Some(parent) = log_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|error| DomainError::Io {
+                path: parent.display().to_string(),
+                message: error.to_string(),
+            })?;
+        }
+        let mut log_file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(log_path)
+            .map_err(|error| DomainError::Io {
+                path: log_path.display().to_string(),
+                message: error.to_string(),
+            })?;
+        writeln!(
+            log_file,
+            "program: {}\nargs: {}\n",
+            command.program.display(),
+            command.args.join(" ")
+        )
+        .map_err(|error| DomainError::Io {
+            path: log_path.display().to_string(),
+            message: error.to_string(),
+        })?;
+
+        let program = resolve_codex_program(&command.program).ok_or_else(|| {
+            DomainError::GenerationFailed {
+                provider: self.provider_name().to_string(),
+                message: format!(
+                    "codex CLI executable not found. Set CODEX_CLI_BIN to the absolute codex path, or ensure codex is available in PATH. Requested: {}; log: {}",
+                    command.program.display(),
+                    log_path.display()
+                ),
+            }
+        })?;
+        writeln!(log_file, "resolved_program: {}\n", program.display()).map_err(|error| {
+            DomainError::Io {
+                path: log_path.display().to_string(),
+                message: error.to_string(),
+            }
+        })?;
+
+        let mut child = Command::new(&program)
+            .args(&command.args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| DomainError::GenerationFailed {
+                provider: self.provider_name().to_string(),
+                message: format!(
+                    "failed to run codex CLI: {error}; log: {}",
+                    log_path.display()
+                ),
+            })?;
+
+        let stdout_handle = child
+            .stdout
+            .take()
+            .map(|stdout| stream_to_log(stdout, log_path.to_path_buf(), "[stdout] ".to_string()));
+        let stderr_handle = child
+            .stderr
+            .take()
+            .map(|stderr| stream_to_log(stderr, log_path.to_path_buf(), "[stderr] ".to_string()));
+        let status = loop {
+            if should_cancel() {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = join_stream(stdout_handle, log_path, self.provider_name());
+                let _ = join_stream(stderr_handle, log_path, self.provider_name());
+                return Err(DomainError::GenerationFailed {
+                    provider: self.provider_name().to_string(),
+                    message: format!("codex CLI canceled by user; log: {}", log_path.display()),
+                });
+            }
+            match child
+                .try_wait()
+                .map_err(|error| DomainError::GenerationFailed {
+                    provider: self.provider_name().to_string(),
+                    message: format!(
+                        "failed to poll codex CLI: {error}; log: {}",
+                        log_path.display()
+                    ),
+                })? {
+                Some(status) => break status,
+                None => thread::sleep(Duration::from_millis(100)),
+            }
+        };
+        let stdout = join_stream(stdout_handle, log_path, self.provider_name())?;
+        let stderr = join_stream(stderr_handle, log_path, self.provider_name())?;
+        let combined_output = format!("{stdout}\n{stderr}");
+
+        if !status.success() {
+            return Err(DomainError::GenerationFailed {
+                provider: self.provider_name().to_string(),
+                message: format!(
+                    "codex CLI exited with {status}; log: {}; output: {combined_output}",
+                    log_path.display()
+                ),
+            });
+        }
+        Ok(combined_output)
     }
 
     fn log_path(&self) -> PathBuf {
@@ -303,6 +486,22 @@ impl ImageGenerationProvider for CodexCliImageProvider {
         }
 
         self.generate_from_text(parameters)
+    }
+}
+
+impl PromptExpansionProvider for CodexCliImageProvider {
+    fn name(&self) -> &'static str {
+        "codex-cli"
+    }
+
+    fn expand_prompt(
+        &self,
+        request: &PromptExpansionRequest,
+    ) -> DomainResult<PromptExpansionResult> {
+        let cancel_path = self.cancel_path.clone();
+        self.expand_prompt_until_cancelled(request, move || {
+            cancel_path.as_ref().is_some_and(|path| path.exists())
+        })
     }
 }
 
@@ -426,6 +625,89 @@ After generation, locate the newest generated image under $CODEX_HOME/generated_
     )
 }
 
+fn codex_prompt_expansion_prompt(request: &PromptExpansionRequest) -> String {
+    format!(
+        r#"You are expanding an image generation prompt for a local-first image automation tool.
+
+Return exactly one final prompt inside these markers:
+<expanded_prompt>
+...
+</expanded_prompt>
+
+Rules:
+- Keep the result as an image generation prompt, not an explanation.
+- Preserve the core intent of the base prompt.
+- Apply only the changes explicitly requested by the dynamic prompt.
+- Do not add extra subjects, settings, story details, style details, or constraints unless the dynamic prompt asks for them.
+- Do not introduce details outside the scope of the dynamic prompt.
+- Do not mention these instructions or the markers outside the marked block.
+- Do not wrap the final prompt in quotes, code fences, escaped newlines, or other decoration.
+
+Base prompt:
+{base_prompt}
+
+Dynamic prompt:
+{dynamic_prompt}
+
+Context JSON:
+{context_json}"#,
+        base_prompt = request.base_prompt.trim(),
+        dynamic_prompt = request.dynamic_prompt.trim(),
+        context_json = request.context_json.as_deref().unwrap_or("{}")
+    )
+}
+
+fn validate_prompt_expansion_request(request: &PromptExpansionRequest) -> DomainResult<()> {
+    if request.base_prompt.trim().is_empty() {
+        return Err(DomainError::InvalidGenerationParameters {
+            message: "base prompt must not be empty".to_string(),
+        });
+    }
+    if request.dynamic_prompt.trim().is_empty() {
+        return Err(DomainError::InvalidGenerationParameters {
+            message: "dynamic prompt must not be empty".to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn parse_expanded_prompt(output: &str) -> Option<String> {
+    let (_, tail) = output.rsplit_once("<expanded_prompt>")?;
+    let (prompt, _) = tail.split_once("</expanded_prompt>")?;
+    normalize_expanded_prompt(prompt)
+}
+
+fn normalize_expanded_prompt(prompt: &str) -> Option<String> {
+    let mut normalized = prompt.trim_matches(is_prompt_boundary_noise);
+    loop {
+        if let Some(stripped) = normalized
+            .strip_prefix("\\n")
+            .or_else(|| normalized.strip_prefix("\\r"))
+            .or_else(|| normalized.strip_prefix("\\t"))
+        {
+            normalized = stripped.trim_matches(is_prompt_boundary_noise);
+            continue;
+        }
+        if let Some(stripped) = normalized
+            .strip_suffix("\\n")
+            .or_else(|| normalized.strip_suffix("\\r"))
+            .or_else(|| normalized.strip_suffix("\\t"))
+        {
+            normalized = stripped.trim_matches(is_prompt_boundary_noise);
+            continue;
+        }
+        break;
+    }
+    let normalized = normalized.trim_matches(is_prompt_boundary_noise);
+    (!normalized.is_empty()).then(|| normalized.to_string())
+}
+
+fn is_prompt_boundary_noise(character: char) -> bool {
+    character.is_whitespace()
+        || character.is_control()
+        || matches!(character, '\u{feff}' | '"' | '\'' | '`')
+}
+
 fn parse_generated_image_paths(output: &str) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     for token in output.split(|character: char| {
@@ -529,6 +811,72 @@ mod tests {
 
         assert!(provider.supports_operation(GenerationOperation::TextToImage));
         assert!(provider.supports_operation(GenerationOperation::ImageToImage));
+    }
+
+    #[test]
+    fn builds_prompt_expansion_command() {
+        let provider = CodexCliImageProvider::new("codex", "/tmp/work");
+        let command = provider
+            .build_prompt_expansion_command(&PromptExpansionRequest {
+                provider: "codex-cli".to_string(),
+                model: Some("gpt-5".to_string()),
+                base_prompt: "A cinematic landscape".to_string(),
+                dynamic_prompt: "Make it rainy at night".to_string(),
+                context_json: Some("{\"job\":\"test\"}".to_string()),
+            })
+            .expect("command");
+
+        assert_eq!(command.program, PathBuf::from("codex"));
+        assert!(command.args.contains(&"exec".to_string()));
+        assert!(command.prompt.contains("<expanded_prompt>"));
+        assert!(command.prompt.contains("A cinematic landscape"));
+        assert!(command.prompt.contains("Make it rainy at night"));
+    }
+
+    #[test]
+    fn parses_expanded_prompt_from_marked_block() {
+        let output = r#"
+{"type":"message","content":"working"}
+<expanded_prompt>
+A cinematic rainy night landscape with reflective streets.
+</expanded_prompt>
+"#;
+
+        assert_eq!(
+            parse_expanded_prompt(output).as_deref(),
+            Some("A cinematic rainy night landscape with reflective streets.")
+        );
+    }
+
+    #[test]
+    fn parses_expanded_prompt_without_boundary_escape_noise() {
+        let output = r#"
+{"type":"item.completed","item":{"text":"<expanded_prompt>\nA cinematic rainy night landscape.\n</expanded_prompt>"}}
+"#;
+
+        assert_eq!(
+            parse_expanded_prompt(output).as_deref(),
+            Some("A cinematic rainy night landscape.")
+        );
+    }
+
+    #[test]
+    fn rejects_prompt_expansion_without_dynamic_prompt() {
+        let provider = CodexCliImageProvider::new("codex", "/tmp/work");
+        let error = provider
+            .build_prompt_expansion_command(&PromptExpansionRequest {
+                provider: "codex-cli".to_string(),
+                model: None,
+                base_prompt: "A cinematic landscape".to_string(),
+                dynamic_prompt: " ".to_string(),
+                context_json: None,
+            })
+            .expect_err("empty dynamic prompt should fail");
+
+        assert!(matches!(
+            error,
+            DomainError::InvalidGenerationParameters { .. }
+        ));
     }
 
     #[test]

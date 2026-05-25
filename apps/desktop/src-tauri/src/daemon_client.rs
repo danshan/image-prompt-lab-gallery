@@ -56,7 +56,7 @@ pub struct DaemonSidecar {
     pub child: Child,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DaemonTaskInput {
     pub task_type: String,
@@ -73,6 +73,94 @@ pub struct DaemonTaskInput {
 pub struct BatchCreateTasksInput {
     pub library_id: String,
     pub tasks: Vec<DaemonTaskInput>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DaemonScheduleRuleInput {
+    pub kind: String,
+    pub minutes: Option<u32>,
+    pub hours: Option<u32>,
+    pub timezone_id: Option<String>,
+    pub local_time_hh_mm: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DaemonScheduleInput {
+    pub library_id: String,
+    pub name: String,
+    pub prompt_mode: String,
+    pub fixed_prompt: Option<String>,
+    pub negative_prompt: Option<String>,
+    pub base_prompt: Option<String>,
+    pub dynamic_prompt: Option<String>,
+    pub prompt_expander_provider: Option<String>,
+    pub prompt_expander_model: Option<String>,
+    pub image_provider: String,
+    pub image_model: String,
+    pub parameters: Value,
+    pub schedule_rule: DaemonScheduleRuleInput,
+    pub target_album_id: String,
+    pub tags: Vec<String>,
+    pub next_run_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DaemonScheduleRule {
+    pub kind: String,
+    pub minutes: Option<u32>,
+    pub hours: Option<u32>,
+    pub timezone_id: Option<String>,
+    pub local_time_hh_mm: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DaemonScheduledGenerationJob {
+    pub id: String,
+    pub library_id: String,
+    pub name: String,
+    pub status: String,
+    pub prompt_mode: String,
+    pub fixed_prompt: Option<String>,
+    pub negative_prompt: Option<String>,
+    pub base_prompt: Option<String>,
+    pub dynamic_prompt: Option<String>,
+    pub prompt_expander_provider: Option<String>,
+    pub prompt_expander_model: Option<String>,
+    pub image_provider: String,
+    pub image_model: String,
+    pub parameters: Value,
+    pub schedule_rule: DaemonScheduleRule,
+    pub target_album_id: String,
+    pub tags: Vec<String>,
+    pub next_run_at: String,
+    pub last_run_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub paused_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DaemonScheduledGenerationRun {
+    pub id: String,
+    pub job_id: String,
+    pub library_id: String,
+    pub status: String,
+    pub scheduled_for: String,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub skip_reason: Option<String>,
+    pub error_code: Option<String>,
+    pub error_message: Option<String>,
+    pub expanded_prompt: Option<String>,
+    pub image_task_id: Option<String>,
+    pub output_asset_count: u32,
+    pub tagged_asset_count: u32,
+    pub album_added_asset_count: u32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -292,6 +380,87 @@ impl DaemonClient {
 
     pub fn tail_task_log(&self, task_id: &str) -> Result<DaemonLogTail, CommandError> {
         let response = self.request("GET", &format!("/v1/tasks/{task_id}/logs/tail"), None)?;
+        serde_json::from_str(&response).map_err(daemon_parse_error)
+    }
+
+    pub fn create_schedule(
+        &self,
+        input: DaemonScheduleInput,
+    ) -> Result<DaemonScheduledGenerationJob, CommandError> {
+        let body = serde_json::to_value(input).map_err(daemon_parse_error)?;
+        let response = self.request("POST", "/v1/schedules", Some(body))?;
+        serde_json::from_str(&response).map_err(daemon_parse_error)
+    }
+
+    pub fn update_schedule(
+        &self,
+        job_id: &str,
+        input: DaemonScheduleInput,
+    ) -> Result<DaemonScheduledGenerationJob, CommandError> {
+        let body = serde_json::to_value(input).map_err(daemon_parse_error)?;
+        let response = self.request("PUT", &format!("/v1/schedules/{job_id}"), Some(body))?;
+        serde_json::from_str(&response).map_err(daemon_parse_error)
+    }
+
+    pub fn list_schedules(
+        &self,
+        library_id: &str,
+    ) -> Result<Vec<DaemonScheduledGenerationJob>, CommandError> {
+        let response = self.request(
+            "GET",
+            &format!("/v1/schedules?library_id={library_id}"),
+            None,
+        )?;
+        serde_json::from_str(&response).map_err(daemon_parse_error)
+    }
+
+    pub fn enable_schedule(
+        &self,
+        job_id: &str,
+    ) -> Result<DaemonScheduledGenerationJob, CommandError> {
+        let response = self.request("POST", &format!("/v1/schedules/{job_id}/enable"), None)?;
+        serde_json::from_str(&response).map_err(daemon_parse_error)
+    }
+
+    pub fn disable_schedule(
+        &self,
+        job_id: &str,
+    ) -> Result<DaemonScheduledGenerationJob, CommandError> {
+        let response = self.request("POST", &format!("/v1/schedules/{job_id}/disable"), None)?;
+        serde_json::from_str(&response).map_err(daemon_parse_error)
+    }
+
+    pub fn delete_schedule(&self, job_id: &str) -> Result<(), CommandError> {
+        self.request("DELETE", &format!("/v1/schedules/{job_id}"), None)
+            .map(|_| ())
+    }
+
+    pub fn run_schedule_now(
+        &self,
+        job_id: &str,
+    ) -> Result<DaemonScheduledGenerationRun, CommandError> {
+        let response = self.request("POST", &format!("/v1/schedules/{job_id}/run-now"), None)?;
+        serde_json::from_str(&response).map_err(daemon_parse_error)
+    }
+
+    pub fn list_schedule_runs(
+        &self,
+        job_id: &str,
+    ) -> Result<Vec<DaemonScheduledGenerationRun>, CommandError> {
+        let response = self.request("GET", &format!("/v1/schedules/{job_id}/runs"), None)?;
+        serde_json::from_str(&response).map_err(daemon_parse_error)
+    }
+
+    pub fn get_schedule_run(
+        &self,
+        job_id: &str,
+        run_id: &str,
+    ) -> Result<DaemonScheduledGenerationRun, CommandError> {
+        let response = self.request(
+            "GET",
+            &format!("/v1/schedules/{job_id}/runs/{run_id}"),
+            None,
+        )?;
         serde_json::from_str(&response).map_err(daemon_parse_error)
     }
 

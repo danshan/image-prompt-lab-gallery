@@ -21,6 +21,7 @@ impl LocalLibraryService {
                     name TEXT NOT NULL,
                     root_path TEXT NOT NULL UNIQUE,
                     hidden INTEGER NOT NULL DEFAULT 0,
+                    automation_enabled INTEGER NOT NULL DEFAULT 0,
                     schema_version INTEGER NOT NULL,
                     created_at TEXT NOT NULL,
                     last_opened_at TEXT NOT NULL
@@ -28,6 +29,14 @@ impl LocalLibraryService {
                 ",
             )
             .map_err(database_error)?;
+        if !registry_column_exists(&connection, "automation_enabled")? {
+            connection
+                .execute(
+                    "ALTER TABLE library_registry ADD COLUMN automation_enabled INTEGER NOT NULL DEFAULT 0",
+                    [],
+                )
+                .map_err(database_error)?;
+        }
 
         Ok(connection)
     }
@@ -45,9 +54,9 @@ impl LocalLibraryService {
             .execute(
                 "
                 INSERT INTO library_registry (
-                    id, name, root_path, hidden, schema_version, created_at, last_opened_at
+                    id, name, root_path, hidden, automation_enabled, schema_version, created_at, last_opened_at
                 )
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                 ON CONFLICT(root_path) DO UPDATE SET
                     name = excluded.name,
                     hidden = excluded.hidden,
@@ -59,6 +68,7 @@ impl LocalLibraryService {
                     summary.name,
                     summary.root_path.to_string_lossy(),
                     if hidden { 1 } else { 0 },
+                    summary.automation_enabled as i64,
                     summary.schema_version,
                     created_at,
                     now
@@ -89,7 +99,7 @@ impl LocalLibraryService {
         let mut statement = connection
             .prepare(
                 "
-                SELECT id, name, root_path, hidden, schema_version
+                SELECT id, name, root_path, hidden, automation_enabled, schema_version
                 FROM library_registry
                 WHERE ?1 OR hidden = 0
                 ORDER BY last_opened_at DESC
@@ -143,7 +153,7 @@ impl LocalLibraryService {
         let mut statement = connection
             .prepare(
                 "
-                SELECT id, name, root_path, hidden, schema_version
+                SELECT id, name, root_path, hidden, automation_enabled, schema_version
                 FROM library_registry
                 WHERE id = ?1
                 ",
@@ -181,6 +191,36 @@ impl LocalLibraryService {
             .count() as u32;
         Ok((registered_library_count, missing_library_count))
     }
+
+    pub(crate) fn set_registry_library_automation_enabled(
+        &self,
+        library_id: &LibraryId,
+        enabled: bool,
+    ) -> DomainResult<LibrarySummary> {
+        let connection = self.ensure_registry()?;
+        let updated = connection
+            .execute(
+                "UPDATE library_registry SET automation_enabled = ?1 WHERE id = ?2",
+                params![enabled as i64, library_id.0],
+            )
+            .map_err(database_error)?;
+        if updated == 0 {
+            return Err(DomainError::LibraryNotFound {
+                path: library_id.0.clone(),
+            });
+        }
+        connection
+            .query_row(
+                "
+                SELECT id, name, root_path, hidden, automation_enabled, schema_version
+                FROM library_registry
+                WHERE id = ?1
+                ",
+                params![library_id.0],
+                registry_summary_from_row,
+            )
+            .map_err(database_error)
+    }
 }
 
 fn registry_summary_from_row(row: &Row<'_>) -> rusqlite::Result<LibrarySummary> {
@@ -189,6 +229,20 @@ fn registry_summary_from_row(row: &Row<'_>) -> rusqlite::Result<LibrarySummary> 
         name: row.get(1)?,
         root_path: PathBuf::from(row.get::<_, String>(2)?),
         hidden: row.get::<_, i64>(3)? != 0,
-        schema_version: row.get::<_, u32>(4)?,
+        automation_enabled: row.get::<_, i64>(4)? != 0,
+        schema_version: row.get::<_, u32>(5)?,
     })
+}
+
+fn registry_column_exists(connection: &Connection, column: &str) -> DomainResult<bool> {
+    let mut statement = connection
+        .prepare("PRAGMA table_info(library_registry)")
+        .map_err(database_error)?;
+    let rows = statement
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(database_error)?;
+    let columns = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(database_error)?;
+    Ok(columns.iter().any(|existing| existing == column))
 }

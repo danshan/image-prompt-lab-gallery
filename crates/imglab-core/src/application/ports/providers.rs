@@ -1,6 +1,9 @@
 pub use crate::{ImageProvider, ProviderCredentialStore, ProviderCredentials};
 
-use crate::{DomainResult, GenerationOperation, GenerationParameters, GenerationResult};
+use crate::{
+    DomainResult, GenerationOperation, GenerationParameters, GenerationResult,
+    PromptExpansionRequest, PromptExpansionResult,
+};
 
 pub trait ImageGenerationProvider {
     fn name(&self) -> &'static str;
@@ -15,6 +18,14 @@ pub trait ImageGenerationProvider {
         parameters: &GenerationParameters,
         input: &[u8],
     ) -> DomainResult<GenerationResult>;
+}
+
+pub trait PromptExpansionProvider {
+    fn name(&self) -> &'static str;
+    fn expand_prompt(
+        &self,
+        request: &PromptExpansionRequest,
+    ) -> DomainResult<PromptExpansionResult>;
 }
 
 impl<T> ImageGenerationProvider for T

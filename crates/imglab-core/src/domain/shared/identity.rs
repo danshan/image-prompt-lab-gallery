@@ -26,6 +26,12 @@ pub struct PromptVersionId(pub String);
 pub struct TaskId(pub String);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScheduledGenerationJobId(pub String);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScheduledGenerationRunId(pub String);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskAttemptId(pub String);
 
 #[derive(Debug, Clone, PartialEq, Eq)]

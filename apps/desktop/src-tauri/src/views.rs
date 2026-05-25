@@ -30,6 +30,7 @@ pub(crate) struct LibraryView {
     pub(crate) name: String,
     pub(crate) root_path: PathBuf,
     pub(crate) hidden: bool,
+    pub(crate) automation_enabled: bool,
     pub(crate) schema_version: u32,
 }
 
@@ -717,6 +718,54 @@ pub(crate) struct ReorderDaemonTasksInput {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct DaemonTaskActionInput {
     pub(crate) task_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DaemonScheduleQueryInput {
+    pub(crate) library_path: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DaemonScheduleActionInput {
+    pub(crate) job_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DaemonScheduleRunActionInput {
+    pub(crate) job_id: String,
+    pub(crate) run_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LibraryAutomationInput {
+    pub(crate) library_id: String,
+    pub(crate) enabled: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DaemonScheduleMutationInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) job_id: Option<String>,
+    pub(crate) name: String,
+    pub(crate) prompt_mode: String,
+    pub(crate) fixed_prompt: Option<String>,
+    pub(crate) negative_prompt: Option<String>,
+    pub(crate) base_prompt: Option<String>,
+    pub(crate) dynamic_prompt: Option<String>,
+    pub(crate) prompt_expander_provider: Option<String>,
+    pub(crate) prompt_expander_model: Option<String>,
+    pub(crate) image_provider: String,
+    pub(crate) image_model: String,
+    pub(crate) parameters: serde_json::Value,
+    pub(crate) schedule_rule: DaemonScheduleRuleInput,
+    pub(crate) target_album_id: String,
+    pub(crate) tags: Vec<String>,
+    pub(crate) next_run_at: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

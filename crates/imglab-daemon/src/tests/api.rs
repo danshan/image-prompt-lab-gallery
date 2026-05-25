@@ -35,6 +35,7 @@ fn health_and_capabilities_require_token() {
     )));
     assert!(health.body.contains("\"provider\":\"codex-cli\""));
     assert!(health.body.contains("\"image_to_image\""));
+    assert!(health.body.contains("\"prompt_expansion\""));
 
     let capabilities = handle_http_request(
         "GET /v1/capabilities HTTP/1.1\r\nX-ImgLab-Token: secret\r\n\r\n",
@@ -261,4 +262,53 @@ fn task_api_maps_errors_and_rejects_unowned_log_paths() {
         .as_str()
         .expect("error message")
         .contains("outside app-owned log root"));
+}
+
+#[test]
+fn task_log_tail_tolerates_missing_owned_log_file() {
+    let mut state = test_state("missing-task-log");
+    let library_id = create_open_library(&mut state, "missing-task-log-library");
+    let library_path = state.library_path(&library_id).expect("library path");
+    let created = state
+        .tasks()
+        .create_tasks(BatchCreateTasksRequest {
+            library_path: library_path.clone(),
+            library_id: LibraryId(library_id),
+            tasks: vec![CreateTaskInput {
+                task_type: TaskType::ImageGeneration,
+                provider: Some("fake".to_string()),
+                operation: Some(GenerationOperation::TextToImage),
+                priority: 0,
+                concurrency_group: None,
+                max_attempts: 3,
+                input_json: "{\"prompt\":\"missing log test\"}".to_string(),
+            }],
+        })
+        .expect("create task");
+    let task_id = created[0].id.clone();
+    fs::create_dir_all(&state.log_root).expect("log root");
+    let missing_log = state
+        .log_root
+        .join(format!("imglab-task-{}-attempt-1.log", task_id.0));
+    state
+        .tasks()
+        .append_task_attempt(AppendTaskAttemptRequest {
+            library_path,
+            task_id: task_id.clone(),
+            status: "completed".to_string(),
+            log_path: Some(missing_log),
+        })
+        .expect("append attempt");
+
+    let log_response = handle_http_request_with_state(
+        &auth_get(&format!("{TASKS_PATH}/{}/logs/tail", task_id.0)),
+        "secret",
+        &mut state,
+    );
+
+    assert_eq!(log_response.status_code, 200);
+    assert!(json_value(&log_response)["content"]
+        .as_str()
+        .expect("log tail")
+        .contains("task log file is no longer available"));
 }

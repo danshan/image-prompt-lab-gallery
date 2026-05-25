@@ -1,9 +1,14 @@
 use std::path::PathBuf;
 
 pub use crate::domain::asset::version_name;
+pub use crate::domain::schedule::{
+    ScheduleMissedRunPolicy, ScheduleOverlapPolicy, SchedulePromptMode, ScheduleRule,
+    ScheduledGenerationJobStatus, ScheduledGenerationRunStatus,
+};
 pub use crate::domain::shared::{
     AlbumId, AssetId, AssetVersionId, GenerationEventId, LibraryId, MetadataSuggestionId, PromptId,
-    PromptVersionId, TaskAttemptId, TaskEventId, TaskId, TaskOutputId,
+    PromptVersionId, ScheduledGenerationJobId, ScheduledGenerationRunId, TaskAttemptId,
+    TaskEventId, TaskId, TaskOutputId,
 };
 pub use crate::domain::task::{TaskErrorClassification, TaskOutputType, TaskStatus, TaskType};
 
@@ -14,6 +19,7 @@ pub struct LibrarySummary {
     pub root_path: PathBuf,
     pub hidden: bool,
     pub schema_version: u32,
+    pub automation_enabled: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -162,6 +168,23 @@ pub struct GenerationResult {
     pub images: Vec<GeneratedImage>,
     pub raw_request_json: String,
     pub raw_response_json: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromptExpansionRequest {
+    pub provider: String,
+    pub model: Option<String>,
+    pub base_prompt: String,
+    pub dynamic_prompt: String,
+    pub context_json: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromptExpansionResult {
+    pub expanded_prompt: String,
+    pub provider_metadata_json: String,
+    pub raw_request_json: Option<String>,
+    pub raw_response_json: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -524,6 +547,142 @@ pub struct AppendTaskOutputRequest {
 pub struct ReorderQueuedTasksRequest {
     pub library_path: PathBuf,
     pub task_ids: Vec<TaskId>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateScheduledGenerationJobRequest {
+    pub library_path: PathBuf,
+    pub library_id: LibraryId,
+    pub name: String,
+    pub prompt_mode: SchedulePromptMode,
+    pub fixed_prompt: Option<String>,
+    pub negative_prompt: Option<String>,
+    pub base_prompt: Option<String>,
+    pub dynamic_prompt: Option<String>,
+    pub prompt_expander_provider: Option<String>,
+    pub prompt_expander_model: Option<String>,
+    pub image_provider: String,
+    pub image_model: String,
+    pub parameters_json: String,
+    pub schedule_rule: ScheduleRule,
+    pub target_album_id: AlbumId,
+    pub tags: Vec<String>,
+    pub next_run_at: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateScheduledGenerationJobRequest {
+    pub library_path: PathBuf,
+    pub job_id: ScheduledGenerationJobId,
+    pub name: String,
+    pub prompt_mode: SchedulePromptMode,
+    pub fixed_prompt: Option<String>,
+    pub negative_prompt: Option<String>,
+    pub base_prompt: Option<String>,
+    pub dynamic_prompt: Option<String>,
+    pub prompt_expander_provider: Option<String>,
+    pub prompt_expander_model: Option<String>,
+    pub image_provider: String,
+    pub image_model: String,
+    pub parameters_json: String,
+    pub schedule_rule: ScheduleRule,
+    pub target_album_id: AlbumId,
+    pub tags: Vec<String>,
+    pub next_run_at: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScheduledGenerationJobView {
+    pub id: ScheduledGenerationJobId,
+    pub library_id: LibraryId,
+    pub name: String,
+    pub status: ScheduledGenerationJobStatus,
+    pub prompt_mode: SchedulePromptMode,
+    pub fixed_prompt: Option<String>,
+    pub negative_prompt: Option<String>,
+    pub base_prompt: Option<String>,
+    pub dynamic_prompt: Option<String>,
+    pub prompt_expander_provider: Option<String>,
+    pub prompt_expander_model: Option<String>,
+    pub image_provider: String,
+    pub image_model: String,
+    pub parameters_json: String,
+    pub schedule_rule: ScheduleRule,
+    pub target_album_id: AlbumId,
+    pub tags: Vec<String>,
+    pub overlap_policy: ScheduleOverlapPolicy,
+    pub missed_run_policy: ScheduleMissedRunPolicy,
+    pub last_run_at: Option<String>,
+    pub next_run_at: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub paused_at: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateScheduledGenerationRunRequest {
+    pub library_path: PathBuf,
+    pub job_id: ScheduledGenerationJobId,
+    pub library_id: LibraryId,
+    pub scheduled_for: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateScheduledGenerationRunRequest {
+    pub library_path: PathBuf,
+    pub run_id: ScheduledGenerationRunId,
+    pub status: ScheduledGenerationRunStatus,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub skip_reason: Option<String>,
+    pub error_code: Option<String>,
+    pub error_message: Option<String>,
+    pub expanded_prompt: Option<String>,
+    pub prompt_expansion_provider_metadata_json: Option<String>,
+    pub image_task_id: Option<TaskId>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScheduledGenerationRunView {
+    pub id: ScheduledGenerationRunId,
+    pub job_id: ScheduledGenerationJobId,
+    pub library_id: LibraryId,
+    pub status: ScheduledGenerationRunStatus,
+    pub scheduled_for: String,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub skip_reason: Option<String>,
+    pub error_code: Option<String>,
+    pub error_message: Option<String>,
+    pub expanded_prompt: Option<String>,
+    pub prompt_expansion_provider_metadata_json: Option<String>,
+    pub image_task_id: Option<TaskId>,
+    pub output_asset_count: u32,
+    pub tagged_asset_count: u32,
+    pub album_added_asset_count: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpsertScheduledGenerationRunOutputRequest {
+    pub library_path: PathBuf,
+    pub run_id: ScheduledGenerationRunId,
+    pub asset_id: AssetId,
+    pub asset_version_id: Option<AssetVersionId>,
+    pub generation_event_id: Option<GenerationEventId>,
+    pub album_added: bool,
+    pub tags_applied: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScheduledGenerationRunOutputView {
+    pub run_id: ScheduledGenerationRunId,
+    pub asset_id: AssetId,
+    pub asset_version_id: Option<AssetVersionId>,
+    pub generation_event_id: Option<GenerationEventId>,
+    pub album_added: bool,
+    pub tags_applied: Vec<String>,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone)]

@@ -1,9 +1,11 @@
 use super::*;
+use crate::executors::unix_timestamp_millis_string;
 
 #[test]
 fn scheduler_tick_executes_fake_image_task_and_links_outputs() {
     let mut state = test_state("worker-success");
     let library_id = create_open_library(&mut state, "worker-success-library");
+    let library_path = state.library_path(&library_id).expect("library path");
     let create_response = handle_http_request_with_state(
         &json_request(
             "POST",
@@ -34,7 +36,6 @@ fn scheduler_tick_executes_fake_image_task_and_links_outputs() {
     assert_eq!(task.id.0, task_id);
     assert_eq!(task.status, TaskStatus::Completed);
 
-    let library_path = state.library_path(&library_id).expect("library path");
     let detail = state
         .tasks()
         .get_task_detail(&library_path, &TaskId(task_id.clone()))
@@ -61,6 +62,446 @@ fn scheduler_tick_executes_fake_image_task_and_links_outputs() {
         .as_str()
         .expect("log content")
         .contains("task completed"));
+}
+
+#[test]
+fn schedule_api_run_now_queues_task_and_reconciles_completion() {
+    let mut state = test_state("schedule-run-now");
+    let library_id = create_open_library(&mut state, "schedule-run-now-library");
+    let library_path = state.library_path(&library_id).expect("library path");
+    let album = state
+        .app
+        .albums()
+        .create_manual_album_in_library(&library_path, "Scheduled outputs")
+        .expect("create album");
+    let create_response = handle_http_request_with_state(
+        &json_request(
+            "POST",
+            SCHEDULES_PATH,
+            serde_json::json!({
+                "libraryId": library_id,
+                "name": "Daily fixed image",
+                "promptMode": "fixed",
+                "fixedPrompt": "make a scheduled image",
+                "negativePrompt": null,
+                "imageProvider": "fake",
+                "imageModel": "fake",
+                "parameters": {},
+                "scheduleRule": {
+                    "kind": "interval_minutes",
+                    "minutes": 5
+                },
+                "targetAlbumId": album.id.0,
+                "tags": ["scheduled", "fake"],
+                "nextRunAt": "0"
+            }),
+        ),
+        "secret",
+        &mut state,
+    );
+    assert_eq!(create_response.status_code, 200);
+    let job_id = json_value(&create_response)["id"]
+        .as_str()
+        .expect("job id")
+        .to_string();
+
+    let run_response = handle_http_request_with_state(
+        &json_request(
+            "POST",
+            &format!("{SCHEDULES_PATH}/{job_id}/run-now"),
+            serde_json::json!({}),
+        ),
+        "secret",
+        &mut state,
+    );
+    assert_eq!(run_response.status_code, 200);
+    let run = json_value(&run_response);
+    assert_eq!(run["status"], "task_queued");
+    let task_id = run["imageTaskId"].as_str().expect("task id").to_string();
+    let library_path = state.library_path(&library_id).expect("library path");
+    let detail = state
+        .tasks()
+        .get_task_detail(&library_path, &TaskId(task_id.clone()))
+        .expect("task detail");
+    let task_input: serde_json::Value =
+        serde_json::from_str(&detail.task.input_json).expect("task input json");
+    assert_eq!(task_input["schedule"]["jobId"], job_id);
+    assert_eq!(task_input["schedule"]["runId"], run["id"]);
+
+    let executed = run_scheduler_tick(
+        &mut state,
+        &TaskSchedulerConfig::default(),
+        &RetryPolicy::default(),
+    )
+    .expect("run task scheduler")
+    .expect("executed task");
+    assert_eq!(executed.id.0, task_id);
+    assert_eq!(executed.status, TaskStatus::Completed);
+
+    let changed = run_schedule_tick(&mut state).expect("reconcile schedule");
+    assert!(changed.iter().any(|run| {
+        run.image_task_id.as_ref() == Some(&TaskId(task_id.clone()))
+            && run.status == ScheduledGenerationRunStatus::Completed
+            && run.output_asset_count == 1
+            && run.album_added_asset_count == 1
+            && run.tagged_asset_count == 1
+    }));
+}
+
+#[test]
+fn dynamic_schedule_api_expands_prompt_before_queuing_task() {
+    let mut state = test_state("schedule-dynamic-run-now");
+    let library_id = create_open_library(&mut state, "schedule-dynamic-run-now-library");
+    let library_path = state.library_path(&library_id).expect("library path");
+    let album = state
+        .app
+        .albums()
+        .create_manual_album_in_library(&library_path, "Dynamic scheduled outputs")
+        .expect("create album");
+    let create_response = handle_http_request_with_state(
+        &json_request(
+            "POST",
+            SCHEDULES_PATH,
+            serde_json::json!({
+                "libraryId": library_id,
+                "name": "Dynamic image",
+                "promptMode": "dynamic",
+                "basePrompt": "make a studio image",
+                "dynamicPrompt": "add one seasonal detail",
+                "promptExpanderProvider": "fake",
+                "promptExpanderModel": "fake",
+                "imageProvider": "fake",
+                "imageModel": "fake",
+                "parameters": {},
+                "scheduleRule": {
+                    "kind": "interval_minutes",
+                    "minutes": 5
+                },
+                "targetAlbumId": album.id.0,
+                "tags": ["dynamic"],
+                "nextRunAt": "0"
+            }),
+        ),
+        "secret",
+        &mut state,
+    );
+    assert_eq!(create_response.status_code, 200);
+    let job_id = json_value(&create_response)["id"]
+        .as_str()
+        .expect("job id")
+        .to_string();
+
+    let run_response = handle_http_request_with_state(
+        &json_request(
+            "POST",
+            &format!("{SCHEDULES_PATH}/{job_id}/run-now"),
+            serde_json::json!({}),
+        ),
+        "secret",
+        &mut state,
+    );
+    assert_eq!(run_response.status_code, 200);
+    let run = json_value(&run_response);
+    assert_eq!(run["status"], "task_queued");
+    assert!(run["expandedPrompt"]
+        .as_str()
+        .expect("expanded prompt")
+        .contains("add one seasonal detail"));
+    let task_id = run["imageTaskId"].as_str().expect("task id").to_string();
+    let detail = state
+        .tasks()
+        .get_task_detail(&library_path, &TaskId(task_id))
+        .expect("task detail");
+    let task_input: serde_json::Value =
+        serde_json::from_str(&detail.task.input_json).expect("task input json");
+    assert_eq!(task_input["prompt"], run["expandedPrompt"]);
+}
+
+#[test]
+fn schedule_loop_recovers_automation_enabled_libraries() {
+    let state = test_state("schedule-auto-recover");
+    let library_root = test_root("schedule-auto-recover-library").join("library");
+    let library = state
+        .library_lifecycle()
+        .create_library(CreateLibraryRequest {
+            root_path: library_root.clone(),
+            name: "Recoverable".to_string(),
+        })
+        .expect("create library");
+    let album = state
+        .app
+        .albums()
+        .create_manual_album_in_library(&library_root, "Scheduled outputs")
+        .expect("create album");
+    state
+        .schedules()
+        .set_library_automation_enabled(&library.id, true)
+        .expect("enable automation");
+    state
+        .schedules()
+        .create_job(imglab_core::CreateScheduledGenerationJobRequest {
+            library_path: library_root.clone(),
+            library_id: library.id.clone(),
+            name: "Recovered job".to_string(),
+            prompt_mode: SchedulePromptMode::Fixed,
+            fixed_prompt: Some("make a recovered scheduled image".to_string()),
+            negative_prompt: None,
+            base_prompt: None,
+            dynamic_prompt: None,
+            prompt_expander_provider: None,
+            prompt_expander_model: None,
+            image_provider: "fake".to_string(),
+            image_model: "fake".to_string(),
+            parameters_json: "{}".to_string(),
+            schedule_rule: imglab_core::ScheduleRule::IntervalMinutes(5),
+            target_album_id: album.id,
+            tags: vec!["scheduled".to_string()],
+            next_run_at: unix_timestamp_millis_string(0),
+        })
+        .expect("create schedule");
+    assert!(state.opened_libraries.is_empty());
+
+    let shared = Arc::new(Mutex::new(state));
+    let changed = run_schedule_loop_iteration(&shared).expect("run schedule loop");
+    assert_eq!(changed.len(), 1);
+    assert_eq!(changed[0].status, ScheduledGenerationRunStatus::TaskQueued);
+    let guard = shared.lock().expect("lock state");
+    assert!(guard.opened_libraries.contains_key(&library.id.0));
+}
+
+#[test]
+fn dynamic_schedule_failure_does_not_create_image_task() {
+    let mut state = test_state("schedule-dynamic-failure");
+    let library_id = create_open_library(&mut state, "schedule-dynamic-failure-library");
+    let library_path = state.library_path(&library_id).expect("library path");
+    let album = state
+        .app
+        .albums()
+        .create_manual_album_in_library(&library_path, "Scheduled outputs")
+        .expect("create album");
+    let create_response = handle_http_request_with_state(
+        &json_request(
+            "POST",
+            SCHEDULES_PATH,
+            serde_json::json!({
+                "libraryId": library_id,
+                "name": "Invalid dynamic image",
+                "promptMode": "dynamic",
+                "basePrompt": "base prompt",
+                "dynamicPrompt": "",
+                "promptExpanderProvider": "fake",
+                "promptExpanderModel": "fake",
+                "imageProvider": "fake",
+                "imageModel": "fake",
+                "parameters": {},
+                "scheduleRule": {
+                    "kind": "interval_minutes",
+                    "minutes": 5
+                },
+                "targetAlbumId": album.id.0,
+                "tags": [],
+                "nextRunAt": unix_timestamp_millis_string(0)
+            }),
+        ),
+        "secret",
+        &mut state,
+    );
+    assert_eq!(create_response.status_code, 200);
+
+    let changed = run_schedule_tick(&mut state).expect("run schedule");
+    assert_eq!(changed.len(), 1);
+    assert_eq!(changed[0].status, ScheduledGenerationRunStatus::Failed);
+    assert!(changed[0].image_task_id.is_none());
+    assert!(state
+        .tasks()
+        .list_tasks(&library_path)
+        .expect("list tasks")
+        .is_empty());
+}
+
+#[test]
+fn due_schedule_skips_when_previous_run_is_active() {
+    let mut state = test_state("schedule-overlap-skip");
+    let library_id = create_open_library(&mut state, "schedule-overlap-skip-library");
+    let library_path = state.library_path(&library_id).expect("library path");
+    let album = state
+        .app
+        .albums()
+        .create_manual_album_in_library(&library_path, "Scheduled outputs")
+        .expect("create album");
+    let job = state
+        .schedules()
+        .create_job(imglab_core::CreateScheduledGenerationJobRequest {
+            library_path: library_path.clone(),
+            library_id: LibraryId(library_id.clone()),
+            name: "Overlap skip".to_string(),
+            prompt_mode: SchedulePromptMode::Fixed,
+            fixed_prompt: Some("make an image".to_string()),
+            negative_prompt: None,
+            base_prompt: None,
+            dynamic_prompt: None,
+            prompt_expander_provider: None,
+            prompt_expander_model: None,
+            image_provider: "fake".to_string(),
+            image_model: "fake".to_string(),
+            parameters_json: "{}".to_string(),
+            schedule_rule: imglab_core::ScheduleRule::IntervalMinutes(5),
+            target_album_id: album.id,
+            tags: vec![],
+            next_run_at: unix_timestamp_millis_string(0),
+        })
+        .expect("create job");
+    let task = state
+        .tasks()
+        .create_tasks(BatchCreateTasksRequest {
+            library_path: library_path.clone(),
+            library_id: LibraryId(library_id.clone()),
+            tasks: vec![CreateTaskInput {
+                task_type: TaskType::ImageGeneration,
+                provider: Some("fake".to_string()),
+                operation: Some(GenerationOperation::TextToImage),
+                priority: 0,
+                concurrency_group: Some(format!("schedule:{}", job.id.0)),
+                max_attempts: 3,
+                input_json: serde_json::json!({ "prompt": "already queued" }).to_string(),
+            }],
+        })
+        .expect("create queued task")
+        .into_iter()
+        .next()
+        .expect("queued task");
+    let run = state
+        .schedules()
+        .create_run(CreateScheduledGenerationRunRequest {
+            library_path: library_path.clone(),
+            job_id: job.id.clone(),
+            library_id: LibraryId(library_id.clone()),
+            scheduled_for: job.next_run_at.clone(),
+        })
+        .expect("create active run");
+    state
+        .schedules()
+        .update_run(UpdateScheduledGenerationRunRequest {
+            library_path: library_path.clone(),
+            run_id: run.id,
+            status: ScheduledGenerationRunStatus::TaskQueued,
+            started_at: Some(unix_timestamp_millis_string(0)),
+            completed_at: None,
+            skip_reason: None,
+            error_code: None,
+            error_message: None,
+            expanded_prompt: Some("already queued".to_string()),
+            prompt_expansion_provider_metadata_json: None,
+            image_task_id: Some(task.id),
+        })
+        .expect("mark run task queued");
+
+    let changed = run_schedule_tick(&mut state).expect("run schedule");
+    assert!(changed.iter().any(|run| {
+        run.status == ScheduledGenerationRunStatus::Skipped
+            && run.skip_reason.as_deref() == Some("previous_run_active")
+    }));
+}
+
+#[test]
+fn schedule_tick_recovers_interrupted_prompt_expansion_run() {
+    let mut state = test_state("schedule-interrupted-expansion");
+    let library_id = create_open_library(&mut state, "schedule-interrupted-expansion-library");
+    let library_path = state.library_path(&library_id).expect("library path");
+    let album = state
+        .app
+        .albums()
+        .create_manual_album_in_library(&library_path, "Scheduled outputs")
+        .expect("create album");
+    let job = state
+        .schedules()
+        .create_job(imglab_core::CreateScheduledGenerationJobRequest {
+            library_path: library_path.clone(),
+            library_id: LibraryId(library_id.clone()),
+            name: "Interrupted dynamic image".to_string(),
+            prompt_mode: SchedulePromptMode::Dynamic,
+            fixed_prompt: None,
+            negative_prompt: None,
+            base_prompt: Some("make an image".to_string()),
+            dynamic_prompt: Some("add a cinematic detail".to_string()),
+            prompt_expander_provider: Some("fake".to_string()),
+            prompt_expander_model: Some("fake".to_string()),
+            image_provider: "fake".to_string(),
+            image_model: "fake".to_string(),
+            parameters_json: "{}".to_string(),
+            schedule_rule: imglab_core::ScheduleRule::IntervalMinutes(5),
+            target_album_id: album.id,
+            tags: vec![],
+            next_run_at: unix_timestamp_millis_string(0),
+        })
+        .expect("create job");
+    state
+        .schedules()
+        .create_run(CreateScheduledGenerationRunRequest {
+            library_path: library_path.clone(),
+            job_id: job.id,
+            library_id: LibraryId(library_id),
+            scheduled_for: job.next_run_at,
+        })
+        .expect("create interrupted run");
+
+    let changed = run_schedule_tick(&mut state).expect("run schedule");
+
+    assert!(changed.iter().any(|run| {
+        run.status == ScheduledGenerationRunStatus::Failed
+            && run.error_code.as_deref() == Some("DaemonInterrupted")
+            && run.image_task_id.is_none()
+    }));
+    assert!(changed
+        .iter()
+        .any(|run| run.status == ScheduledGenerationRunStatus::TaskQueued));
+}
+
+#[test]
+fn missed_schedule_uses_no_catch_up_policy() {
+    let mut state = test_state("schedule-missed-no-catch-up");
+    let library_id = create_open_library(&mut state, "schedule-missed-no-catch-up-library");
+    let library_path = state.library_path(&library_id).expect("library path");
+    let album = state
+        .app
+        .albums()
+        .create_manual_album_in_library(&library_path, "Scheduled outputs")
+        .expect("create album");
+    state
+        .schedules()
+        .create_job(imglab_core::CreateScheduledGenerationJobRequest {
+            library_path: library_path.clone(),
+            library_id: LibraryId(library_id),
+            name: "Missed job".to_string(),
+            prompt_mode: SchedulePromptMode::Fixed,
+            fixed_prompt: Some("make an image".to_string()),
+            negative_prompt: None,
+            base_prompt: None,
+            dynamic_prompt: None,
+            prompt_expander_provider: None,
+            prompt_expander_model: None,
+            image_provider: "fake".to_string(),
+            image_model: "fake".to_string(),
+            parameters_json: "{}".to_string(),
+            schedule_rule: imglab_core::ScheduleRule::IntervalHours(1),
+            target_album_id: album.id,
+            tags: vec![],
+            next_run_at: "0".to_string(),
+        })
+        .expect("create job");
+
+    let changed = run_schedule_tick(&mut state).expect("run schedule");
+    assert_eq!(changed.len(), 1);
+    assert_eq!(changed[0].status, ScheduledGenerationRunStatus::Skipped);
+    assert_eq!(
+        changed[0].skip_reason.as_deref(),
+        Some("missed_no_catch_up")
+    );
+    assert!(state
+        .tasks()
+        .list_tasks(&library_path)
+        .expect("list tasks")
+        .is_empty());
 }
 
 #[test]

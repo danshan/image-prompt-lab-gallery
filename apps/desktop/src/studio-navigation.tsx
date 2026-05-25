@@ -1,7 +1,7 @@
 import { LibraryContextPanel, StudioRail } from "./studio-shell";
 import { Icon, type IconName } from "./studio-icons";
 
-export type StudioView = "gallery" | "albums" | "prompts" | "review" | "queue" | "settings";
+export type StudioView = "gallery" | "albums" | "prompts" | "schedules" | "review" | "queue" | "settings";
 
 type LibraryNavItem = {
   id: string;
@@ -20,7 +20,7 @@ type AlbumNavItem = {
   itemCount?: number | null;
 };
 
-type SettingsSectionNav = "libraries" | "providers" | "updates" | "logs";
+type SettingsSectionNav = "libraries" | "automation" | "providers" | "updates" | "logs";
 
 export function Sidebar({
   library,
@@ -74,6 +74,7 @@ export function Sidebar({
           <NavButton active={activeView === "gallery"} icon="image" label="Gallery" onClick={() => onViewChange("gallery")} />
           <NavButton active={activeView === "albums"} icon="album" label="Albums" onClick={() => onViewChange("albums")} />
           <NavButton active={activeView === "prompts"} icon="list" label="Prompts" onClick={() => onViewChange("prompts")} />
+          <NavButton active={activeView === "schedules"} icon="queue" label="Schedules" onClick={() => onViewChange("schedules")} />
           <NavButton
             active={activeView === "review"}
             icon="review"
@@ -259,6 +260,7 @@ function SettingsContextPanel({
 }) {
   const sections: Array<{ id: SettingsSectionNav; label: string }> = [
     { id: "libraries", label: "Libraries" },
+    { id: "automation", label: "Automation" },
     { id: "providers", label: "Providers" },
     { id: "updates", label: "Updates" },
     { id: "logs", label: "Logs" },

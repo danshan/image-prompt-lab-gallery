@@ -23,3 +23,11 @@ pub(crate) fn unix_timestamp_string(add_seconds: u64) -> String {
         .unwrap_or(add_seconds);
     seconds.to_string()
 }
+
+pub(crate) fn unix_timestamp_millis_string(add_millis: u64) -> String {
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() + add_millis as u128)
+        .unwrap_or(add_millis as u128);
+    millis.to_string()
+}

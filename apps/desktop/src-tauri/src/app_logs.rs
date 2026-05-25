@@ -60,6 +60,9 @@ fn app_log_roots() -> Vec<PathBuf> {
         .unwrap_or_else(|| std::env::temp_dir().join("imglab-desktop-daemon"));
     roots.push(daemon_runtime_dir.join("task-logs"));
     roots.push(daemon_runtime_dir.join("logs"));
+    let background_runtime_dir = crate::automation_daemon::background_daemon_runtime_dir();
+    roots.push(background_runtime_dir.join("task-logs"));
+    roots.push(background_runtime_dir.join("logs"));
     roots.push(std::env::temp_dir().join("imglab-daemon-logs"));
     roots
 }
@@ -320,6 +323,17 @@ mod tests {
         assert!(app_log_roots()
             .iter()
             .any(|root| root == &runtime_dir.join("task-logs")));
+    }
+
+    #[test]
+    fn app_log_roots_include_background_daemon_logs() {
+        let runtime_dir = crate::automation_daemon::background_daemon_runtime_dir();
+        let roots = app_log_roots();
+
+        assert!(roots
+            .iter()
+            .any(|root| root == &runtime_dir.join("task-logs")));
+        assert!(roots.iter().any(|root| root == &runtime_dir.join("logs")));
     }
 
     #[test]

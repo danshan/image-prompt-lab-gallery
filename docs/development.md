@@ -188,11 +188,13 @@ cd apps/desktop
 npm run tauri dev
 ```
 
-开发环境下 desktop 会优先读取 `IMGLAB_DAEMON_RUNTIME_DIR/runtime.json` 中已运行 daemon 的连接信息. 如果不存在可用 daemon, desktop 会尝试启动 sidecar:
+开发环境下 desktop 会先尝试复用健康的 background automation daemon, 再读取 `IMGLAB_DAEMON_RUNTIME_DIR/runtime.json` 中已运行 daemon 的连接信息. 如果不存在可用 daemon, desktop 会尝试启动 sidecar:
 
 - `IMGLAB_DAEMON_BIN` 指向 daemon binary 时优先使用该路径.
 - 未设置时, desktop 会在当前 executable 同目录查找 `imglab-daemon`.
 - runtime directory 默认是系统 temp 下的 `imglab-desktop-daemon`.
+- background automation daemon runtime 默认位于 `~/Library/Application Support/Image Prompt Lab/daemon`.
+- Settings Automation 会安装 macOS LaunchAgent `com.imagepromptlab.daemon`, 并通过 `IMGLAB_REGISTRY` 指向 app registry, 使 app 未启动时 daemon 仍能恢复 automation-enabled libraries.
 
 本地验证 sidecar 前可以先构建 daemon:
 
@@ -204,6 +206,15 @@ cargo build -p imglab-daemon
 
 ```bash
 export IMGLAB_DAEMON_RUNTIME_DIR=/tmp/imglab-desktop-daemon
+cargo run -p imglab-daemon
+```
+
+也可以模拟 background daemon runtime:
+
+```bash
+cargo build -p imglab-daemon
+export IMGLAB_DAEMON_RUNTIME_DIR=/tmp/imglab-background-daemon
+export IMGLAB_REGISTRY=/tmp/imglab-dev-registry.sqlite
 cargo run -p imglab-daemon
 ```
 
@@ -220,8 +231,15 @@ daemon runtime file 包含 API version, pid, loopback port 和 token file path. 
 - `POST /v1/tasks/<task-id>/duplicate`
 - `GET /v1/tasks/<task-id>/events`
 - `GET /v1/tasks/<task-id>/logs/tail`
+- `GET /v1/schedules?library_id=<library-id>`
+- `POST /v1/schedules`
+- `GET`, `PUT`, `DELETE /v1/schedules/<job-id>`
+- `POST /v1/schedules/<job-id>/enable`
+- `POST /v1/schedules/<job-id>/disable`
+- `POST /v1/schedules/<job-id>/run-now`
+- `GET /v1/schedules/<job-id>/runs`
 
-daemon 只绑定 loopback address, 所有 task 和 log API 都要求本地 session token. Attempt log 会写入 daemon-owned log root, desktop Settings Logs 会把 task attempt logs 和 Codex adapter logs 一起列出.
+daemon 只绑定 loopback address, 所有 task, schedule 和 log API 都要求本地 session token. Attempt log 会写入 daemon-owned log root, desktop Settings Logs 会把 task attempt logs, prompt-expansion logs 和 background daemon logs 一起列出.
 
 ## 数据位置
 

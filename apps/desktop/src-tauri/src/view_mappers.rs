@@ -7,6 +7,7 @@ pub(crate) fn library_view(summary: imglab_core::LibrarySummary) -> LibraryView 
         name: summary.name,
         root_path,
         hidden: summary.hidden,
+        automation_enabled: summary.automation_enabled,
         schema_version: summary.schema_version,
     }
 }

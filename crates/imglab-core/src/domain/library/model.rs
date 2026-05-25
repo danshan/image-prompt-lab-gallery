@@ -72,6 +72,7 @@ pub fn summary_from_manifest(
         root_path: library.root_path,
         hidden,
         schema_version: library.schema_version,
+        automation_enabled: false,
     }
 }
 

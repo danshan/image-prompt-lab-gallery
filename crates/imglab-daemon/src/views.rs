@@ -97,6 +97,52 @@ pub(crate) fn generation_operation_as_str(value: GenerationOperation) -> &'stati
     }
 }
 
+pub(crate) fn parse_prompt_mode(value: &str) -> DomainResult<SchedulePromptMode> {
+    SchedulePromptMode::parse(value).ok_or_else(|| DomainError::InvalidGenerationParameters {
+        message: format!("unsupported schedule prompt mode: {value}"),
+    })
+}
+
+pub(crate) fn parse_schedule_rule(
+    value: ScheduleRuleInput,
+) -> DomainResult<imglab_core::ScheduleRule> {
+    match value.kind.as_str() {
+        "interval_minutes" => value
+            .minutes
+            .filter(|minutes| *minutes > 0)
+            .map(imglab_core::ScheduleRule::IntervalMinutes)
+            .ok_or_else(|| DomainError::InvalidGenerationParameters {
+                message: "interval_minutes schedule requires positive minutes".to_string(),
+            }),
+        "interval_hours" => value
+            .hours
+            .filter(|hours| *hours > 0)
+            .map(imglab_core::ScheduleRule::IntervalHours)
+            .ok_or_else(|| DomainError::InvalidGenerationParameters {
+                message: "interval_hours schedule requires positive hours".to_string(),
+            }),
+        "daily_time" => Ok(imglab_core::ScheduleRule::DailyTime {
+            timezone_id: value.timezone_id.unwrap_or_else(|| "UTC".to_string()),
+            local_time_hh_mm: value.local_time_hh_mm.ok_or_else(|| {
+                DomainError::InvalidGenerationParameters {
+                    message: "daily_time schedule requires local_time_hh_mm".to_string(),
+                }
+            })?,
+        }),
+        _ => Err(DomainError::InvalidGenerationParameters {
+            message: format!("unsupported schedule kind: {}", value.kind),
+        }),
+    }
+}
+
+pub(crate) fn parameters_json(
+    parameters: Option<Value>,
+    parameters_json: Option<Value>,
+) -> DomainResult<String> {
+    let value = parameters_json.or(parameters).unwrap_or(Value::Null);
+    serde_json::to_string(&value).map_err(serialization_error)
+}
+
 pub(crate) fn parse_optional_json(value: Option<String>) -> Option<Value> {
     value.and_then(|text| serde_json::from_str(&text).ok())
 }
@@ -206,6 +252,88 @@ impl From<TaskDetail> for TaskDetailView {
                 .into_iter()
                 .map(TaskOutputView::from)
                 .collect(),
+        }
+    }
+}
+
+impl From<ScheduledGenerationJobView> for ScheduledGenerationJobViewDto {
+    fn from(value: ScheduledGenerationJobView) -> Self {
+        Self {
+            id: value.id.0,
+            library_id: value.library_id.0,
+            name: value.name,
+            status: value.status.as_str().to_string(),
+            prompt_mode: value.prompt_mode.as_str().to_string(),
+            fixed_prompt: value.fixed_prompt,
+            negative_prompt: value.negative_prompt,
+            base_prompt: value.base_prompt,
+            dynamic_prompt: value.dynamic_prompt,
+            prompt_expander_provider: value.prompt_expander_provider,
+            prompt_expander_model: value.prompt_expander_model,
+            image_provider: value.image_provider,
+            image_model: value.image_model,
+            parameters: serde_json::from_str(&value.parameters_json).unwrap_or(Value::Null),
+            schedule_rule: ScheduleRuleView::from(value.schedule_rule),
+            target_album_id: value.target_album_id.0,
+            tags: value.tags,
+            next_run_at: value.next_run_at,
+            last_run_at: value.last_run_at,
+            created_at: value.created_at,
+            updated_at: value.updated_at,
+            paused_at: value.paused_at,
+        }
+    }
+}
+
+impl From<imglab_core::ScheduleRule> for ScheduleRuleView {
+    fn from(value: imglab_core::ScheduleRule) -> Self {
+        match value {
+            imglab_core::ScheduleRule::IntervalMinutes(minutes) => Self {
+                kind: "interval_minutes".to_string(),
+                minutes: Some(minutes),
+                hours: None,
+                timezone_id: None,
+                local_time_hh_mm: None,
+            },
+            imglab_core::ScheduleRule::IntervalHours(hours) => Self {
+                kind: "interval_hours".to_string(),
+                minutes: None,
+                hours: Some(hours),
+                timezone_id: None,
+                local_time_hh_mm: None,
+            },
+            imglab_core::ScheduleRule::DailyTime {
+                timezone_id,
+                local_time_hh_mm,
+            } => Self {
+                kind: "daily_time".to_string(),
+                minutes: None,
+                hours: None,
+                timezone_id: Some(timezone_id),
+                local_time_hh_mm: Some(local_time_hh_mm),
+            },
+        }
+    }
+}
+
+impl From<ScheduledGenerationRunView> for ScheduledGenerationRunViewDto {
+    fn from(value: ScheduledGenerationRunView) -> Self {
+        Self {
+            id: value.id.0,
+            job_id: value.job_id.0,
+            library_id: value.library_id.0,
+            status: value.status.as_str().to_string(),
+            scheduled_for: value.scheduled_for,
+            started_at: value.started_at,
+            completed_at: value.completed_at,
+            skip_reason: value.skip_reason,
+            error_code: value.error_code,
+            error_message: value.error_message,
+            expanded_prompt: value.expanded_prompt,
+            image_task_id: value.image_task_id.map(|id| id.0),
+            output_asset_count: value.output_asset_count,
+            tagged_asset_count: value.tagged_asset_count,
+            album_added_asset_count: value.album_added_asset_count,
         }
     }
 }

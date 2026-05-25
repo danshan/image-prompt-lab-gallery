@@ -1,8 +1,8 @@
 use imglab_core::task_scheduler::{RetryPolicy, TaskSchedulerConfig};
 use imglab_daemon::{
     bind_loopback_listener, generate_session_token, recover_open_libraries, serve_forever_shared,
-    spawn_scheduler_loop, write_runtime_file, write_token_file, DaemonConfig, DaemonState,
-    RuntimeFile, SharedDaemonState, API_VERSION, DEFAULT_SCHEDULER_INTERVAL,
+    spawn_schedule_loop, spawn_scheduler_loop, write_runtime_file, write_token_file, DaemonConfig,
+    DaemonState, RuntimeFile, SharedDaemonState, API_VERSION, DEFAULT_SCHEDULER_INTERVAL,
 };
 use std::env;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
@@ -20,6 +20,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let runtime_dir = env::var_os("IMGLAB_DAEMON_RUNTIME_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| env::temp_dir().join("imglab-daemon"));
+    let registry_path = env::var_os("IMGLAB_REGISTRY")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| runtime_dir.join("registry.sqlite"));
     let token = generate_session_token();
     let config = DaemonConfig {
         bind_addr: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)),
@@ -44,7 +47,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         config.runtime_path.display()
     );
     let state: SharedDaemonState = Arc::new(Mutex::new(DaemonState::new(
-        runtime_dir.join("registry.sqlite"),
+        registry_path,
         runtime_dir.join("task-logs"),
     )));
     {
@@ -57,6 +60,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         RetryPolicy::default(),
         DEFAULT_SCHEDULER_INTERVAL,
     );
+    let _schedule_runner = spawn_schedule_loop(Arc::clone(&state), DEFAULT_SCHEDULER_INTERVAL);
     serve_forever_shared(&listener, &config.token, state)?;
     Ok(())
 }

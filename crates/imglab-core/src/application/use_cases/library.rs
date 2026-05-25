@@ -221,6 +221,7 @@ mod tests {
             root_path,
             hidden: false,
             schema_version: 1,
+            automation_enabled: false,
         }
     }
 }

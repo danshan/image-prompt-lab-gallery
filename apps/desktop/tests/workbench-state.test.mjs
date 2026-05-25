@@ -25,6 +25,7 @@ import {
   completeReviewFieldGeneration,
   countActiveTasks,
   createReviewFormState,
+  defaultScheduleDraftForProvider,
   defaultAlbumAddSourceQuery,
   defaultSettingsSection,
   defaultGalleryQuery,
@@ -65,6 +66,7 @@ import {
   selectAlbumState,
   setGalleryAlbumFilter,
   setGalleryUnassignedAlbumFilter,
+  settingsSections,
   sortedNonEmptyProviders,
   toggleGalleryAlbumFilter,
   toggleGalleryProvider,
@@ -79,6 +81,25 @@ test("settings defaults to libraries section", () => {
 test("settings sections include providers diagnostics", () => {
   const section = "providers";
   assert.equal(section, "providers");
+});
+
+test("settings sections include automation management", () => {
+  assert.deepEqual(settingsSections, ["libraries", "automation", "providers", "updates", "logs"]);
+  assert.equal(dictionaries.en.workflow.automation, "Automation");
+  assert.equal(dictionaries["zh-CN"].workflow.automation, "自动化");
+});
+
+test("schedule drafts default to the current generation provider", () => {
+  const codexDraft = defaultScheduleDraftForProvider("codex-cli", "album-1");
+  assert.equal(codexDraft.imageProvider, "codex-cli");
+  assert.equal(codexDraft.imageModel, "codex");
+  assert.equal(codexDraft.promptExpanderProvider, "codex-cli");
+  assert.equal(codexDraft.targetAlbumId, "album-1");
+
+  const fakeDraft = defaultScheduleDraftForProvider("fake");
+  assert.equal(fakeDraft.imageProvider, "fake");
+  assert.equal(fakeDraft.imageModel, "fake");
+  assert.equal(fakeDraft.promptExpanderProvider, "fake");
 });
 
 test("theme preference normalizes and toggles", () => {

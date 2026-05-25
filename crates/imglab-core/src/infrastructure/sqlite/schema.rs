@@ -7,7 +7,7 @@ fn database_error(error: rusqlite::Error) -> DomainError {
     }
 }
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 8;
+pub const CURRENT_SCHEMA_VERSION: u32 = 9;
 
 pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
     let user_version: u32 = connection
@@ -250,6 +250,93 @@ pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
 
             CREATE INDEX IF NOT EXISTS idx_asset_version_sources_source
                 ON asset_version_sources(source_version_id);
+
+            CREATE TABLE IF NOT EXISTS scheduled_generation_jobs (
+                id TEXT PRIMARY KEY,
+                library_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                status TEXT NOT NULL,
+                prompt_mode TEXT NOT NULL,
+                fixed_prompt TEXT,
+                negative_prompt TEXT,
+                base_prompt TEXT,
+                dynamic_prompt TEXT,
+                prompt_expander_provider TEXT,
+                prompt_expander_model TEXT,
+                image_provider TEXT NOT NULL,
+                image_model TEXT NOT NULL,
+                parameters_json TEXT NOT NULL,
+                schedule_kind TEXT NOT NULL,
+                schedule_value_json TEXT NOT NULL,
+                timezone_id TEXT NOT NULL,
+                target_album_id TEXT NOT NULL,
+                tags_json TEXT NOT NULL,
+                overlap_policy TEXT NOT NULL,
+                missed_run_policy TEXT NOT NULL,
+                last_run_at TEXT,
+                next_run_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                paused_at TEXT,
+                FOREIGN KEY(target_album_id) REFERENCES albums(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_scheduled_generation_jobs_library_status_next
+                ON scheduled_generation_jobs(library_id, status, next_run_at ASC, id ASC);
+
+            CREATE INDEX IF NOT EXISTS idx_scheduled_generation_jobs_album
+                ON scheduled_generation_jobs(target_album_id);
+
+            CREATE TABLE IF NOT EXISTS scheduled_generation_runs (
+                id TEXT PRIMARY KEY,
+                job_id TEXT NOT NULL,
+                library_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                scheduled_for TEXT NOT NULL,
+                started_at TEXT,
+                completed_at TEXT,
+                skip_reason TEXT,
+                error_code TEXT,
+                error_message TEXT,
+                expanded_prompt TEXT,
+                prompt_expansion_provider_metadata_json TEXT,
+                image_task_id TEXT,
+                output_asset_count INTEGER NOT NULL DEFAULT 0,
+                tagged_asset_count INTEGER NOT NULL DEFAULT 0,
+                album_added_asset_count INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(job_id) REFERENCES scheduled_generation_jobs(id),
+                FOREIGN KEY(image_task_id) REFERENCES tasks(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_scheduled_generation_runs_job_created
+                ON scheduled_generation_runs(job_id, created_at DESC, id DESC);
+
+            CREATE INDEX IF NOT EXISTS idx_scheduled_generation_runs_task
+                ON scheduled_generation_runs(image_task_id);
+
+            CREATE INDEX IF NOT EXISTS idx_scheduled_generation_runs_status
+                ON scheduled_generation_runs(library_id, status, scheduled_for ASC);
+
+            CREATE TABLE IF NOT EXISTS scheduled_generation_run_outputs (
+                run_id TEXT NOT NULL,
+                asset_id TEXT NOT NULL,
+                asset_version_id TEXT,
+                generation_event_id TEXT,
+                album_added INTEGER NOT NULL DEFAULT 0,
+                tags_applied_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY(run_id, asset_id),
+                FOREIGN KEY(run_id) REFERENCES scheduled_generation_runs(id),
+                FOREIGN KEY(asset_id) REFERENCES assets(id),
+                FOREIGN KEY(asset_version_id) REFERENCES asset_versions(id),
+                FOREIGN KEY(generation_event_id) REFERENCES generation_events(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_scheduled_generation_run_outputs_asset
+                ON scheduled_generation_run_outputs(asset_id);
 
             CREATE INDEX IF NOT EXISTS idx_assets_library_id
                 ON assets(library_id);

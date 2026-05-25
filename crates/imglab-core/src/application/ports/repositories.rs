@@ -20,7 +20,8 @@ use crate::{
     ReorderQueuedTasksRequest, RepairLibraryRequest, RepairSummary, ReviewDraftDetailView,
     ReviewMetadataSuggestionRequest, SearchQuery, StudioOverviewView, TaskAttempt, TaskDetail,
     TaskEvent, TaskId, TaskOutput, TaskOutputType, TaskSummary, UpdateAssetMetadataRequest,
-    UpdateTaskStatusRequest, VersionSummary,
+    UpdateScheduledGenerationJobRequest, UpdateScheduledGenerationRunRequest,
+    UpdateTaskStatusRequest, UpsertScheduledGenerationRunOutputRequest, VersionSummary,
 };
 use std::path::Path;
 
@@ -239,4 +240,57 @@ pub trait TaskRepository {
     fn reorder_queued_tasks(&self, request: ReorderQueuedTasksRequest) -> DomainResult<()>;
     fn retry_task(&self, library_path: &Path, task_id: &TaskId) -> DomainResult<TaskSummary>;
     fn duplicate_task(&self, library_path: &Path, task_id: &TaskId) -> DomainResult<TaskSummary>;
+}
+
+pub trait ScheduleRepository {
+    fn create_scheduled_generation_job(
+        &self,
+        request: crate::CreateScheduledGenerationJobRequest,
+    ) -> DomainResult<crate::ScheduledGenerationJobView>;
+    fn update_scheduled_generation_job(
+        &self,
+        request: UpdateScheduledGenerationJobRequest,
+    ) -> DomainResult<crate::ScheduledGenerationJobView>;
+    fn list_scheduled_generation_jobs(
+        &self,
+        library_path: &Path,
+    ) -> DomainResult<Vec<crate::ScheduledGenerationJobView>>;
+    fn list_due_scheduled_generation_jobs(
+        &self,
+        library_path: &Path,
+        now: &str,
+    ) -> DomainResult<Vec<crate::ScheduledGenerationJobView>>;
+    fn set_scheduled_generation_job_status(
+        &self,
+        library_path: &Path,
+        job_id: &crate::ScheduledGenerationJobId,
+        status: crate::ScheduledGenerationJobStatus,
+    ) -> DomainResult<crate::ScheduledGenerationJobView>;
+    fn delete_scheduled_generation_job(
+        &self,
+        library_path: &Path,
+        job_id: &crate::ScheduledGenerationJobId,
+    ) -> DomainResult<()>;
+    fn create_scheduled_generation_run(
+        &self,
+        request: crate::CreateScheduledGenerationRunRequest,
+    ) -> DomainResult<crate::ScheduledGenerationRunView>;
+    fn update_scheduled_generation_run(
+        &self,
+        request: UpdateScheduledGenerationRunRequest,
+    ) -> DomainResult<crate::ScheduledGenerationRunView>;
+    fn list_scheduled_generation_runs(
+        &self,
+        library_path: &Path,
+        job_id: &crate::ScheduledGenerationJobId,
+    ) -> DomainResult<Vec<crate::ScheduledGenerationRunView>>;
+    fn upsert_scheduled_generation_run_output(
+        &self,
+        request: UpsertScheduledGenerationRunOutputRequest,
+    ) -> DomainResult<crate::ScheduledGenerationRunOutputView>;
+    fn set_library_automation_enabled(
+        &self,
+        library_id: &crate::LibraryId,
+        enabled: bool,
+    ) -> DomainResult<crate::LibrarySummary>;
 }

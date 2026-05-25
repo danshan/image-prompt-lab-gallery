@@ -86,6 +86,27 @@ impl DaemonState {
         self.app.tasks()
     }
 
+    pub(crate) fn schedules(
+        &self,
+    ) -> &imglab_core::application::use_cases::schedules::ScheduleUseCase<LocalLibraryService> {
+        self.app.schedules()
+    }
+
+    pub(crate) fn albums(
+        &self,
+    ) -> &imglab_core::application::use_cases::albums::AlbumUseCase<LocalLibraryService> {
+        self.app.albums()
+    }
+
+    pub(crate) fn assets(
+        &self,
+    ) -> &imglab_core::application::use_cases::assets::AssetUseCase<
+        LocalLibraryService,
+        LocalLibraryService,
+    > {
+        self.app.assets()
+    }
+
     pub(crate) fn gallery(
         &self,
     ) -> &imglab_core::application::use_cases::albums::QueryGalleryUseCase<LocalLibraryService>
@@ -222,6 +243,60 @@ pub(crate) struct ReorderTasksInput {
     pub(crate) task_ids: Vec<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ScheduleRuleInput {
+    pub(crate) kind: String,
+    pub(crate) minutes: Option<u32>,
+    pub(crate) hours: Option<u32>,
+    pub(crate) timezone_id: Option<String>,
+    pub(crate) local_time_hh_mm: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CreateScheduleInput {
+    pub(crate) library_id: String,
+    pub(crate) name: String,
+    pub(crate) prompt_mode: String,
+    pub(crate) fixed_prompt: Option<String>,
+    pub(crate) negative_prompt: Option<String>,
+    pub(crate) base_prompt: Option<String>,
+    pub(crate) dynamic_prompt: Option<String>,
+    pub(crate) prompt_expander_provider: Option<String>,
+    pub(crate) prompt_expander_model: Option<String>,
+    pub(crate) image_provider: String,
+    pub(crate) image_model: String,
+    pub(crate) parameters: Option<Value>,
+    pub(crate) parameters_json: Option<Value>,
+    pub(crate) schedule_rule: ScheduleRuleInput,
+    pub(crate) target_album_id: String,
+    pub(crate) tags: Vec<String>,
+    pub(crate) next_run_at: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UpdateScheduleInput {
+    pub(crate) library_id: String,
+    pub(crate) name: String,
+    pub(crate) prompt_mode: String,
+    pub(crate) fixed_prompt: Option<String>,
+    pub(crate) negative_prompt: Option<String>,
+    pub(crate) base_prompt: Option<String>,
+    pub(crate) dynamic_prompt: Option<String>,
+    pub(crate) prompt_expander_provider: Option<String>,
+    pub(crate) prompt_expander_model: Option<String>,
+    pub(crate) image_provider: String,
+    pub(crate) image_model: String,
+    pub(crate) parameters: Option<Value>,
+    pub(crate) parameters_json: Option<Value>,
+    pub(crate) schedule_rule: ScheduleRuleInput,
+    pub(crate) target_album_id: String,
+    pub(crate) tags: Vec<String>,
+    pub(crate) next_run_at: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LibraryView {
@@ -253,6 +328,63 @@ pub(crate) struct TaskSummaryView {
     pub(crate) last_error_message: Option<String>,
     pub(crate) error_classification: Option<String>,
     pub(crate) wait_reason: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ScheduledGenerationJobViewDto {
+    pub(crate) id: String,
+    pub(crate) library_id: String,
+    pub(crate) name: String,
+    pub(crate) status: String,
+    pub(crate) prompt_mode: String,
+    pub(crate) fixed_prompt: Option<String>,
+    pub(crate) negative_prompt: Option<String>,
+    pub(crate) base_prompt: Option<String>,
+    pub(crate) dynamic_prompt: Option<String>,
+    pub(crate) prompt_expander_provider: Option<String>,
+    pub(crate) prompt_expander_model: Option<String>,
+    pub(crate) image_provider: String,
+    pub(crate) image_model: String,
+    pub(crate) parameters: Value,
+    pub(crate) schedule_rule: ScheduleRuleView,
+    pub(crate) target_album_id: String,
+    pub(crate) tags: Vec<String>,
+    pub(crate) next_run_at: String,
+    pub(crate) last_run_at: Option<String>,
+    pub(crate) created_at: String,
+    pub(crate) updated_at: String,
+    pub(crate) paused_at: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ScheduleRuleView {
+    pub(crate) kind: String,
+    pub(crate) minutes: Option<u32>,
+    pub(crate) hours: Option<u32>,
+    pub(crate) timezone_id: Option<String>,
+    pub(crate) local_time_hh_mm: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ScheduledGenerationRunViewDto {
+    pub(crate) id: String,
+    pub(crate) job_id: String,
+    pub(crate) library_id: String,
+    pub(crate) status: String,
+    pub(crate) scheduled_for: String,
+    pub(crate) started_at: Option<String>,
+    pub(crate) completed_at: Option<String>,
+    pub(crate) skip_reason: Option<String>,
+    pub(crate) error_code: Option<String>,
+    pub(crate) error_message: Option<String>,
+    pub(crate) expanded_prompt: Option<String>,
+    pub(crate) image_task_id: Option<String>,
+    pub(crate) output_asset_count: u32,
+    pub(crate) tagged_asset_count: u32,
+    pub(crate) album_added_asset_count: u32,
 }
 
 #[derive(Debug, Serialize)]

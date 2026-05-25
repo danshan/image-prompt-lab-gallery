@@ -110,10 +110,15 @@ export {
 } from "./app/shell/state.js";
 export {
   defaultSettingsSection,
+  settingsSections,
   libraryMaintenanceActions,
   libraryPathExists,
   type SettingsSection,
 } from "./app/workflows/settings/state.js";
+export {
+  defaultScheduleDraftForProvider,
+  type ScheduleDraft,
+} from "./app/workflows/schedules/state.js";
 export {
   moveItem,
   pendingReviewItems,

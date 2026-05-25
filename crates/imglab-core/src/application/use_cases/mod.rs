@@ -4,4 +4,5 @@ pub mod generation;
 pub mod library;
 pub mod metadata_review;
 pub mod prompts;
+pub mod schedules;
 pub mod tasks;

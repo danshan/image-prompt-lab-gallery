@@ -1,6 +1,7 @@
-export type SettingsSection = "libraries" | "providers" | "updates" | "logs";
+export type SettingsSection = "libraries" | "automation" | "providers" | "updates" | "logs";
 
 export const defaultSettingsSection: SettingsSection = "libraries";
+export const settingsSections: SettingsSection[] = ["libraries", "automation", "providers", "updates", "logs"];
 
 export function libraryPathExists(rootPath: string, missingPaths: string[]): boolean {
   return !missingPaths.includes(rootPath);

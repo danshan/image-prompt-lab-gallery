@@ -1,4 +1,4 @@
-pub struct ImgLabApplication<L, LL, A, G, M, AL, GA, S, T, P> {
+pub struct ImgLabApplication<L, LL, A, G, M, AL, GA, S, T, P, SC> {
     library: L,
     library_lifecycle: LL,
     assets: A,
@@ -9,9 +9,10 @@ pub struct ImgLabApplication<L, LL, A, G, M, AL, GA, S, T, P> {
     search: S,
     tasks: T,
     prompts: P,
+    schedules: SC,
 }
 
-pub struct ImgLabApplicationParts<L, LL, A, G, M, AL, GA, S, T, P> {
+pub struct ImgLabApplicationParts<L, LL, A, G, M, AL, GA, S, T, P, SC> {
     pub library: L,
     pub library_lifecycle: LL,
     pub assets: A,
@@ -22,10 +23,11 @@ pub struct ImgLabApplicationParts<L, LL, A, G, M, AL, GA, S, T, P> {
     pub search: S,
     pub tasks: T,
     pub prompts: P,
+    pub schedules: SC,
 }
 
-impl<L, LL, A, G, M, AL, GA, S, T, P> ImgLabApplication<L, LL, A, G, M, AL, GA, S, T, P> {
-    pub fn from_parts(parts: ImgLabApplicationParts<L, LL, A, G, M, AL, GA, S, T, P>) -> Self {
+impl<L, LL, A, G, M, AL, GA, S, T, P, SC> ImgLabApplication<L, LL, A, G, M, AL, GA, S, T, P, SC> {
+    pub fn from_parts(parts: ImgLabApplicationParts<L, LL, A, G, M, AL, GA, S, T, P, SC>) -> Self {
         Self {
             library: parts.library,
             library_lifecycle: parts.library_lifecycle,
@@ -37,6 +39,7 @@ impl<L, LL, A, G, M, AL, GA, S, T, P> ImgLabApplication<L, LL, A, G, M, AL, GA, 
             search: parts.search,
             tasks: parts.tasks,
             prompts: parts.prompts,
+            schedules: parts.schedules,
         }
     }
 
@@ -80,7 +83,11 @@ impl<L, LL, A, G, M, AL, GA, S, T, P> ImgLabApplication<L, LL, A, G, M, AL, GA, 
         &self.prompts
     }
 
-    pub fn into_parts(self) -> ImgLabApplicationParts<L, LL, A, G, M, AL, GA, S, T, P> {
+    pub fn schedules(&self) -> &SC {
+        &self.schedules
+    }
+
+    pub fn into_parts(self) -> ImgLabApplicationParts<L, LL, A, G, M, AL, GA, S, T, P, SC> {
         ImgLabApplicationParts {
             library: self.library,
             library_lifecycle: self.library_lifecycle,
@@ -92,6 +99,7 @@ impl<L, LL, A, G, M, AL, GA, S, T, P> ImgLabApplication<L, LL, A, G, M, AL, GA, 
             search: self.search,
             tasks: self.tasks,
             prompts: self.prompts,
+            schedules: self.schedules,
         }
     }
 }
@@ -113,6 +121,7 @@ mod tests {
             search: "search",
             tasks: "tasks",
             prompts: "prompts",
+            schedules: "schedules",
         });
 
         assert_eq!(*app.library(), "library");
@@ -125,5 +134,6 @@ mod tests {
         assert_eq!(*app.search(), "search");
         assert_eq!(*app.tasks(), "tasks");
         assert_eq!(*app.prompts(), "prompts");
+        assert_eq!(*app.schedules(), "schedules");
     }
 }

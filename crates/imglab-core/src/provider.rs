@@ -1,6 +1,6 @@
 use crate::{
     DomainError, DomainResult, GeneratedImage, GenerationParameters, GenerationResult,
-    ImageProvider,
+    ImageProvider, PromptExpansionRequest, PromptExpansionResult,
 };
 
 #[derive(Debug, Clone)]
@@ -129,9 +129,65 @@ impl ImageProvider for FakeImageProvider {
     }
 }
 
+impl crate::application::ports::PromptExpansionProvider for FakeImageProvider {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn expand_prompt(
+        &self,
+        request: &PromptExpansionRequest,
+    ) -> DomainResult<PromptExpansionResult> {
+        let base = request.base_prompt.trim();
+        let dynamic = request.dynamic_prompt.trim();
+        if base.is_empty() {
+            return Err(DomainError::InvalidGenerationParameters {
+                message: "base prompt must not be empty".to_string(),
+            });
+        }
+        if dynamic.is_empty() {
+            return Err(DomainError::InvalidGenerationParameters {
+                message: "dynamic prompt must not be empty".to_string(),
+            });
+        }
+        match &self.mode {
+            FakeProviderMode::Failure { message } => Err(DomainError::GenerationFailed {
+                provider: self.name.to_string(),
+                message: message.clone(),
+            }),
+            FakeProviderMode::Timeout => Err(DomainError::ProviderUnavailable {
+                provider: self.name.to_string(),
+            }),
+            FakeProviderMode::InvalidParameters { message } => {
+                Err(DomainError::InvalidGenerationParameters {
+                    message: message.clone(),
+                })
+            }
+            FakeProviderMode::Success => Ok(PromptExpansionResult {
+                expanded_prompt: format!("{base}\n\n{dynamic}"),
+                provider_metadata_json: serde_json::json!({
+                    "fake": true,
+                    "provider": self.name,
+                    "model": request.model,
+                })
+                .to_string(),
+                raw_request_json: Some(
+                    serde_json::json!({
+                        "basePrompt": request.base_prompt,
+                        "dynamicPrompt": request.dynamic_prompt,
+                    })
+                    .to_string(),
+                ),
+                raw_response_json: Some(serde_json::json!({"expanded": true}).to_string()),
+            }),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::ports::PromptExpansionProvider;
     use crate::GenerationOperation;
 
     fn parameters(prompt: &str) -> GenerationParameters {
@@ -180,5 +236,41 @@ mod tests {
             error,
             DomainError::InvalidGenerationParameters { .. }
         ));
+    }
+
+    #[test]
+    fn fake_provider_expands_dynamic_prompt_deterministically() {
+        let provider = FakeImageProvider::success("fake");
+        let result = provider
+            .expand_prompt(&PromptExpansionRequest {
+                provider: "fake".to_string(),
+                model: Some("fake-model".to_string()),
+                base_prompt: "A quiet botanical study".to_string(),
+                dynamic_prompt: "Use moonlight and glass textures".to_string(),
+                context_json: None,
+            })
+            .expect("expand prompt");
+
+        assert_eq!(
+            result.expanded_prompt,
+            "A quiet botanical study\n\nUse moonlight and glass textures"
+        );
+        assert!(result.provider_metadata_json.contains("\"fake\":true"));
+    }
+
+    #[test]
+    fn fake_provider_rejects_empty_dynamic_prompt() {
+        let provider = FakeImageProvider::success("fake");
+        let error = provider
+            .expand_prompt(&PromptExpansionRequest {
+                provider: "fake".to_string(),
+                model: None,
+                base_prompt: "A quiet botanical study".to_string(),
+                dynamic_prompt: "  ".to_string(),
+                context_json: None,
+            })
+            .expect_err("empty dynamic prompt should fail");
+
+        assert!(error.to_string().contains("dynamic prompt"));
     }
 }

@@ -5,6 +5,8 @@ pub(crate) fn ensure_daemon_client(
 ) -> Result<daemon_client::DaemonClient, CommandError> {
     let runtime_dir = daemon_runtime_dir();
     let runtime_path = runtime_dir.join("runtime.json");
+    let background_runtime_path =
+        crate::automation_daemon::background_daemon_runtime_dir().join("runtime.json");
     {
         let mut guard = state.daemon_sidecar.lock().map_err(|_| CommandError {
             code: "ConcurrentWriteConflict".to_string(),
@@ -22,12 +24,13 @@ pub(crate) fn ensure_daemon_client(
         }
     }
 
+    if let Some(client) = discover_reusable_daemon(&background_runtime_path)? {
+        return Ok(client);
+    }
+
     if !should_start_managed_daemon() {
-        match daemon_client::discover_daemon(&runtime_path) {
-            Ok(Some(client)) => return Ok(client),
-            Ok(None) => {}
-            Err(error) if error.recoverable => {}
-            Err(error) => return Err(error),
+        if let Some(client) = discover_reusable_daemon(&runtime_path)? {
+            return Ok(client);
         }
     }
 
@@ -41,6 +44,16 @@ pub(crate) fn ensure_daemon_client(
     })?;
     *guard = Some(sidecar);
     Ok(client)
+}
+
+fn discover_reusable_daemon(
+    runtime_path: &Path,
+) -> Result<Option<daemon_client::DaemonClient>, CommandError> {
+    match daemon_client::discover_daemon(runtime_path) {
+        Ok(client) => Ok(client),
+        Err(error) if error.recoverable => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 
 pub(crate) fn daemon_runtime_dir() -> PathBuf {

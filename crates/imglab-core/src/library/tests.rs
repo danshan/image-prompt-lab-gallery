@@ -1,4 +1,5 @@
 use super::*;
+use crate::application::ports::ScheduleRepository;
 use crate::GenerationService;
 use crate::MetadataReviewService;
 use crate::{
@@ -9,8 +10,10 @@ use crate::{
     ImageProvider, ImportAssetRequest, ListPromptDocumentsRequest, ListPromptVersionsRequest,
     PromptVersionId, RenderPromptRunRequest, ReorderAlbumItemsRequest, ReorderAlbumsRequest,
     ReviewMetadataSuggestionRequest, ReviewStatusFilter, SaveGenerationPromptAsPromptRequest,
-    SavePromptVersionRequest, SearchQuery, SearchService, TaskOutputType, TaskService, TaskStatus,
-    TaskType, UpdateAssetMetadataRequest, UpdatePromptDraftRequest, UpdateTaskStatusRequest,
+    SavePromptVersionRequest, SchedulePromptMode, ScheduleRule, ScheduledGenerationRunStatus,
+    SearchQuery, SearchService, TaskOutputType, TaskService, TaskStatus, TaskType,
+    UpdateAssetMetadataRequest, UpdatePromptDraftRequest, UpdateScheduledGenerationRunRequest,
+    UpdateTaskStatusRequest, UpsertScheduledGenerationRunOutputRequest,
 };
 use std::time::Instant;
 use uuid::Uuid;
@@ -149,6 +152,215 @@ fn migration_adds_prompt_workspace_schema_without_backfilling_documents() {
         })
         .expect("prompt count");
     assert_eq!(prompt_count, 0);
+}
+
+#[test]
+fn registry_library_automation_opt_in_defaults_disabled_and_can_toggle() {
+    let root = test_root("registry-automation-opt-in");
+    let registry = test_root("registry-automation-opt-in-registry").join("registry.sqlite");
+    let service = LocalLibraryService::new(registry);
+    let library = service
+        .create_library(CreateLibraryRequest {
+            root_path: root,
+            name: "Automation Library".to_string(),
+        })
+        .expect("init library");
+
+    assert!(!library.automation_enabled);
+
+    let enabled = service
+        .set_library_automation_enabled(&library.id, true)
+        .expect("enable automation");
+    assert!(enabled.automation_enabled);
+
+    let listed = service.list_libraries(true).expect("list libraries");
+    assert_eq!(listed.len(), 1);
+    assert!(listed[0].automation_enabled);
+
+    let disabled = service
+        .set_library_automation_enabled(&library.id, false)
+        .expect("disable automation");
+    assert!(!disabled.automation_enabled);
+}
+
+#[test]
+fn scheduled_generation_repository_round_trips_job_run_and_output() {
+    let root = test_root("scheduled-generation-repository");
+    let registry = test_root("scheduled-generation-repository-registry").join("registry.sqlite");
+    let service = LocalLibraryService::new(registry);
+    let library = service
+        .create_library(CreateLibraryRequest {
+            root_path: root.clone(),
+            name: "Scheduled Generation".to_string(),
+        })
+        .expect("init library");
+    let album = service
+        .create_manual_album_in_library(&root, "Daily outputs")
+        .expect("create album");
+
+    let job = service
+        .create_scheduled_generation_job(crate::CreateScheduledGenerationJobRequest {
+            library_path: root.clone(),
+            library_id: library.id.clone(),
+            name: "Daily study".to_string(),
+            prompt_mode: SchedulePromptMode::Fixed,
+            fixed_prompt: Some("A quiet landscape".to_string()),
+            negative_prompt: None,
+            base_prompt: None,
+            dynamic_prompt: None,
+            prompt_expander_provider: None,
+            prompt_expander_model: None,
+            image_provider: "fake".to_string(),
+            image_model: "fake".to_string(),
+            parameters_json: "{}".to_string(),
+            schedule_rule: ScheduleRule::IntervalMinutes(30),
+            target_album_id: album.id.clone(),
+            tags: vec!["scheduled".to_string()],
+            next_run_at: "1000".to_string(),
+        })
+        .expect("create job");
+
+    assert_eq!(job.name, "Daily study");
+    assert_eq!(job.target_album_id, album.id);
+    assert_eq!(job.tags, vec!["scheduled".to_string()]);
+
+    let due = service
+        .list_due_scheduled_generation_jobs(&root, "1000")
+        .expect("list due jobs");
+    assert_eq!(due.len(), 1);
+    assert_eq!(due[0].id, job.id);
+
+    let run = service
+        .create_scheduled_generation_run(crate::CreateScheduledGenerationRunRequest {
+            library_path: root.clone(),
+            job_id: job.id.clone(),
+            library_id: library.id,
+            scheduled_for: "1000".to_string(),
+        })
+        .expect("create run");
+    assert_eq!(run.status, ScheduledGenerationRunStatus::Pending);
+
+    let task = service
+        .create_tasks(BatchCreateTasksRequest {
+            library_path: root.clone(),
+            library_id: job.library_id.clone(),
+            tasks: vec![CreateTaskInput {
+                task_type: TaskType::ImageGeneration,
+                provider: Some("fake".to_string()),
+                operation: Some(crate::GenerationOperation::TextToImage),
+                priority: 0,
+                concurrency_group: None,
+                max_attempts: 1,
+                input_json: "{\"prompt\":\"A quiet landscape\"}".to_string(),
+            }],
+        })
+        .expect("create linked task")
+        .remove(0);
+    let updated = service
+        .update_scheduled_generation_run(UpdateScheduledGenerationRunRequest {
+            library_path: root.clone(),
+            run_id: run.id.clone(),
+            status: ScheduledGenerationRunStatus::TaskQueued,
+            started_at: Some("1000".to_string()),
+            completed_at: None,
+            skip_reason: None,
+            error_code: None,
+            error_message: None,
+            expanded_prompt: Some("A quiet landscape".to_string()),
+            prompt_expansion_provider_metadata_json: None,
+            image_task_id: Some(task.id.clone()),
+        })
+        .expect("update run");
+    assert_eq!(updated.image_task_id, Some(task.id));
+    assert_eq!(
+        updated.expanded_prompt.as_deref(),
+        Some("A quiet landscape")
+    );
+
+    let source_path = test_root("scheduled-generation-source").join("source.png");
+    fs::create_dir_all(source_path.parent().expect("source parent")).expect("create source parent");
+    fs::write(&source_path, png_bytes(8, 8)).expect("write source png");
+    let imported = service
+        .import_asset(ImportAssetRequest {
+            library_path: root.clone(),
+            source_path,
+        })
+        .expect("import output asset");
+    let asset_id = imported.0.id;
+    let version_id = imported.1.id;
+    let output = service
+        .upsert_scheduled_generation_run_output(UpsertScheduledGenerationRunOutputRequest {
+            library_path: root.clone(),
+            run_id: run.id.clone(),
+            asset_id: asset_id.clone(),
+            asset_version_id: Some(version_id.clone()),
+            generation_event_id: None,
+            album_added: true,
+            tags_applied: vec!["scheduled".to_string()],
+        })
+        .expect("upsert output");
+    assert!(output.album_added);
+    assert_eq!(output.tags_applied, vec!["scheduled".to_string()]);
+
+    let output_again = service
+        .upsert_scheduled_generation_run_output(UpsertScheduledGenerationRunOutputRequest {
+            library_path: root,
+            run_id: run.id,
+            asset_id,
+            asset_version_id: Some(version_id),
+            generation_event_id: None,
+            album_added: true,
+            tags_applied: vec!["scheduled".to_string(), "night".to_string()],
+        })
+        .expect("upsert output idempotently");
+    assert_eq!(
+        output_again.tags_applied,
+        vec!["scheduled".to_string(), "night".to_string()]
+    );
+}
+
+#[test]
+fn scheduled_generation_job_requires_manual_target_album() {
+    let root = test_root("scheduled-generation-manual-target");
+    let registry = test_root("scheduled-generation-manual-target-registry").join("registry.sqlite");
+    let service = LocalLibraryService::new(registry);
+    let library = service
+        .create_library(CreateLibraryRequest {
+            root_path: root.clone(),
+            name: "Scheduled Target".to_string(),
+        })
+        .expect("init library");
+    let smart_album = service
+        .create_smart_album(crate::CreateSmartAlbumRequest {
+            library_path: root.clone(),
+            name: "Smart outputs".to_string(),
+            smart_query_json: "{}".to_string(),
+        })
+        .expect("create smart album");
+
+    let error = service
+        .create_scheduled_generation_job(crate::CreateScheduledGenerationJobRequest {
+            library_path: root,
+            library_id: library.id,
+            name: "Invalid target".to_string(),
+            prompt_mode: SchedulePromptMode::Fixed,
+            fixed_prompt: Some("A quiet landscape".to_string()),
+            negative_prompt: None,
+            base_prompt: None,
+            dynamic_prompt: None,
+            prompt_expander_provider: None,
+            prompt_expander_model: None,
+            image_provider: "fake".to_string(),
+            image_model: "fake".to_string(),
+            parameters_json: "{}".to_string(),
+            schedule_rule: ScheduleRule::IntervalMinutes(30),
+            target_album_id: smart_album.id,
+            tags: Vec::new(),
+            next_run_at: "1000".to_string(),
+        })
+        .expect_err("smart album should not be a scheduled output target");
+
+    assert!(error.to_string().contains("must be manual"));
 }
 
 #[test]
@@ -1480,6 +1692,34 @@ fn exports_and_imports_library_backup_zip() {
             source_path: source,
         })
         .expect("import asset");
+    let album = service
+        .create_manual_album_in_library(&root, "Scheduled backup outputs")
+        .expect("create schedule album");
+    let source_library = service.open_library(&root).expect("open source library");
+    service
+        .create_scheduled_generation_job(crate::CreateScheduledGenerationJobRequest {
+            library_path: root.clone(),
+            library_id: source_library.id.clone(),
+            name: "Backup schedule".to_string(),
+            prompt_mode: SchedulePromptMode::Fixed,
+            fixed_prompt: Some("make a backup schedule image".to_string()),
+            negative_prompt: None,
+            base_prompt: None,
+            dynamic_prompt: None,
+            prompt_expander_provider: None,
+            prompt_expander_model: None,
+            image_provider: "fake".to_string(),
+            image_model: "fake".to_string(),
+            parameters_json: "{}".to_string(),
+            schedule_rule: ScheduleRule::IntervalHours(12),
+            target_album_id: album.id,
+            tags: vec!["scheduled".to_string()],
+            next_run_at: "1000".to_string(),
+        })
+        .expect("create backup schedule");
+    service
+        .set_registry_library_automation_enabled(&source_library.id, true)
+        .expect("enable source automation");
     service
         .export_library_backup_zip(ExportLibraryBackupRequest {
             library_path: root.clone(),
@@ -1501,9 +1741,17 @@ fn exports_and_imports_library_backup_zip() {
     assert!(import_root.join(MANIFEST_FILE).is_file());
     assert!(import_root.join(DATABASE_FILE).is_file());
     assert!(import_root.join(version.file_path).is_file());
-    import_service
+    let imported = import_service
         .open_library(&import_root)
         .expect("open imported library");
+    assert!(!imported.automation_enabled);
+    assert_eq!(
+        import_service
+            .list_scheduled_generation_jobs(&import_root)
+            .expect("list imported schedules")
+            .len(),
+        1
+    );
 }
 
 #[test]
