@@ -1,0 +1,24 @@
+changelog:
+  categories:
+    - title: User-facing changes
+      labels:
+        - feature
+        - enhancement
+        - ui
+        - ux
+    - title: Fixes
+      labels:
+        - bug
+        - fix
+    - title: Developer and release notes
+      labels:
+        - documentation
+        - refactor
+        - ci
+        - maintenance
+    - title: Other changes
+      labels:
+        - "*"
+  exclude:
+    labels:
+      - skip-changelog

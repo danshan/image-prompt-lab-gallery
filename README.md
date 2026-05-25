@@ -17,9 +17,28 @@ This project is under active MVP development. The stable baseline is:
 - GUI-first workflow with CLI support for automation.
 - Text-to-image and image-to-image service boundaries.
 - Asset-level version lineage with Gallery version tree inspection and version promotion.
+- First-class Prompt Workspace with prompt documents, version history, variables, and generation lineage.
+- Scheduled image generation through the local daemon task runtime.
+- Library content lifecycle workflows for comparing, merging, deduplicating, and cleaning up local libraries.
 - Human-reviewed AI metadata suggestions before canonical metadata updates.
 - Available image providers: `fake` and Codex CLI imagegen adapter.
 - Grok provider crate exists as a boundary, with native implementation deferred.
+
+## Screenshots
+
+![Studio Gallery workspace](docs/screenshots/studio-gallery.png)
+
+![Settings library management](docs/screenshots/studio-settings.png)
+
+## Feature Overview
+
+- **Gallery**: browse all managed assets, filter by provider, album, rating, and review state, inspect selected asset details, and open version lineage for generated images.
+- **Albums**: manage manual and smart collections without making album selection an implicit Gallery scope.
+- **Prompt Workspace**: create prompt documents, track prompt versions, run prompt versions through generation, and preserve prompt-to-image lineage.
+- **Generation and schedules**: run text-to-image and image-to-image workflows, queue daemon-backed generation tasks, and configure recurring scheduled image generation.
+- **Review Inbox**: inspect AI metadata suggestions before applying them to canonical asset metadata.
+- **Settings**: manage local libraries, providers, app updates, automation diagnostics, and logs from a compact desktop console.
+- **CLI**: initialize libraries, import assets, search, generate images, and automate batch operations from scripts.
 
 ## Repository Layout
 

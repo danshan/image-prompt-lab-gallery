@@ -57,7 +57,10 @@ jobs:
           projectPath: apps/desktop
           tagName: v__VERSION__
           releaseName: Image Prompt Lab v__VERSION__
-          releaseBody: See the attached macOS assets to download and install this version.
+          releaseBody: |
+            Download the attached macOS asset to install this version.
+
+            Release notes are reviewed in `docs/releases/` and can be expanded after the release artifacts are attached.
           releaseDraft: ${{ github.event_name == 'workflow_dispatch' && inputs.draft == 'true' }}
           prerelease: false
           args: --target aarch64-apple-darwin

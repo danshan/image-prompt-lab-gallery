@@ -17,9 +17,28 @@ Image Prompt Lab Gallery 是一个 local-first 桌面应用, 用于管理 AI 图
 - GUI-first workflow, 同时提供 CLI 自动化能力.
 - text-to-image 和 image-to-image 的 service boundary.
 - asset-level version lineage, Gallery version tree inspection, 以及 version promotion.
+- 一等 Prompt Workspace, 支持 prompt documents, version history, variables 和 generation lineage.
+- 通过 local daemon task runtime 执行 scheduled image generation.
+- Library content lifecycle workflows, 支持本地 library 对比, merge, deduplicate 和 cleanup.
 - AI metadata suggestions 必须经过人工 review 后才写入 canonical metadata.
 - 当前可用图片 provider: `fake` 和 Codex CLI imagegen adapter.
 - Grok provider crate 已保留边界, native implementation 暂缓.
+
+## 截图
+
+![Studio Gallery workspace](docs/screenshots/studio-gallery.png)
+
+![Settings library management](docs/screenshots/studio-settings.png)
+
+## 功能概览
+
+- **Gallery**: 浏览所有 managed assets, 按 provider, album, rating 和 review state 过滤, 检查当前 asset detail, 并查看生成图片的 version lineage.
+- **Albums**: 管理 manual 和 smart collections, 但 album selection 不会隐式改变 Gallery scope.
+- **Prompt Workspace**: 创建 prompt documents, 维护 prompt versions, 将 prompt version 直接用于 generation, 并保留 prompt-to-image lineage.
+- **Generation and schedules**: 执行 text-to-image 和 image-to-image workflows, 通过 daemon queue 管理 generation tasks, 并配置 recurring scheduled image generation.
+- **Review Inbox**: 在 AI metadata suggestions 写入 canonical asset metadata 前进行人工 review.
+- **Settings**: 在紧凑 desktop console 中管理 local libraries, providers, app updates, automation diagnostics 和 logs.
+- **CLI**: 通过脚本初始化 libraries, import assets, search, generate images, 并执行 batch operations.
 
 ## 仓库结构
 
