@@ -22,6 +22,75 @@ pub(crate) fn asset_view(summary: imglab_core::AssetSummary) -> AssetView {
     }
 }
 
+pub(crate) fn archived_content_type_from_input(
+    value: &str,
+) -> Result<imglab_core::ArchivedContentType, CommandError> {
+    match value {
+        "asset" | "Asset" => Ok(imglab_core::ArchivedContentType::Asset),
+        "prompt" | "Prompt" => Ok(imglab_core::ArchivedContentType::Prompt),
+        other => Err(CommandError {
+            code: "InvalidArchivedContentType".to_string(),
+            message: format!("unsupported archived content type: {other}"),
+            recoverable: true,
+        }),
+    }
+}
+
+pub(crate) fn archived_content_type_view(value: imglab_core::ArchivedContentType) -> String {
+    match value {
+        imglab_core::ArchivedContentType::Asset => "asset".to_string(),
+        imglab_core::ArchivedContentType::Prompt => "prompt".to_string(),
+    }
+}
+
+pub(crate) fn archived_content_view(
+    summary: imglab_core::ArchivedContentSummary,
+) -> ArchivedContentView {
+    ArchivedContentView {
+        id: summary.id,
+        item_type: archived_content_type_view(summary.item_type),
+        title: summary.title,
+        archived_at: summary.archived_at,
+        dependency_summary: summary.dependency_summary,
+        file_count: summary.file_count,
+        file_size_bytes: summary.file_size_bytes,
+    }
+}
+
+pub(crate) fn permanent_delete_summary_view(
+    summary: imglab_core::PermanentDeleteSummary,
+) -> PermanentDeleteSummaryView {
+    PermanentDeleteSummaryView {
+        item_id: summary.item_id,
+        item_type: archived_content_type_view(summary.item_type),
+        sqlite_row_count: summary.sqlite_row_count,
+        file_count: summary.file_count,
+        file_size_bytes: summary.file_size_bytes,
+        warnings: summary.warnings,
+    }
+}
+
+pub(crate) fn merge_library_summary_view(
+    summary: imglab_core::MergeLibrarySummary,
+) -> MergeLibrarySummaryView {
+    MergeLibrarySummaryView {
+        source_library_id: summary.source_library_id.0,
+        target_library_id: summary.target_library_id.0,
+        asset_count: summary.asset_count,
+        version_count: summary.version_count,
+        prompt_count: summary.prompt_count,
+        prompt_version_count: summary.prompt_version_count,
+        album_count: summary.album_count,
+        tag_count: summary.tag_count,
+        generation_event_count: summary.generation_event_count,
+        metadata_suggestion_count: summary.metadata_suggestion_count,
+        skipped_runtime_row_count: summary.skipped_runtime_row_count,
+        file_count: summary.file_count,
+        file_size_bytes: summary.file_size_bytes,
+        warnings: summary.warnings,
+    }
+}
+
 pub(crate) fn gallery_query_from_input(
     input: QueryGalleryInput,
 ) -> Result<GalleryQuery, CommandError> {

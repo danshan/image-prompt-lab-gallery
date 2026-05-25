@@ -66,6 +66,94 @@ pub struct LibraryBackupSummary {
 }
 
 #[derive(Debug, Clone)]
+pub struct MergeLibraryRequest {
+    pub target_library_path: PathBuf,
+    pub source_library_path: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MergeLibrarySummary {
+    pub source_library_id: LibraryId,
+    pub target_library_id: LibraryId,
+    pub asset_count: u32,
+    pub version_count: u32,
+    pub prompt_count: u32,
+    pub prompt_version_count: u32,
+    pub album_count: u32,
+    pub tag_count: u32,
+    pub generation_event_count: u32,
+    pub metadata_suggestion_count: u32,
+    pub skipped_runtime_row_count: u32,
+    pub file_count: u32,
+    pub file_size_bytes: u64,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ArchiveAssetRequest {
+    pub library_path: PathBuf,
+    pub asset_id: AssetId,
+}
+
+#[derive(Debug, Clone)]
+pub struct RestoreAssetRequest {
+    pub library_path: PathBuf,
+    pub asset_id: AssetId,
+}
+
+#[derive(Debug, Clone)]
+pub struct ArchivePromptDocumentRequest {
+    pub library_path: PathBuf,
+    pub prompt_id: PromptId,
+}
+
+#[derive(Debug, Clone)]
+pub struct RestorePromptDocumentRequest {
+    pub library_path: PathBuf,
+    pub prompt_id: PromptId,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArchivedContentType {
+    Asset,
+    Prompt,
+}
+
+#[derive(Debug, Clone)]
+pub struct ListArchivedContentRequest {
+    pub library_path: PathBuf,
+    pub item_type: Option<ArchivedContentType>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArchivedContentSummary {
+    pub id: String,
+    pub item_type: ArchivedContentType,
+    pub title: String,
+    pub archived_at: String,
+    pub dependency_summary: String,
+    pub file_count: u32,
+    pub file_size_bytes: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct PermanentDeleteArchivedContentRequest {
+    pub library_path: PathBuf,
+    pub item_type: ArchivedContentType,
+    pub id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PermanentDeleteSummary {
+    pub item_id: String,
+    pub item_type: ArchivedContentType,
+    pub sqlite_row_count: u32,
+    pub file_count: u32,
+    pub file_size_bytes: u64,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
 pub struct RepairLibraryRequest {
     pub library_path: PathBuf,
     pub dry_run: bool,

@@ -94,6 +94,7 @@ export function AlbumsWorkspace({
   onToggleAddSelection,
   onSubmitAddSelection,
   onSelectAsset,
+  onPreviewImage,
   dictionary,
 }: {
   albums: AlbumListItem[];
@@ -129,6 +130,7 @@ export function AlbumsWorkspace({
   onToggleAddSelection: (assetId: string) => void;
   onSubmitAddSelection: () => void;
   onSelectAsset: (assetId: string) => void;
+  onPreviewImage: (image: LightboxImage) => void;
   dictionary: Dictionary;
 }) {
   const [newAlbumKind, setNewAlbumKind] = useState<"manual" | "smart">("manual");
@@ -387,7 +389,21 @@ export function AlbumsWorkspace({
                 }}
                 onClick={() => onSelectAsset(asset.id)}
               >
-                <Thumbnail asset={asset} index={index} />
+                <Thumbnail
+                  asset={asset}
+                  index={index}
+                  onPreview={() => {
+                    if (asset.imagePath) {
+                      onPreviewImage({
+                        path: asset.imagePath,
+                        label: asset.title ?? dictionary.workflow.generatedImage,
+                      });
+                    }
+                  }}
+                  altLabel={dictionary.workflow.generatedImage}
+                  previewLabel={dictionary.workflow.openOriginalImagePreview}
+                  unavailableLabel={dictionary.workflow.imagePreviewUnavailable}
+                />
                 <span className="asset-title">{asset.title ?? dictionary.workflow.untitled}</span>
                 <span className="provider-pill">{asset.provider ?? dictionary.workflow.unknownProvider}</span>
                 <StarRatingDisplay rating={asset.rating} />

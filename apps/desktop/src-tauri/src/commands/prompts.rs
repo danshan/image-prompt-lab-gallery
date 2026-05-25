@@ -134,3 +134,16 @@ pub(crate) fn save_generation_prompt_as_prompt(
         .map(prompt_version_view)
         .map_err(Into::into)
 }
+
+#[tauri::command]
+pub(crate) fn archive_prompt_document(
+    input: ArchivePromptDocumentInput,
+) -> Result<(), CommandError> {
+    desktop_app()
+        .library_lifecycle()
+        .archive_prompt_document(imglab_core::ArchivePromptDocumentRequest {
+            library_path: input.library_path,
+            prompt_id: imglab_core::PromptId(input.prompt_id),
+        })
+        .map_err(Into::into)
+}

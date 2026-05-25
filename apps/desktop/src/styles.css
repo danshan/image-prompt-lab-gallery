@@ -4415,15 +4415,31 @@ button.filter-chip {
   white-space: nowrap;
 }
 
-.workflow-surface .gallery-grid {
-  column-count: auto;
-  column-gap: 0;
-  column-width: auto;
-  display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(auto-fill, minmax(216px, 1fr));
+.workflow-surface .gallery-workspace {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workflow-surface .gallery-scroll {
+  flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+  padding-right: 2px;
+}
+
+.workflow-surface .gallery-grid {
+  column-gap: 12px;
+  column-width: 216px;
+  display: block;
+  flex: 0 0 auto;
+  gap: 12px;
+  min-height: 0;
+  overflow: visible;
+  padding-top: 3px;
   width: 100%;
 }
 
@@ -4451,8 +4467,14 @@ button.filter-chip {
 }
 
 .workflow-surface .thumbnail {
-  aspect-ratio: 4 / 3 !important;
   border-radius: var(--radius-control);
+  max-height: 360px;
+}
+
+.workflow-surface .thumbnail img {
+  height: 100%;
+  object-fit: contain;
+  width: 100%;
 }
 
 .workflow-surface .asset-card-actions,

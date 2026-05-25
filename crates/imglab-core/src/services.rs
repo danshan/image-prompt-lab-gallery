@@ -17,6 +17,27 @@ pub trait LibraryService {
         &self,
         request: ImportLibraryBackupRequest,
     ) -> DomainResult<LibraryBackupSummary>;
+    fn dry_run_merge_library(
+        &self,
+        request: MergeLibraryRequest,
+    ) -> DomainResult<MergeLibrarySummary>;
+    fn merge_library(&self, request: MergeLibraryRequest) -> DomainResult<MergeLibrarySummary>;
+    fn archive_asset(&self, request: ArchiveAssetRequest) -> DomainResult<()>;
+    fn restore_asset(&self, request: RestoreAssetRequest) -> DomainResult<()>;
+    fn archive_prompt_document(&self, request: ArchivePromptDocumentRequest) -> DomainResult<()>;
+    fn restore_prompt_document(&self, request: RestorePromptDocumentRequest) -> DomainResult<()>;
+    fn list_archived_content(
+        &self,
+        request: ListArchivedContentRequest,
+    ) -> DomainResult<Vec<ArchivedContentSummary>>;
+    fn dry_run_permanent_delete_archived_content(
+        &self,
+        request: PermanentDeleteArchivedContentRequest,
+    ) -> DomainResult<PermanentDeleteSummary>;
+    fn permanent_delete_archived_content(
+        &self,
+        request: PermanentDeleteArchivedContentRequest,
+    ) -> DomainResult<PermanentDeleteSummary>;
     fn repair_library(&self, request: RepairLibraryRequest) -> DomainResult<RepairSummary>;
     fn check_integrity(&self, root_path: &std::path::Path) -> DomainResult<Vec<IntegrityIssue>>;
     fn library_status(&self, root_path: &std::path::Path) -> DomainResult<LibraryStatusView>;

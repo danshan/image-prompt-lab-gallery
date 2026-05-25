@@ -7,7 +7,7 @@ fn database_error(error: rusqlite::Error) -> DomainError {
     }
 }
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 9;
+pub const CURRENT_SCHEMA_VERSION: u32 = 10;
 
 pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
     let user_version: u32 = connection
@@ -36,7 +36,8 @@ pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
                 status TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
-                captured_at TEXT
+                captured_at TEXT,
+                archived_at TEXT
             );
 
             CREATE TABLE IF NOT EXISTS asset_versions (
@@ -399,6 +400,11 @@ pub fn migrate_library_database(connection: &Connection) -> DomainResult<()> {
     if !column_exists(connection, "assets", "schema_prompt")? {
         connection
             .execute("ALTER TABLE assets ADD COLUMN schema_prompt TEXT", [])
+            .map_err(database_error)?;
+    }
+    if !column_exists(connection, "assets", "archived_at")? {
+        connection
+            .execute("ALTER TABLE assets ADD COLUMN archived_at TEXT", [])
             .map_err(database_error)?;
     }
     if !column_exists(connection, "generation_events", "prompt_version_id")? {

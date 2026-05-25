@@ -86,3 +86,14 @@ pub(crate) fn promote_asset_version(
         .map(promote_asset_version_view)
         .map_err(Into::into)
 }
+
+#[tauri::command]
+pub(crate) fn archive_asset(input: ArchiveAssetInput) -> Result<(), CommandError> {
+    desktop_app()
+        .library_lifecycle()
+        .archive_asset(imglab_core::ArchiveAssetRequest {
+            library_path: input.library_path,
+            asset_id: imglab_core::AssetId(input.asset_id),
+        })
+        .map_err(Into::into)
+}

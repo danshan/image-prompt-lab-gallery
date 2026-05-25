@@ -26,7 +26,7 @@ pub(super) fn load_gallery_asset_views(
             "
             SELECT id, title, category, rating, status, created_at, updated_at
             FROM assets
-            WHERE status <> 'reference'
+            WHERE status <> 'reference' AND archived_at IS NULL
             ORDER BY updated_at DESC, created_at DESC
             ",
         )

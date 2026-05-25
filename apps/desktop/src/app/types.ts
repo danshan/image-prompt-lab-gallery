@@ -39,6 +39,44 @@ export type LibraryBackup = {
   cloned: boolean;
 };
 
+export type ArchivedContentType = "asset" | "prompt";
+
+export type ArchivedContent = {
+  id: string;
+  itemType: ArchivedContentType;
+  title: string;
+  archivedAt: string;
+  dependencySummary: string;
+  fileCount: number;
+  fileSizeBytes: number;
+};
+
+export type PermanentDeleteSummary = {
+  itemId: string;
+  itemType: ArchivedContentType;
+  sqliteRowCount: number;
+  fileCount: number;
+  fileSizeBytes: number;
+  warnings: string[];
+};
+
+export type MergeLibrarySummary = {
+  sourceLibraryId: string;
+  targetLibraryId: string;
+  assetCount: number;
+  versionCount: number;
+  promptCount: number;
+  promptVersionCount: number;
+  albumCount: number;
+  tagCount: number;
+  generationEventCount: number;
+  metadataSuggestionCount: number;
+  skippedRuntimeRowCount: number;
+  fileCount: number;
+  fileSizeBytes: number;
+  warnings: string[];
+};
+
 export type ProviderHealth = {
   provider: string;
   displayName: string;

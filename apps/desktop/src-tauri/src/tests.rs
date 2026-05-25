@@ -69,6 +69,63 @@ fn maps_provider_capability_error_as_recoverable() {
 }
 
 #[test]
+fn maps_archived_content_type_and_summary_views() {
+    assert!(matches!(
+        archived_content_type_from_input("asset").expect("asset"),
+        imglab_core::ArchivedContentType::Asset
+    ));
+    assert!(archived_content_type_from_input("unknown").is_err());
+
+    let archived = archived_content_view(imglab_core::ArchivedContentSummary {
+        id: "asset-1".to_string(),
+        item_type: imglab_core::ArchivedContentType::Asset,
+        title: "Archived asset".to_string(),
+        archived_at: "1000".to_string(),
+        dependency_summary: "1 version(s)".to_string(),
+        file_count: 1,
+        file_size_bytes: 42,
+    });
+    assert_eq!(archived.item_type, "asset");
+    assert_eq!(archived.file_size_bytes, 42);
+
+    let delete = permanent_delete_summary_view(imglab_core::PermanentDeleteSummary {
+        item_id: "asset-1".to_string(),
+        item_type: imglab_core::ArchivedContentType::Asset,
+        sqlite_row_count: 3,
+        file_count: 1,
+        file_size_bytes: 42,
+        warnings: vec!["warning".to_string()],
+    });
+    assert_eq!(delete.item_type, "asset");
+    assert_eq!(delete.sqlite_row_count, 3);
+}
+
+#[test]
+fn maps_merge_library_summary_view() {
+    let view = merge_library_summary_view(imglab_core::MergeLibrarySummary {
+        source_library_id: imglab_core::LibraryId("source".to_string()),
+        target_library_id: imglab_core::LibraryId("target".to_string()),
+        asset_count: 1,
+        version_count: 2,
+        prompt_count: 3,
+        prompt_version_count: 4,
+        album_count: 5,
+        tag_count: 6,
+        generation_event_count: 7,
+        metadata_suggestion_count: 8,
+        skipped_runtime_row_count: 9,
+        file_count: 10,
+        file_size_bytes: 11,
+        warnings: vec!["skipped runtime rows".to_string()],
+    });
+
+    assert_eq!(view.source_library_id, "source");
+    assert_eq!(view.target_library_id, "target");
+    assert_eq!(view.version_count, 2);
+    assert_eq!(view.skipped_runtime_row_count, 9);
+}
+
+#[test]
 fn expands_home_relative_library_path() {
     let normalized = normalize_library_root_path(PathBuf::from("~/Documents/image-prompt-lab"))
         .expect("normalized path");

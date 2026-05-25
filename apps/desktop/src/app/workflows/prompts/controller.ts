@@ -450,6 +450,36 @@ export function usePromptWorkspaceActions({
     setPromptRunForm(emptyPromptRunForm);
   }
 
+  async function archivePrompt(promptId = selectedPromptId) {
+    if (!promptId) {
+      return;
+    }
+    setPromptSaving(true);
+    try {
+      if (!runningInTauri || !library) {
+        const nextPrompts = prompts.filter((prompt) => prompt.id !== promptId);
+        setPrompts(nextPrompts);
+        await selectPrompt(nextPrompts[0]?.id ?? null, nextPrompts);
+        setStatus("Prompt archived");
+        setRecoverableError(null);
+        return;
+      }
+      await invokeCommand<void>("archive_prompt_document", {
+        input: {
+          libraryPath: library.rootPath,
+          promptId,
+        },
+      });
+      await refreshPrompts(promptSearch);
+      setStatus("Prompt archived");
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    } finally {
+      setPromptSaving(false);
+    }
+  }
+
   return {
     refreshPrompts,
     selectPrompt,
@@ -461,6 +491,7 @@ export function usePromptWorkspaceActions({
     renderSelectedPrompt,
     runSelectedPrompt,
     newPromptDraft,
+    archivePrompt,
   };
 }
 

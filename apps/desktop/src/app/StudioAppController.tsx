@@ -127,6 +127,7 @@ import type {
   AlbumListItem,
   AppLog,
   AppLogContent,
+  ArchivedContent,
   AssetDetail,
   AssetView,
   AutomationDaemonStatus,
@@ -140,6 +141,8 @@ import type {
   LibraryBackup,
   LibraryStatus,
   LightboxImage,
+  MergeLibrarySummary,
+  PermanentDeleteSummary,
   PromptVersion,
   PromoteAssetVersionResult,
   ProviderHealth,
@@ -172,7 +175,7 @@ function initialDrawerOpenFromUrl(): boolean {
   return new URLSearchParams(window.location.search).get("drawer") === "1";
 }
 
-const settingsSections: SettingsSection[] = ["libraries", "automation", "providers", "updates", "logs"];
+const settingsSections: SettingsSection[] = ["libraries", "archived", "automation", "providers", "updates", "logs"];
 
 function initialSettingsSectionFromUrl(): SettingsSection | null {
   if (typeof window === "undefined") {
@@ -361,6 +364,11 @@ export function StudioAppController() {
   const [automationDaemonStatus, setAutomationDaemonStatus] = useState<AutomationDaemonStatus | null>(null);
   const [automationDaemonLoading, setAutomationDaemonLoading] = useState(false);
   const promptWorkspaceState = usePromptWorkspaceControllerState(runningInTauri);
+  const [archivedContent, setArchivedContent] = useState<ArchivedContent[]>([]);
+  const [archivedLoading, setArchivedLoading] = useState(false);
+  const [permanentDeleteSummary, setPermanentDeleteSummary] = useState<PermanentDeleteSummary | null>(null);
+  const [mergeSummary, setMergeSummary] = useState<MergeLibrarySummary | null>(null);
+  const [mergeSourcePath, setMergeSourcePath] = useState("");
   const {
     status,
     setStatus,
@@ -432,6 +440,7 @@ export function StudioAppController() {
     refreshGallery,
     loadAssetDetail,
     loadPreviewAssetDetail,
+    archiveAssets,
   } = useGallerySelectionActions({
     library,
     query,
@@ -519,6 +528,7 @@ export function StudioAppController() {
     renderSelectedPrompt,
     runSelectedPrompt,
     newPromptDraft,
+    archivePrompt,
   } = usePromptWorkspaceActions({
     runningInTauri,
     library,
@@ -531,6 +541,133 @@ export function StudioAppController() {
     setRecoverableError,
     refreshTasks,
   });
+
+  async function refreshArchivedContent(itemType: "asset" | "prompt" | null = null) {
+    if (!runningInTauri || !library) {
+      setArchivedContent([]);
+      return;
+    }
+    setArchivedLoading(true);
+    try {
+      const items = await invokeCommand<ArchivedContent[]>("list_archived_content", {
+        input: {
+          libraryPath: library.rootPath,
+          itemType,
+        },
+      });
+      setArchivedContent(items);
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    } finally {
+      setArchivedLoading(false);
+    }
+  }
+
+  async function restoreArchivedItem(item: ArchivedContent) {
+    if (!library) {
+      return;
+    }
+    try {
+      const command = item.itemType === "asset" ? "restore_asset" : "restore_prompt_document";
+      await invokeCommand<void>(command, {
+        input: item.itemType === "asset"
+          ? { libraryPath: library.rootPath, assetId: item.id }
+          : { libraryPath: library.rootPath, promptId: item.id },
+      });
+      await refreshArchivedContent();
+      void refreshGallery();
+      void refreshPrompts();
+      setStatus("Archived item restored");
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
+  async function dryRunPermanentDelete(item: ArchivedContent) {
+    if (!library) {
+      return;
+    }
+    try {
+      const summary = await invokeCommand<PermanentDeleteSummary>("dry_run_permanent_delete_archived_content", {
+        input: {
+          libraryPath: library.rootPath,
+          itemType: item.itemType,
+          id: item.id,
+        },
+      });
+      setPermanentDeleteSummary(summary);
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
+  async function confirmPermanentDelete(summary: PermanentDeleteSummary) {
+    if (!library) {
+      return;
+    }
+    try {
+      await invokeCommand<PermanentDeleteSummary>("permanent_delete_archived_content", {
+        input: {
+          libraryPath: library.rootPath,
+          itemType: summary.itemType,
+          id: summary.itemId,
+        },
+      });
+      setPermanentDeleteSummary(null);
+      await refreshArchivedContent();
+      setStatus("Archived item deleted");
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
+  async function chooseMergeSource() {
+    const selected = await pickDirectory("Choose Source Library");
+    if (selected) {
+      setMergeSourcePath(selected);
+    }
+  }
+
+  async function dryRunMergeLibrary() {
+    if (!library || !mergeSourcePath) {
+      return;
+    }
+    try {
+      const summary = await invokeCommand<MergeLibrarySummary>("dry_run_merge_library", {
+        input: {
+          targetLibraryPath: library.rootPath,
+          sourceLibraryPath: mergeSourcePath,
+        },
+      });
+      setMergeSummary(summary);
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
+  async function applyMergeLibrary() {
+    if (!library || !mergeSourcePath) {
+      return;
+    }
+    try {
+      const summary = await invokeCommand<MergeLibrarySummary>("merge_library", {
+        input: {
+          targetLibraryPath: library.rootPath,
+          sourceLibraryPath: mergeSourcePath,
+        },
+      });
+      setMergeSummary(summary);
+      void refreshGallery();
+      void refreshPrompts();
+      setStatus("Library merged");
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
+  }
 
   async function refreshSchedules() {
     if (!runningInTauri || !library) {
@@ -1577,6 +1714,14 @@ export function StudioAppController() {
             onSelect={selectGalleryAsset}
             onToggleAssetSelection={(assetId) => setSelectedGalleryAssetIds((current) => toggleSelection(current, assetId))}
             onClearSelection={() => setSelectedGalleryAssetIds([])}
+            onArchiveAsset={(assetId) => {
+              void archiveAssets([assetId]);
+              setSelectedGalleryAssetIds((current) => current.filter((id) => id !== assetId));
+            }}
+            onArchiveSelected={(assetIds) => {
+              void archiveAssets(assetIds);
+              setSelectedGalleryAssetIds([]);
+            }}
             onQueryChange={setQuery}
             onRequestReview={(asset) => void requestAssetReview(asset)}
             onPreviewImage={setLightboxImage}
@@ -1618,6 +1763,7 @@ export function StudioAppController() {
             onToggleAddSelection={(assetId) => setAlbumAddSelectionIds((current) => toggleSelection(current, assetId))}
             onSubmitAddSelection={() => void submitAlbumAddSelection()}
             onSelectAsset={selectGalleryAsset}
+            onPreviewImage={setLightboxImage}
             dictionary={dictionary}
           />
         )}
@@ -1673,6 +1819,7 @@ export function StudioAppController() {
             onNewPrompt={newPromptDraft}
             onSaveDraft={() => void savePromptDraft()}
             onSaveVersion={() => void savePromptVersion()}
+            onArchivePrompt={(promptId) => void archivePrompt(promptId)}
             onSelectVersion={(versionId) => void selectPromptVersion(versionId)}
             onRunFormChange={promptWorkspaceState.setPromptRunForm}
             onRender={() => void renderSelectedPrompt()}
@@ -1751,6 +1898,19 @@ export function StudioAppController() {
             onReveal={(item) => void revealLibraryFolder(item)}
             pendingLibraryActions={pendingLibraryActions}
             missingLibraryPaths={missingLibraryPaths}
+            archivedContent={archivedContent}
+            archivedLoading={archivedLoading}
+            permanentDeleteSummary={permanentDeleteSummary}
+            mergeSourcePath={mergeSourcePath}
+            mergeSummary={mergeSummary}
+            onRefreshArchived={() => void refreshArchivedContent()}
+            onRestoreArchived={(item) => void restoreArchivedItem(item)}
+            onDryRunPermanentDelete={(item) => void dryRunPermanentDelete(item)}
+            onConfirmPermanentDelete={(summary) => void confirmPermanentDelete(summary)}
+            onChooseMergeSource={() => void chooseMergeSource()}
+            onMergeSourcePathChange={setMergeSourcePath}
+            onDryRunMerge={() => void dryRunMergeLibrary()}
+            onApplyMerge={() => void applyMergeLibrary()}
             logs={appLogs}
             logsLoading={logsLoading}
             selectedLogPath={selectedLogPath}

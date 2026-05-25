@@ -84,9 +84,13 @@ test("settings sections include providers diagnostics", () => {
 });
 
 test("settings sections include automation management", () => {
-  assert.deepEqual(settingsSections, ["libraries", "automation", "providers", "updates", "logs"]);
+  assert.deepEqual(settingsSections, ["libraries", "archived", "automation", "providers", "updates", "logs"]);
   assert.equal(dictionaries.en.workflow.automation, "Automation");
   assert.equal(dictionaries["zh-CN"].workflow.automation, "自动化");
+});
+
+test("settings sections include archived content management", () => {
+  assert.ok(settingsSections.includes("archived"));
 });
 
 test("schedule drafts default to the current generation provider", () => {

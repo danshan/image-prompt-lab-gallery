@@ -20,7 +20,7 @@ type AlbumNavItem = {
   itemCount?: number | null;
 };
 
-type SettingsSectionNav = "libraries" | "automation" | "providers" | "updates" | "logs";
+type SettingsSectionNav = "libraries" | "archived" | "automation" | "providers" | "updates" | "logs";
 
 export function Sidebar({
   library,
@@ -260,6 +260,7 @@ function SettingsContextPanel({
 }) {
   const sections: Array<{ id: SettingsSectionNav; label: string }> = [
     { id: "libraries", label: "Libraries" },
+    { id: "archived", label: "Archived" },
     { id: "automation", label: "Automation" },
     { id: "providers", label: "Providers" },
     { id: "updates", label: "Updates" },

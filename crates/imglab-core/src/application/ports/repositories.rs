@@ -5,7 +5,8 @@ pub use crate::{
 
 use crate::{
     AddAssetTagRequest, AlbumId, AlbumListItem, AlbumSummary, AppendTaskAttemptRequest,
-    AppendTaskEventRequest, AppendTaskOutputRequest, AssetDetailView, AssetId,
+    AppendTaskEventRequest, AppendTaskOutputRequest, ArchiveAssetRequest,
+    ArchivePromptDocumentRequest, ArchivedContentSummary, AssetDetailView, AssetId,
     AssetInspectorDetailView, AssetSummary, AssetVersionId, BatchAddAssetsToAlbumRequest,
     BatchCreateTasksRequest, BatchReviewMetadataSuggestionRequest, CompleteTaskAttemptRequest,
     ConfidenceScoreView, CreateGenerationEventRequest, CreateLibraryRequest,
@@ -13,15 +14,18 @@ use crate::{
     DomainResult, ExportLibraryBackupRequest, ExportLibraryRequest, ExportSummary,
     GalleryAssetView, GalleryQuery, GenerationEventId, GenerationEventSummary,
     ImportLibraryBackupRequest, IntegrityIssue, LibraryBackupSummary, LibraryId, LibraryStatusView,
-    LibrarySummary, ListPromptOutputHistoryRequest, LoadPromptVersionRequest, MetadataSuggestion,
-    MetadataSuggestionId, PersistAssetVersionRequest, PersistImportedAssetRequest,
-    PromoteAssetVersionRequest, PromoteAssetVersionSummary, PromptOutputHistoryItem,
-    PromptVersionView, RenameLibraryAliasRequest, ReorderAlbumItemsRequest, ReorderAlbumsRequest,
-    ReorderQueuedTasksRequest, RepairLibraryRequest, RepairSummary, ReviewDraftDetailView,
-    ReviewMetadataSuggestionRequest, SearchQuery, StudioOverviewView, TaskAttempt, TaskDetail,
-    TaskEvent, TaskId, TaskOutput, TaskOutputType, TaskSummary, UpdateAssetMetadataRequest,
-    UpdateScheduledGenerationJobRequest, UpdateScheduledGenerationRunRequest,
-    UpdateTaskStatusRequest, UpsertScheduledGenerationRunOutputRequest, VersionSummary,
+    LibrarySummary, ListArchivedContentRequest, ListPromptOutputHistoryRequest,
+    LoadPromptVersionRequest, MergeLibraryRequest, MergeLibrarySummary, MetadataSuggestion,
+    MetadataSuggestionId, PermanentDeleteArchivedContentRequest, PermanentDeleteSummary,
+    PersistAssetVersionRequest, PersistImportedAssetRequest, PromoteAssetVersionRequest,
+    PromoteAssetVersionSummary, PromptOutputHistoryItem, PromptVersionView,
+    RenameLibraryAliasRequest, ReorderAlbumItemsRequest, ReorderAlbumsRequest,
+    ReorderQueuedTasksRequest, RepairLibraryRequest, RepairSummary, RestoreAssetRequest,
+    RestorePromptDocumentRequest, ReviewDraftDetailView, ReviewMetadataSuggestionRequest,
+    SearchQuery, StudioOverviewView, TaskAttempt, TaskDetail, TaskEvent, TaskId, TaskOutput,
+    TaskOutputType, TaskSummary, UpdateAssetMetadataRequest, UpdateScheduledGenerationJobRequest,
+    UpdateScheduledGenerationRunRequest, UpdateTaskStatusRequest,
+    UpsertScheduledGenerationRunOutputRequest, VersionSummary,
 };
 use std::path::Path;
 
@@ -41,6 +45,27 @@ pub trait LibraryRepository {
         &self,
         request: ImportLibraryBackupRequest,
     ) -> DomainResult<LibraryBackupSummary>;
+    fn dry_run_merge_library(
+        &self,
+        request: MergeLibraryRequest,
+    ) -> DomainResult<MergeLibrarySummary>;
+    fn merge_library(&self, request: MergeLibraryRequest) -> DomainResult<MergeLibrarySummary>;
+    fn archive_asset(&self, request: ArchiveAssetRequest) -> DomainResult<()>;
+    fn restore_asset(&self, request: RestoreAssetRequest) -> DomainResult<()>;
+    fn archive_prompt_document(&self, request: ArchivePromptDocumentRequest) -> DomainResult<()>;
+    fn restore_prompt_document(&self, request: RestorePromptDocumentRequest) -> DomainResult<()>;
+    fn list_archived_content(
+        &self,
+        request: ListArchivedContentRequest,
+    ) -> DomainResult<Vec<ArchivedContentSummary>>;
+    fn dry_run_permanent_delete_archived_content(
+        &self,
+        request: PermanentDeleteArchivedContentRequest,
+    ) -> DomainResult<PermanentDeleteSummary>;
+    fn permanent_delete_archived_content(
+        &self,
+        request: PermanentDeleteArchivedContentRequest,
+    ) -> DomainResult<PermanentDeleteSummary>;
     fn repair_library(&self, request: RepairLibraryRequest) -> DomainResult<RepairSummary>;
     fn check_integrity(&self, root_path: &Path) -> DomainResult<Vec<IntegrityIssue>>;
     fn library_status(&self, root_path: &Path) -> DomainResult<LibraryStatusView>;

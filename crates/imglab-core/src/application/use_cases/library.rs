@@ -1,9 +1,12 @@
 use crate::application::ports::LibraryRepository;
 use crate::{
+    ArchiveAssetRequest, ArchivePromptDocumentRequest, ArchivedContentSummary,
     CreateLibraryRequest, DiagnosticsOverviewView, DomainResult, ExportLibraryBackupRequest,
     ExportLibraryRequest, ExportSummary, ImportLibraryBackupRequest, IntegrityIssue,
-    LibraryBackupSummary, LibraryId, LibraryStatusView, LibrarySummary, RenameLibraryAliasRequest,
-    RepairLibraryRequest, RepairSummary, StudioOverviewView,
+    LibraryBackupSummary, LibraryId, LibraryStatusView, LibrarySummary, ListArchivedContentRequest,
+    MergeLibraryRequest, MergeLibrarySummary, PermanentDeleteArchivedContentRequest,
+    PermanentDeleteSummary, RenameLibraryAliasRequest, RepairLibraryRequest, RepairSummary,
+    RestoreAssetRequest, RestorePromptDocumentRequest, StudioOverviewView,
 };
 use std::path::Path;
 
@@ -64,6 +67,61 @@ where
         request: ImportLibraryBackupRequest,
     ) -> DomainResult<LibraryBackupSummary> {
         self.repository.import_library_backup_zip(request)
+    }
+
+    pub fn dry_run_merge_library(
+        &self,
+        request: MergeLibraryRequest,
+    ) -> DomainResult<MergeLibrarySummary> {
+        self.repository.dry_run_merge_library(request)
+    }
+
+    pub fn merge_library(&self, request: MergeLibraryRequest) -> DomainResult<MergeLibrarySummary> {
+        self.repository.merge_library(request)
+    }
+
+    pub fn archive_asset(&self, request: ArchiveAssetRequest) -> DomainResult<()> {
+        self.repository.archive_asset(request)
+    }
+
+    pub fn restore_asset(&self, request: RestoreAssetRequest) -> DomainResult<()> {
+        self.repository.restore_asset(request)
+    }
+
+    pub fn archive_prompt_document(
+        &self,
+        request: ArchivePromptDocumentRequest,
+    ) -> DomainResult<()> {
+        self.repository.archive_prompt_document(request)
+    }
+
+    pub fn restore_prompt_document(
+        &self,
+        request: RestorePromptDocumentRequest,
+    ) -> DomainResult<()> {
+        self.repository.restore_prompt_document(request)
+    }
+
+    pub fn list_archived_content(
+        &self,
+        request: ListArchivedContentRequest,
+    ) -> DomainResult<Vec<ArchivedContentSummary>> {
+        self.repository.list_archived_content(request)
+    }
+
+    pub fn dry_run_permanent_delete_archived_content(
+        &self,
+        request: PermanentDeleteArchivedContentRequest,
+    ) -> DomainResult<PermanentDeleteSummary> {
+        self.repository
+            .dry_run_permanent_delete_archived_content(request)
+    }
+
+    pub fn permanent_delete_archived_content(
+        &self,
+        request: PermanentDeleteArchivedContentRequest,
+    ) -> DomainResult<PermanentDeleteSummary> {
+        self.repository.permanent_delete_archived_content(request)
     }
 
     pub fn repair_library(&self, request: RepairLibraryRequest) -> DomainResult<RepairSummary> {
@@ -159,6 +217,82 @@ mod tests {
             Err(DomainError::Database {
                 message: "not implemented in recording repository".to_string(),
             })
+        }
+
+        fn dry_run_merge_library(
+            &self,
+            _request: MergeLibraryRequest,
+        ) -> DomainResult<MergeLibrarySummary> {
+            Ok(MergeLibrarySummary {
+                source_library_id: LibraryId("source".to_string()),
+                target_library_id: LibraryId("target".to_string()),
+                asset_count: 0,
+                version_count: 0,
+                prompt_count: 0,
+                prompt_version_count: 0,
+                album_count: 0,
+                tag_count: 0,
+                generation_event_count: 0,
+                metadata_suggestion_count: 0,
+                skipped_runtime_row_count: 0,
+                file_count: 0,
+                file_size_bytes: 0,
+                warnings: Vec::new(),
+            })
+        }
+
+        fn merge_library(&self, request: MergeLibraryRequest) -> DomainResult<MergeLibrarySummary> {
+            self.dry_run_merge_library(request)
+        }
+
+        fn archive_asset(&self, _request: ArchiveAssetRequest) -> DomainResult<()> {
+            Ok(())
+        }
+
+        fn restore_asset(&self, _request: RestoreAssetRequest) -> DomainResult<()> {
+            Ok(())
+        }
+
+        fn archive_prompt_document(
+            &self,
+            _request: ArchivePromptDocumentRequest,
+        ) -> DomainResult<()> {
+            Ok(())
+        }
+
+        fn restore_prompt_document(
+            &self,
+            _request: RestorePromptDocumentRequest,
+        ) -> DomainResult<()> {
+            Ok(())
+        }
+
+        fn list_archived_content(
+            &self,
+            _request: ListArchivedContentRequest,
+        ) -> DomainResult<Vec<ArchivedContentSummary>> {
+            Ok(Vec::new())
+        }
+
+        fn dry_run_permanent_delete_archived_content(
+            &self,
+            _request: PermanentDeleteArchivedContentRequest,
+        ) -> DomainResult<PermanentDeleteSummary> {
+            Ok(PermanentDeleteSummary {
+                item_id: "item".to_string(),
+                item_type: crate::ArchivedContentType::Asset,
+                sqlite_row_count: 0,
+                file_count: 0,
+                file_size_bytes: 0,
+                warnings: Vec::new(),
+            })
+        }
+
+        fn permanent_delete_archived_content(
+            &self,
+            request: PermanentDeleteArchivedContentRequest,
+        ) -> DomainResult<PermanentDeleteSummary> {
+            self.dry_run_permanent_delete_archived_content(request)
         }
 
         fn repair_library(&self, _request: RepairLibraryRequest) -> DomainResult<RepairSummary> {

@@ -1,19 +1,22 @@
 use super::*;
-use crate::application::ports::ScheduleRepository;
+use crate::application::ports::{PromptRepository, ScheduleRepository};
 use crate::GenerationService;
 use crate::MetadataReviewService;
 use crate::{
-    AlbumId, AlbumKind, AlbumService, AppendTaskOutputRequest, AssetService,
-    BatchAddAssetsToAlbumRequest, BatchCreateTasksRequest, BatchReviewMetadataSuggestionRequest,
-    CreatePromptDocumentRequest, CreateTaskInput, GalleryAlbumFilter, GalleryQuery,
-    GalleryReadService, GallerySort, GenerateImageRequest, GeneratedImage, GenerationResult,
-    ImageProvider, ImportAssetRequest, ListPromptDocumentsRequest, ListPromptVersionsRequest,
-    PromptVersionId, RenderPromptRunRequest, ReorderAlbumItemsRequest, ReorderAlbumsRequest,
-    ReviewMetadataSuggestionRequest, ReviewStatusFilter, SaveGenerationPromptAsPromptRequest,
-    SavePromptVersionRequest, SchedulePromptMode, ScheduleRule, ScheduledGenerationRunStatus,
-    SearchQuery, SearchService, TaskOutputType, TaskService, TaskStatus, TaskType,
-    UpdateAssetMetadataRequest, UpdatePromptDraftRequest, UpdateScheduledGenerationRunRequest,
-    UpdateTaskStatusRequest, UpsertScheduledGenerationRunOutputRequest,
+    AlbumId, AlbumKind, AlbumService, AppendTaskOutputRequest, ArchiveAssetRequest,
+    ArchivePromptDocumentRequest, ArchivedContentType, AssetService, BatchAddAssetsToAlbumRequest,
+    BatchCreateTasksRequest, BatchReviewMetadataSuggestionRequest, CreatePromptDocumentRequest,
+    CreateTaskInput, GalleryAlbumFilter, GalleryQuery, GalleryReadService, GallerySort,
+    GenerateImageRequest, GeneratedImage, GenerationResult, ImageProvider, ImportAssetRequest,
+    ListArchivedContentRequest, ListPromptDocumentsRequest, ListPromptVersionsRequest,
+    MergeLibraryRequest, PermanentDeleteArchivedContentRequest, PromptVersionId,
+    RenderPromptRunRequest, ReorderAlbumItemsRequest, ReorderAlbumsRequest, RestoreAssetRequest,
+    RestorePromptDocumentRequest, ReviewMetadataSuggestionRequest, ReviewStatusFilter,
+    SaveGenerationPromptAsPromptRequest, SavePromptVersionRequest, SchedulePromptMode,
+    ScheduleRule, ScheduledGenerationRunStatus, SearchQuery, SearchService, TaskOutputType,
+    TaskService, TaskStatus, TaskType, UpdateAssetMetadataRequest, UpdatePromptDraftRequest,
+    UpdateScheduledGenerationRunRequest, UpdateTaskStatusRequest,
+    UpsertScheduledGenerationRunOutputRequest,
 };
 use std::time::Instant;
 use uuid::Uuid;
@@ -1832,6 +1835,254 @@ fn import_backup_zip_rejects_non_empty_destination() {
 }
 
 #[test]
+fn merge_library_rejects_invalid_and_future_schema_source() {
+    let target_root = test_root("merge-invalid-target");
+    let source_root = test_root("merge-invalid-source");
+    let registry = test_root("merge-invalid-registry").join("registry.sqlite");
+    fs::create_dir_all(&source_root).expect("create invalid source");
+
+    let service = LocalLibraryService::new(registry);
+    service
+        .create_library(CreateLibraryRequest {
+            root_path: target_root.clone(),
+            name: "Merge Target".to_string(),
+        })
+        .expect("create target");
+
+    let error = service
+        .dry_run_merge_library(MergeLibraryRequest {
+            target_library_path: target_root.clone(),
+            source_library_path: source_root.clone(),
+        })
+        .expect_err("invalid source should fail");
+    assert_eq!(error.code(), "InvalidLibraryBackup");
+
+    service
+        .create_library(CreateLibraryRequest {
+            root_path: source_root.clone(),
+            name: "Future Source".to_string(),
+        })
+        .expect("create source");
+    let mut manifest = LocalLibraryService::read_manifest(&source_root).expect("read manifest");
+    manifest.schema_version = CURRENT_SCHEMA_VERSION + 1;
+    LocalLibraryService::write_manifest(&source_root, &manifest).expect("write manifest");
+
+    let error = service
+        .dry_run_merge_library(MergeLibraryRequest {
+            target_library_path: target_root,
+            source_library_path: source_root,
+        })
+        .expect_err("future schema should fail");
+    assert_eq!(error.code(), "SchemaMismatch");
+}
+
+#[test]
+fn merge_library_remaps_ids_rewrites_references_and_keeps_source_unchanged() {
+    let target_root = test_root("merge-target");
+    let source_root = test_root("merge-source");
+    let registry = test_root("merge-registry").join("registry.sqlite");
+    let source_dir = test_root("merge-sources");
+    fs::create_dir_all(&source_dir).expect("create source dir");
+    let target_file = source_dir.join("target.png");
+    let source_file = source_dir.join("source.png");
+    let child_file = source_dir.join("child.png");
+    fs::write(&target_file, png_bytes(10, 10)).expect("write target");
+    fs::write(&source_file, png_bytes(20, 20)).expect("write source");
+    fs::write(&child_file, png_bytes(30, 30)).expect("write child");
+
+    let service = LocalLibraryService::new(registry);
+    let target_library = service
+        .create_library(CreateLibraryRequest {
+            root_path: target_root.clone(),
+            name: "Merge Target".to_string(),
+        })
+        .expect("create target");
+    service
+        .import_asset(ImportAssetRequest {
+            library_path: target_root.clone(),
+            source_path: target_file,
+        })
+        .expect("import target asset");
+    let source_library = service
+        .create_library(CreateLibraryRequest {
+            root_path: source_root.clone(),
+            name: "Merge Source".to_string(),
+        })
+        .expect("create source");
+    let (source_asset, source_version) = service
+        .import_asset(ImportAssetRequest {
+            library_path: source_root.clone(),
+            source_path: source_file,
+        })
+        .expect("import source asset");
+    service
+        .add_tag_to_asset(&source_root, &source_asset.id, "merge-tag")
+        .expect("tag source asset");
+    let prompt = service
+        .create_prompt_document(CreatePromptDocumentRequest {
+            library_path: source_root.clone(),
+            name: "Merge Prompt".to_string(),
+            draft_body: "merge prompt body".to_string(),
+            draft_negative_prompt: None,
+            draft_style_prompt: None,
+            variables_schema_json: "[]".to_string(),
+            default_values_json: "{}".to_string(),
+            parameter_preset_json: "{}".to_string(),
+            notes: None,
+        })
+        .expect("create source prompt");
+    let prompt_version = service
+        .save_prompt_version(SavePromptVersionRequest {
+            library_path: source_root.clone(),
+            prompt_id: prompt.id.0.clone(),
+        })
+        .expect("save prompt version");
+    let generation_event = service
+        .record_generation_event(CreateGenerationEventRequest {
+            library_path: source_root.clone(),
+            asset_id: Some(source_asset.id.clone()),
+            output_version_id: None,
+            provider: "codex".to_string(),
+            provider_model: "image-model".to_string(),
+            operation_type: GenerationOperation::ImageToImage,
+            prompt: "make a child".to_string(),
+            negative_prompt: None,
+            input_asset_version_id: Some(source_version.id.clone()),
+            prompt_version_id: Some(prompt_version.id.clone()),
+            parameters_json: "{}".to_string(),
+            raw_request_json: None,
+            raw_response_json: None,
+            status: "completed".to_string(),
+            error_code: None,
+            error_message: None,
+        })
+        .expect("record generation event");
+    let child_version = service
+        .create_child_version(CreateChildVersionRequest {
+            library_path: source_root.clone(),
+            asset_id: source_asset.id.clone(),
+            parent_version_id: source_version.id.clone(),
+            generation_event_id: Some(generation_event.id.clone()),
+            source_path: child_file,
+            mime_type: "image/png".to_string(),
+            version_label: Some("child".to_string()),
+        })
+        .expect("create child version");
+    let album = service
+        .create_manual_album_in_library(&source_root, "Merge Album")
+        .expect("create album");
+    service
+        .batch_add_assets(BatchAddAssetsToAlbumRequest {
+            album_id: album.id,
+            asset_ids: vec![source_asset.id.clone()],
+        })
+        .expect("add asset to album");
+    service
+        .create_suggestion(CreateMetadataSuggestionRequest {
+            library_path: source_root.clone(),
+            asset_id: source_asset.id.clone(),
+            source: "test".to_string(),
+            suggested_title: Some("Merged title".to_string()),
+            suggested_description: None,
+            suggested_schema_prompt: None,
+            suggested_tags: vec!["suggested".to_string()],
+            suggested_category: None,
+            confidence_json: "{}".to_string(),
+        })
+        .expect("create suggestion");
+    let source_db_before =
+        fs::read(LocalLibraryService::database_path(&source_root)).expect("read source db");
+
+    let dry_run = service
+        .dry_run_merge_library(MergeLibraryRequest {
+            target_library_path: target_root.clone(),
+            source_library_path: source_root.clone(),
+        })
+        .expect("dry run merge");
+    assert_eq!(dry_run.source_library_id, source_library.id);
+    assert_eq!(dry_run.target_library_id, target_library.id);
+    assert_eq!(dry_run.asset_count, 1);
+    assert_eq!(dry_run.version_count, 2);
+    assert_eq!(dry_run.prompt_count, 1);
+    assert_eq!(dry_run.prompt_version_count, 1);
+    assert_eq!(dry_run.generation_event_count, 1);
+    assert_eq!(dry_run.metadata_suggestion_count, 1);
+    assert_eq!(
+        service
+            .query_gallery(&target_root, GalleryQuery::default())
+            .expect("target before merge")
+            .len(),
+        1
+    );
+
+    let summary = service
+        .merge_library(MergeLibraryRequest {
+            target_library_path: target_root.clone(),
+            source_library_path: source_root.clone(),
+        })
+        .expect("merge library");
+    assert_eq!(summary, dry_run);
+    assert_eq!(
+        fs::read(LocalLibraryService::database_path(&source_root)).expect("read source db after"),
+        source_db_before
+    );
+    assert_eq!(
+        service
+            .query_gallery(&source_root, GalleryQuery::default())
+            .expect("source gallery after merge")
+            .len(),
+        1
+    );
+
+    let target_gallery = service
+        .query_gallery(&target_root, GalleryQuery::default())
+        .expect("target gallery after merge");
+    assert_eq!(target_gallery.len(), 2);
+    let merged_asset = target_gallery
+        .iter()
+        .find(|asset| asset.title.as_deref() == Some(source_asset.id.0.as_str()))
+        .or_else(|| target_gallery.iter().find(|asset| asset.version_count == 2))
+        .expect("merged asset");
+    assert_ne!(merged_asset.id, source_asset.id);
+    assert_eq!(merged_asset.version_count, 2);
+
+    let target_connection =
+        Connection::open(LocalLibraryService::database_path(&target_root)).expect("open target db");
+    let merged_child_parent: String = target_connection
+        .query_row(
+            "SELECT parent_version_id FROM asset_versions WHERE version_label = 'child'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("merged child parent");
+    assert_ne!(merged_child_parent, source_version.id.0);
+    let merged_event_input: String = target_connection
+        .query_row(
+            "SELECT input_asset_version_id FROM generation_events WHERE prompt = 'make a child'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("merged event input");
+    assert_ne!(merged_event_input, source_version.id.0);
+    let merged_event_output: String = target_connection
+        .query_row(
+            "SELECT output_version_id FROM generation_events WHERE prompt = 'make a child'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("merged event output");
+    assert_ne!(merged_event_output, child_version.id.0);
+    let prompt_link_count: i64 = target_connection
+        .query_row(
+            "SELECT COUNT(*) FROM generation_events ge JOIN prompt_versions pv ON pv.id = ge.prompt_version_id JOIN prompt_documents pd ON pd.id = pv.prompt_id WHERE pd.name = 'Merge Prompt'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("prompt link count");
+    assert_eq!(prompt_link_count, 1);
+}
+
+#[test]
 fn reports_missing_managed_file() {
     let root = test_root("integrity-missing");
     let registry = test_root("integrity-registry").join("registry.sqlite");
@@ -2779,6 +3030,355 @@ fn gallery_query_filters_and_sorts_cards() {
     assert_eq!(results[0].provider.as_deref(), Some("codex-cli"));
     assert_eq!(results[0].review_pending_count, 1);
     assert_eq!(results[0].tags, vec!["neon".to_string()]);
+}
+
+#[test]
+fn archived_asset_is_hidden_from_gallery_until_restored() {
+    let root = test_root("asset-archive-gallery");
+    let registry = test_root("asset-archive-gallery-registry").join("registry.sqlite");
+    let source_dir = test_root("asset-archive-gallery-source");
+    fs::create_dir_all(&source_dir).expect("create source dir");
+    let source = source_dir.join("archived.png");
+    fs::write(&source, png_bytes(64, 48)).expect("write source");
+
+    let service = LocalLibraryService::new(registry);
+    service
+        .create_library(CreateLibraryRequest {
+            root_path: root.clone(),
+            name: "Archive Gallery".to_string(),
+        })
+        .expect("create library");
+    let (asset, _) = service
+        .import_asset(ImportAssetRequest {
+            library_path: root.clone(),
+            source_path: source,
+        })
+        .expect("import asset");
+
+    assert_eq!(
+        service
+            .query_gallery(&root, GalleryQuery::default())
+            .expect("initial gallery")
+            .len(),
+        1
+    );
+
+    service
+        .archive_asset(ArchiveAssetRequest {
+            library_path: root.clone(),
+            asset_id: asset.id.clone(),
+        })
+        .expect("archive asset");
+
+    assert!(service
+        .query_gallery(&root, GalleryQuery::default())
+        .expect("gallery after archive")
+        .is_empty());
+    let archived = service
+        .list_archived_content(ListArchivedContentRequest {
+            library_path: root.clone(),
+            item_type: Some(ArchivedContentType::Asset),
+        })
+        .expect("archived content");
+    assert_eq!(archived.len(), 1);
+    assert_eq!(archived[0].id, asset.id.0);
+
+    service
+        .restore_asset(RestoreAssetRequest {
+            library_path: root.clone(),
+            asset_id: asset.id,
+        })
+        .expect("restore asset");
+
+    assert_eq!(
+        service
+            .query_gallery(&root, GalleryQuery::default())
+            .expect("gallery after restore")
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn archived_prompt_is_hidden_until_restored() {
+    let root = test_root("prompt-archive-list");
+    let registry = test_root("prompt-archive-list-registry").join("registry.sqlite");
+    let service = LocalLibraryService::new(registry);
+    service
+        .create_library(CreateLibraryRequest {
+            root_path: root.clone(),
+            name: "Prompt Archive".to_string(),
+        })
+        .expect("create library");
+    let prompt = service
+        .create_prompt_document(CreatePromptDocumentRequest {
+            library_path: root.clone(),
+            name: "Lighting".to_string(),
+            draft_body: "soft rim light".to_string(),
+            draft_negative_prompt: None,
+            draft_style_prompt: None,
+            variables_schema_json: "[]".to_string(),
+            default_values_json: "{}".to_string(),
+            parameter_preset_json: "{}".to_string(),
+            notes: None,
+        })
+        .expect("create prompt");
+
+    assert_eq!(
+        service
+            .list_prompt_documents(ListPromptDocumentsRequest {
+                library_path: root.clone(),
+                query: None,
+                include_archived: false,
+            })
+            .expect("active prompts")
+            .len(),
+        1
+    );
+
+    service
+        .archive_prompt_document(ArchivePromptDocumentRequest {
+            library_path: root.clone(),
+            prompt_id: prompt.id.clone(),
+        })
+        .expect("archive prompt");
+
+    assert!(service
+        .list_prompt_documents(ListPromptDocumentsRequest {
+            library_path: root.clone(),
+            query: None,
+            include_archived: false,
+        })
+        .expect("active prompts after archive")
+        .is_empty());
+    assert_eq!(
+        service
+            .list_archived_content(ListArchivedContentRequest {
+                library_path: root.clone(),
+                item_type: Some(ArchivedContentType::Prompt),
+            })
+            .expect("archived prompts")
+            .len(),
+        1
+    );
+
+    service
+        .restore_prompt_document(RestorePromptDocumentRequest {
+            library_path: root.clone(),
+            prompt_id: prompt.id,
+        })
+        .expect("restore prompt");
+
+    assert_eq!(
+        service
+            .list_prompt_documents(ListPromptDocumentsRequest {
+                library_path: root,
+                query: None,
+                include_archived: false,
+            })
+            .expect("active prompts after restore")
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn permanent_delete_rejects_active_asset_and_deletes_archived_asset() {
+    let root = test_root("asset-permanent-delete");
+    let registry = test_root("asset-permanent-delete-registry").join("registry.sqlite");
+    let source_dir = test_root("asset-permanent-delete-source");
+    fs::create_dir_all(&source_dir).expect("create source dir");
+    let source = source_dir.join("delete.png");
+    fs::write(&source, png_bytes(32, 32)).expect("write source");
+
+    let service = LocalLibraryService::new(registry);
+    service
+        .create_library(CreateLibraryRequest {
+            root_path: root.clone(),
+            name: "Permanent Delete".to_string(),
+        })
+        .expect("create library");
+    let (asset, version) = service
+        .import_asset(ImportAssetRequest {
+            library_path: root.clone(),
+            source_path: source,
+        })
+        .expect("import asset");
+    let managed_file = root.join(&version.file_path);
+
+    let error = service
+        .dry_run_permanent_delete_archived_content(PermanentDeleteArchivedContentRequest {
+            library_path: root.clone(),
+            item_type: ArchivedContentType::Asset,
+            id: asset.id.0.clone(),
+        })
+        .expect_err("active asset delete should fail");
+    assert!(error.to_string().contains("archived"));
+
+    service
+        .archive_asset(ArchiveAssetRequest {
+            library_path: root.clone(),
+            asset_id: asset.id.clone(),
+        })
+        .expect("archive asset");
+    let summary = service
+        .dry_run_permanent_delete_archived_content(PermanentDeleteArchivedContentRequest {
+            library_path: root.clone(),
+            item_type: ArchivedContentType::Asset,
+            id: asset.id.0.clone(),
+        })
+        .expect("dry run");
+    assert_eq!(summary.item_id, asset.id.0);
+    assert_eq!(summary.file_count, 1);
+    assert!(managed_file.is_file());
+
+    service
+        .permanent_delete_archived_content(PermanentDeleteArchivedContentRequest {
+            library_path: root.clone(),
+            item_type: ArchivedContentType::Asset,
+            id: asset.id.0.clone(),
+        })
+        .expect("permanent delete");
+
+    assert!(service
+        .list_archived_content(ListArchivedContentRequest {
+            library_path: root.clone(),
+            item_type: Some(ArchivedContentType::Asset),
+        })
+        .expect("archived assets")
+        .is_empty());
+    assert!(!managed_file.exists());
+    let connection = Connection::open(LocalLibraryService::database_path(&root)).expect("open db");
+    let asset_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM assets WHERE id = ?1",
+            params![asset.id.0],
+            |row| row.get(0),
+        )
+        .expect("asset count");
+    assert_eq!(asset_count, 0);
+}
+
+#[test]
+fn permanent_delete_archived_prompt_removes_versions() {
+    let root = test_root("prompt-permanent-delete");
+    let registry = test_root("prompt-permanent-delete-registry").join("registry.sqlite");
+    let service = LocalLibraryService::new(registry);
+    service
+        .create_library(CreateLibraryRequest {
+            root_path: root.clone(),
+            name: "Prompt Permanent Delete".to_string(),
+        })
+        .expect("create library");
+    let prompt = service
+        .create_prompt_document(CreatePromptDocumentRequest {
+            library_path: root.clone(),
+            name: "Delete prompt".to_string(),
+            draft_body: "delete me".to_string(),
+            draft_negative_prompt: None,
+            draft_style_prompt: None,
+            variables_schema_json: "[]".to_string(),
+            default_values_json: "{}".to_string(),
+            parameter_preset_json: "{}".to_string(),
+            notes: None,
+        })
+        .expect("create prompt");
+    service
+        .save_prompt_version(SavePromptVersionRequest {
+            library_path: root.clone(),
+            prompt_id: prompt.id.0.clone(),
+        })
+        .expect("save version");
+    service
+        .archive_prompt_document(ArchivePromptDocumentRequest {
+            library_path: root.clone(),
+            prompt_id: prompt.id.clone(),
+        })
+        .expect("archive prompt");
+
+    let summary = service
+        .dry_run_permanent_delete_archived_content(PermanentDeleteArchivedContentRequest {
+            library_path: root.clone(),
+            item_type: ArchivedContentType::Prompt,
+            id: prompt.id.0.clone(),
+        })
+        .expect("prompt dry run");
+    assert_eq!(summary.item_id, prompt.id.0);
+    assert!(summary.sqlite_row_count >= 2);
+
+    service
+        .permanent_delete_archived_content(PermanentDeleteArchivedContentRequest {
+            library_path: root.clone(),
+            item_type: ArchivedContentType::Prompt,
+            id: prompt.id.0.clone(),
+        })
+        .expect("permanent delete prompt");
+
+    assert!(service
+        .list_archived_content(ListArchivedContentRequest {
+            library_path: root.clone(),
+            item_type: Some(ArchivedContentType::Prompt),
+        })
+        .expect("archived prompts")
+        .is_empty());
+    let connection = Connection::open(LocalLibraryService::database_path(&root)).expect("open db");
+    let prompt_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM prompt_documents WHERE id = ?1",
+            params![prompt.id.0],
+            |row| row.get(0),
+        )
+        .expect("prompt count");
+    let version_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM prompt_versions", [], |row| row.get(0))
+        .expect("version count");
+    assert_eq!(prompt_count, 0);
+    assert_eq!(version_count, 0);
+}
+
+#[test]
+fn permanent_delete_reports_managed_file_deletion_failure() {
+    let root = test_root("asset-permanent-delete-file-warning");
+    let registry =
+        test_root("asset-permanent-delete-file-warning-registry").join("registry.sqlite");
+    let source_dir = test_root("asset-permanent-delete-file-warning-source");
+    fs::create_dir_all(&source_dir).expect("create source dir");
+    let source = source_dir.join("delete.png");
+    fs::write(&source, png_bytes(16, 16)).expect("write source");
+
+    let service = LocalLibraryService::new(registry);
+    service
+        .create_library(CreateLibraryRequest {
+            root_path: root.clone(),
+            name: "Permanent Delete Warning".to_string(),
+        })
+        .expect("create library");
+    let (asset, version) = service
+        .import_asset(ImportAssetRequest {
+            library_path: root.clone(),
+            source_path: source,
+        })
+        .expect("import asset");
+    let managed_file = root.join(&version.file_path);
+    fs::remove_file(&managed_file).expect("remove managed file");
+    fs::create_dir(&managed_file).expect("replace with directory");
+
+    service
+        .archive_asset(ArchiveAssetRequest {
+            library_path: root.clone(),
+            asset_id: asset.id.clone(),
+        })
+        .expect("archive asset");
+    let summary = service
+        .permanent_delete_archived_content(PermanentDeleteArchivedContentRequest {
+            library_path: root,
+            item_type: ArchivedContentType::Asset,
+            id: asset.id.0,
+        })
+        .expect("permanent delete with warning");
+
+    assert!(!summary.warnings.is_empty());
+    assert!(managed_file.is_dir());
 }
 
 #[test]

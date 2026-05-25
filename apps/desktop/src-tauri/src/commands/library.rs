@@ -176,6 +176,109 @@ pub(crate) fn import_library_backup_zip(
 }
 
 #[tauri::command]
+pub(crate) fn list_archived_content(
+    input: ListArchivedContentInput,
+) -> Result<Vec<ArchivedContentView>, CommandError> {
+    let item_type = input
+        .item_type
+        .as_deref()
+        .map(archived_content_type_from_input)
+        .transpose()?;
+    desktop_app()
+        .library_lifecycle()
+        .list_archived_content(imglab_core::ListArchivedContentRequest {
+            library_path: input.library_path,
+            item_type,
+        })
+        .map(|items| items.into_iter().map(archived_content_view).collect())
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) fn restore_asset(input: RestoreAssetInput) -> Result<(), CommandError> {
+    desktop_app()
+        .library_lifecycle()
+        .restore_asset(imglab_core::RestoreAssetRequest {
+            library_path: input.library_path,
+            asset_id: imglab_core::AssetId(input.asset_id),
+        })
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) fn restore_prompt_document(
+    input: RestorePromptDocumentInput,
+) -> Result<(), CommandError> {
+    desktop_app()
+        .library_lifecycle()
+        .restore_prompt_document(imglab_core::RestorePromptDocumentRequest {
+            library_path: input.library_path,
+            prompt_id: imglab_core::PromptId(input.prompt_id),
+        })
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) fn dry_run_permanent_delete_archived_content(
+    input: PermanentDeleteArchivedContentInput,
+) -> Result<PermanentDeleteSummaryView, CommandError> {
+    desktop_app()
+        .library_lifecycle()
+        .dry_run_permanent_delete_archived_content(
+            imglab_core::PermanentDeleteArchivedContentRequest {
+                library_path: input.library_path,
+                item_type: archived_content_type_from_input(&input.item_type)?,
+                id: input.id,
+            },
+        )
+        .map(permanent_delete_summary_view)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) fn permanent_delete_archived_content(
+    input: PermanentDeleteArchivedContentInput,
+) -> Result<PermanentDeleteSummaryView, CommandError> {
+    desktop_app()
+        .library_lifecycle()
+        .permanent_delete_archived_content(imglab_core::PermanentDeleteArchivedContentRequest {
+            library_path: input.library_path,
+            item_type: archived_content_type_from_input(&input.item_type)?,
+            id: input.id,
+        })
+        .map(permanent_delete_summary_view)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) fn dry_run_merge_library(
+    input: MergeLibraryInput,
+) -> Result<MergeLibrarySummaryView, CommandError> {
+    desktop_app()
+        .library_lifecycle()
+        .dry_run_merge_library(imglab_core::MergeLibraryRequest {
+            target_library_path: input.target_library_path,
+            source_library_path: input.source_library_path,
+        })
+        .map(merge_library_summary_view)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub(crate) fn merge_library(
+    input: MergeLibraryInput,
+) -> Result<MergeLibrarySummaryView, CommandError> {
+    desktop_app()
+        .library_lifecycle()
+        .merge_library(imglab_core::MergeLibraryRequest {
+            target_library_path: input.target_library_path,
+            source_library_path: input.source_library_path,
+        })
+        .map(merge_library_summary_view)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
 pub(crate) fn reveal_library_folder(root_path: PathBuf) -> Result<(), CommandError> {
     let root_path = normalize_library_root_path(root_path)?;
     if !root_path.is_dir() {

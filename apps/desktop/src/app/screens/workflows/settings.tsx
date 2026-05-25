@@ -28,6 +28,7 @@ import type {
   AlbumListItem,
   AppLog,
   AppLogContent,
+  ArchivedContent,
   AssetDetail,
   AutomationDaemonStatus,
   ConfidenceScore,
@@ -39,6 +40,8 @@ import type {
   LightboxImage,
   Library,
   LibraryStatus,
+  MergeLibrarySummary,
+  PermanentDeleteSummary,
   ProviderHealth,
   ReferenceSource,
   Suggestion,
@@ -71,6 +74,19 @@ export function SettingsWorkspace({
   onReveal,
   pendingLibraryActions,
   missingLibraryPaths,
+  archivedContent,
+  archivedLoading,
+  permanentDeleteSummary,
+  mergeSourcePath,
+  mergeSummary,
+  onRefreshArchived,
+  onRestoreArchived,
+  onDryRunPermanentDelete,
+  onConfirmPermanentDelete,
+  onChooseMergeSource,
+  onMergeSourcePathChange,
+  onDryRunMerge,
+  onApplyMerge,
   logs,
   logsLoading,
   selectedLogPath,
@@ -113,6 +129,19 @@ export function SettingsWorkspace({
   onReveal: (library: Library) => void;
   pendingLibraryActions: string[];
   missingLibraryPaths: string[];
+  archivedContent: ArchivedContent[];
+  archivedLoading: boolean;
+  permanentDeleteSummary: PermanentDeleteSummary | null;
+  mergeSourcePath: string;
+  mergeSummary: MergeLibrarySummary | null;
+  onRefreshArchived: () => void;
+  onRestoreArchived: (item: ArchivedContent) => void;
+  onDryRunPermanentDelete: (item: ArchivedContent) => void;
+  onConfirmPermanentDelete: (summary: PermanentDeleteSummary) => void;
+  onChooseMergeSource: () => void;
+  onMergeSourcePathChange: (value: string) => void;
+  onDryRunMerge: () => void;
+  onApplyMerge: () => void;
   logs: AppLog[];
   logsLoading: boolean;
   selectedLogPath: string | null;
@@ -134,7 +163,7 @@ export function SettingsWorkspace({
   onSetLibraryAutomationEnabled: (library: Library, enabled: boolean) => void;
   dictionary: Dictionary;
 }) {
-  const sections: SettingsSection[] = ["libraries", "automation", "providers", "updates", "logs"];
+  const sections: SettingsSection[] = ["libraries", "archived", "automation", "providers", "updates", "logs"];
   return (
     <section className="settings-workspace">
       <nav className="settings-tabs" aria-label={dictionary.views.settings.title}>
@@ -147,13 +176,15 @@ export function SettingsWorkspace({
           >
             {section === "libraries"
               ? dictionary.workflow.libraries
-              : section === "automation"
-                ? dictionary.workflow.automation
-                : section === "providers"
-                  ? dictionary.workflow.providers
-                  : section === "updates"
-                    ? dictionary.workflow.appUpdates
-                    : dictionary.workflow.logs}
+              : section === "archived"
+                ? "Archived"
+                : section === "automation"
+                  ? dictionary.workflow.automation
+                  : section === "providers"
+                    ? dictionary.workflow.providers
+                    : section === "updates"
+                      ? dictionary.workflow.appUpdates
+                      : dictionary.workflow.logs}
           </button>
         ))}
       </nav>
@@ -176,6 +207,23 @@ export function SettingsWorkspace({
           pendingLibraryActions={pendingLibraryActions}
           missingLibraryPaths={missingLibraryPaths}
           dictionary={dictionary}
+        />
+      ) : activeSection === "archived" ? (
+        <SettingsArchivedView
+          library={library}
+          archivedContent={archivedContent}
+          archivedLoading={archivedLoading}
+          permanentDeleteSummary={permanentDeleteSummary}
+          mergeSourcePath={mergeSourcePath}
+          mergeSummary={mergeSummary}
+          onRefreshArchived={onRefreshArchived}
+          onRestoreArchived={onRestoreArchived}
+          onDryRunPermanentDelete={onDryRunPermanentDelete}
+          onConfirmPermanentDelete={onConfirmPermanentDelete}
+          onChooseMergeSource={onChooseMergeSource}
+          onMergeSourcePathChange={onMergeSourcePathChange}
+          onDryRunMerge={onDryRunMerge}
+          onApplyMerge={onApplyMerge}
         />
       ) : activeSection === "automation" ? (
         <SettingsAutomationView
@@ -432,6 +480,103 @@ function LibraryActionIcon({ kind }: { kind: "rename" | "export" | "reveal" | "c
         </>
       )}
     </svg>
+  );
+}
+
+function SettingsArchivedView({
+  library,
+  archivedContent,
+  archivedLoading,
+  permanentDeleteSummary,
+  mergeSourcePath,
+  mergeSummary,
+  onRefreshArchived,
+  onRestoreArchived,
+  onDryRunPermanentDelete,
+  onConfirmPermanentDelete,
+  onChooseMergeSource,
+  onMergeSourcePathChange,
+  onDryRunMerge,
+  onApplyMerge,
+}: {
+  library: Library | null;
+  archivedContent: ArchivedContent[];
+  archivedLoading: boolean;
+  permanentDeleteSummary: PermanentDeleteSummary | null;
+  mergeSourcePath: string;
+  mergeSummary: MergeLibrarySummary | null;
+  onRefreshArchived: () => void;
+  onRestoreArchived: (item: ArchivedContent) => void;
+  onDryRunPermanentDelete: (item: ArchivedContent) => void;
+  onConfirmPermanentDelete: (summary: PermanentDeleteSummary) => void;
+  onChooseMergeSource: () => void;
+  onMergeSourcePathChange: (value: string) => void;
+  onDryRunMerge: () => void;
+  onApplyMerge: () => void;
+}) {
+  return (
+    <div className="settings-section">
+      <div className="panel-header">
+        <div>
+          <h3>Archived</h3>
+          <p>{archivedLoading ? "Loading" : `${archivedContent.length} archived item(s)`}</p>
+        </div>
+        <div className="row-actions">
+          <button onClick={onRefreshArchived} disabled={!library || archivedLoading}>Refresh</button>
+        </div>
+      </div>
+      <div className="library-table" role="table" aria-label="Archived content">
+        <div className="library-table-row header" role="row">
+          <span>Name</span>
+          <span>Dependencies</span>
+          <span>Actions</span>
+        </div>
+        {archivedContent.map((item) => (
+          <div className="library-table-row" role="row" key={`${item.itemType}:${item.id}`}>
+            <span className="library-row-main">
+              <strong>{item.title}</strong>
+              <small>{item.itemType} · {item.archivedAt}</small>
+            </span>
+            <span>{item.dependencySummary} · {item.fileCount} file(s)</span>
+            <span className="row-actions library-row-actions">
+              <button onClick={() => onRestoreArchived(item)}>Restore</button>
+              <button onClick={() => onDryRunPermanentDelete(item)}>Delete</button>
+            </span>
+          </div>
+        ))}
+        {archivedContent.length === 0 && <div className="empty-state compact">No archived content.</div>}
+      </div>
+      {permanentDeleteSummary && (
+        <div className="settings-inline-summary">
+          <strong>Permanent delete</strong>
+          <span>{permanentDeleteSummary.sqliteRowCount} row(s), {permanentDeleteSummary.fileCount} file(s)</span>
+          {permanentDeleteSummary.warnings.map((warning) => <small key={warning}>{warning}</small>)}
+          <button className="primary-button" onClick={() => onConfirmPermanentDelete(permanentDeleteSummary)}>Confirm delete</button>
+        </div>
+      )}
+      <div className="panel-header">
+        <div>
+          <h3>Merge Library</h3>
+          <p>Import another library into the current library.</p>
+        </div>
+        <div className="row-actions">
+          <button onClick={onChooseMergeSource} disabled={!library}>Choose Source</button>
+          <button onClick={onDryRunMerge} disabled={!library || !mergeSourcePath}>Preview</button>
+          <button className="primary-button" onClick={onApplyMerge} disabled={!library || !mergeSummary}>Merge</button>
+        </div>
+      </div>
+      <label className="settings-path-input">
+        <span>Source path</span>
+        <input value={mergeSourcePath} onChange={(event) => onMergeSourcePathChange(event.target.value)} />
+      </label>
+      {mergeSummary && (
+        <div className="settings-inline-summary">
+          <strong>{mergeSummary.assetCount} asset(s), {mergeSummary.promptCount} prompt(s)</strong>
+          <span>{mergeSummary.versionCount} version(s), {mergeSummary.fileCount} file(s)</span>
+          {mergeSummary.warnings.map((warning) => <small key={warning}>{warning}</small>)}
+        </div>
+      )}
+    </div>
   );
 }
 

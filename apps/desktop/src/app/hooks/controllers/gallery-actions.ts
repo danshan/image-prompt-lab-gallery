@@ -94,11 +94,34 @@ export function useGallerySelectionActions({
     setDetailState(completeDetailLoad(asset.id, mockDetailFor(asset)));
   }
 
+  async function archiveAssets(assetIds: string[]) {
+    if (!library || assetIds.length === 0) {
+      return;
+    }
+    try {
+      for (const assetId of assetIds) {
+        await invokeCommand<void>("archive_asset", {
+          input: {
+            libraryPath: library.rootPath,
+            assetId,
+          },
+        });
+      }
+      setGallery((items) => items.filter((item) => !assetIds.includes(item.id)));
+      setSelectedAssetId((current) => (assetIds.includes(current) ? "" : current));
+      setStatus(`${assetIds.length} archived`);
+      setRecoverableError(null);
+    } catch (error) {
+      setRecoverableError(errorMessage(error));
+    }
+  }
+
   return {
     selectGalleryAsset,
     selectAssetVersion,
     refreshGallery,
     loadAssetDetail,
     loadPreviewAssetDetail,
+    archiveAssets,
   };
 }

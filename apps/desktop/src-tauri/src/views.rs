@@ -51,6 +51,48 @@ pub(crate) struct LibraryBackupView {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct ArchivedContentView {
+    pub(crate) id: String,
+    pub(crate) item_type: String,
+    pub(crate) title: String,
+    pub(crate) archived_at: String,
+    pub(crate) dependency_summary: String,
+    pub(crate) file_count: u32,
+    pub(crate) file_size_bytes: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PermanentDeleteSummaryView {
+    pub(crate) item_id: String,
+    pub(crate) item_type: String,
+    pub(crate) sqlite_row_count: u32,
+    pub(crate) file_count: u32,
+    pub(crate) file_size_bytes: u64,
+    pub(crate) warnings: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MergeLibrarySummaryView {
+    pub(crate) source_library_id: String,
+    pub(crate) target_library_id: String,
+    pub(crate) asset_count: u32,
+    pub(crate) version_count: u32,
+    pub(crate) prompt_count: u32,
+    pub(crate) prompt_version_count: u32,
+    pub(crate) album_count: u32,
+    pub(crate) tag_count: u32,
+    pub(crate) generation_event_count: u32,
+    pub(crate) metadata_suggestion_count: u32,
+    pub(crate) skipped_runtime_row_count: u32,
+    pub(crate) file_count: u32,
+    pub(crate) file_size_bytes: u64,
+    pub(crate) warnings: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct StudioOverviewView {
     pub(crate) library: LibraryView,
     pub(crate) status: LibraryStatusView,
@@ -551,6 +593,56 @@ pub(crate) struct ExportLibraryBackupInput {
 pub(crate) struct ImportLibraryBackupInput {
     pub(crate) zip_path: PathBuf,
     pub(crate) destination_path: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ArchiveAssetInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) asset_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RestoreAssetInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) asset_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ArchivePromptDocumentInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) prompt_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RestorePromptDocumentInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) prompt_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ListArchivedContentInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) item_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PermanentDeleteArchivedContentInput {
+    pub(crate) library_path: PathBuf,
+    pub(crate) item_type: String,
+    pub(crate) id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MergeLibraryInput {
+    pub(crate) target_library_path: PathBuf,
+    pub(crate) source_library_path: PathBuf,
 }
 
 #[derive(Debug, Deserialize)]

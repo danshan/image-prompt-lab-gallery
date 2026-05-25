@@ -1,8 +1,11 @@
 use crate::{
-    AssetId, CreateLibraryRequest, DiagnosticsOverviewView, DomainError, DomainResult,
+    ArchiveAssetRequest, ArchivePromptDocumentRequest, ArchivedContentSummary, AssetId,
+    CreateLibraryRequest, DiagnosticsOverviewView, DomainError, DomainResult,
     ExportLibraryBackupRequest, ExportLibraryRequest, ExportSummary, ImportLibraryBackupRequest,
     IntegrityIssue, LibraryBackupSummary, LibraryId, LibraryService, LibraryStatusView,
-    LibrarySummary, RenameLibraryAliasRequest, RepairLibraryRequest, RepairSummary,
+    LibrarySummary, ListArchivedContentRequest, MergeLibraryRequest, MergeLibrarySummary,
+    PermanentDeleteArchivedContentRequest, PermanentDeleteSummary, RenameLibraryAliasRequest,
+    RepairLibraryRequest, RepairSummary, RestoreAssetRequest, RestorePromptDocumentRequest,
     StudioOverviewView,
 };
 #[cfg(test)]
@@ -30,6 +33,8 @@ pub(crate) use assets::{
     mark_imported_version_as_generated, persist_asset_version, promote_version_as_asset,
 };
 mod backup;
+mod content_lifecycle;
+mod library_merge;
 use assets::ensure_asset_exists;
 #[cfg(test)]
 use assets::load_asset_summary;
@@ -202,6 +207,54 @@ impl LibraryService for LocalLibraryService {
             library: summary,
             cloned,
         })
+    }
+
+    fn dry_run_merge_library(
+        &self,
+        request: MergeLibraryRequest,
+    ) -> DomainResult<MergeLibrarySummary> {
+        self.dry_run_merge_library(request)
+    }
+
+    fn merge_library(&self, request: MergeLibraryRequest) -> DomainResult<MergeLibrarySummary> {
+        self.merge_library(request)
+    }
+
+    fn archive_asset(&self, request: ArchiveAssetRequest) -> DomainResult<()> {
+        self.archive_asset(request)
+    }
+
+    fn restore_asset(&self, request: RestoreAssetRequest) -> DomainResult<()> {
+        self.restore_asset(request)
+    }
+
+    fn archive_prompt_document(&self, request: ArchivePromptDocumentRequest) -> DomainResult<()> {
+        self.archive_prompt_document(request)
+    }
+
+    fn restore_prompt_document(&self, request: RestorePromptDocumentRequest) -> DomainResult<()> {
+        self.restore_prompt_document(request)
+    }
+
+    fn list_archived_content(
+        &self,
+        request: ListArchivedContentRequest,
+    ) -> DomainResult<Vec<ArchivedContentSummary>> {
+        self.list_archived_content(request)
+    }
+
+    fn dry_run_permanent_delete_archived_content(
+        &self,
+        request: PermanentDeleteArchivedContentRequest,
+    ) -> DomainResult<PermanentDeleteSummary> {
+        self.dry_run_permanent_delete_archived_content(request)
+    }
+
+    fn permanent_delete_archived_content(
+        &self,
+        request: PermanentDeleteArchivedContentRequest,
+    ) -> DomainResult<PermanentDeleteSummary> {
+        self.permanent_delete_archived_content(request)
     }
 
     fn repair_library(&self, request: RepairLibraryRequest) -> DomainResult<RepairSummary> {

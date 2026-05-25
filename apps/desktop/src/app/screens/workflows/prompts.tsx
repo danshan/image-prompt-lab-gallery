@@ -26,6 +26,7 @@ export function PromptWorkspace({
   onNewPrompt,
   onSaveDraft,
   onSaveVersion,
+  onArchivePrompt,
   onSelectVersion,
   onRunFormChange,
   onRender,
@@ -52,6 +53,7 @@ export function PromptWorkspace({
   onNewPrompt: () => void;
   onSaveDraft: () => void;
   onSaveVersion: () => void;
+  onArchivePrompt: (promptId: string) => void;
   onSelectVersion: (versionId: string) => void;
   onRunFormChange: (form: PromptRunForm) => void;
   onRender: () => void;
@@ -91,7 +93,29 @@ export function PromptWorkspace({
                 <strong>{prompt.name}</strong>
                 <small>{prompt.latestVersionName ?? dictionary.workflow.draftOnly} · {displayDate(prompt.updatedAt)}</small>
               </span>
-              <span className="prompt-status">{prompt.status}</span>
+              <span className="row-actions">
+                <span className="prompt-status">{prompt.status}</span>
+                <span
+                  className="icon-button tooltip-button"
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Archive"
+                  data-tooltip="Archive"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onArchivePrompt(prompt.id);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onArchivePrompt(prompt.id);
+                    }
+                  }}
+                >
+                  <Icon name="close" />
+                </span>
+              </span>
             </button>
           ))}
           {prompts.length === 0 && (
