@@ -10,7 +10,7 @@ The current MVP is built around a Tauri + React desktop shell, a Rust core busin
 
 This project is under active MVP development. The stable baseline is:
 
-- Latest desktop release: `v0.1.7`. See [GitHub Releases](https://github.com/danshan/image-prompt-lab-gallery/releases/latest).
+- Latest desktop release: `v0.1.8`. See [GitHub Releases](https://github.com/danshan/image-prompt-lab-gallery/releases/latest).
 - Cross-platform desktop shell with Tauri, React, and TypeScript.
 - Rust workspace with `imglab-core` as the shared DDD business core for desktop, CLI, and daemon write operations.
 - Local managed resource libraries backed by SQLite and filesystem storage.

@@ -1,0 +1,3 @@
+#!/bin/sh
+echo "imglab-daemon CI placeholder. Linux desktop releases are not published by this workflow." >&2
+exit 127

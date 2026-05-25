@@ -10,7 +10,7 @@ Image Prompt Lab Gallery 是一个 local-first 桌面应用, 用于管理 AI 图
 
 项目处于活跃 MVP 开发阶段. 当前稳定基线包括:
 
-- 最新 desktop release: `v0.1.7`. 见 [GitHub Releases](https://github.com/danshan/image-prompt-lab-gallery/releases/latest).
+- 最新 desktop release: `v0.1.8`. 见 [GitHub Releases](https://github.com/danshan/image-prompt-lab-gallery/releases/latest).
 - 基于 Tauri, React, TypeScript 的跨平台桌面壳.
 - Rust workspace 中的 `imglab-core` 是 desktop, CLI, daemon 写操作共享的 DDD 业务核心.
 - 基于 SQLite 与本地文件系统的 managed resource library.
