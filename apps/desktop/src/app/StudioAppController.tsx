@@ -17,10 +17,14 @@ import {
 } from "./workflows/review";
 import { toggleSelection } from "./workflows/shared/state";
 import { clearLibraryWorkspaceState } from "./workflows/library/state";
+import {
+  responsiveModeForWidth,
+  sidebarCollapsedByDefaultForMode,
+} from "./shell/state.js";
 import { AppShell } from "../studio-shell";
 import { useThemePreference } from "./design-system/theme.js";
 import { useLocalePreference } from "./i18n/use-locale.js";
-import { CommandBar, ContextDrawer, WorkspaceSwitcher } from "./shell/desktop-shell.js";
+import { CommandBar, ContextDrawer, WorkspaceSidebar } from "./shell/desktop-shell.js";
 import { useGalleryDerivedState } from "./hooks/gallery";
 import { useReviewDerivedState } from "./hooks/review";
 import { useTaskActivitySummary } from "./hooks/tasks";
@@ -67,7 +71,6 @@ import {
   SettingsWorkspace,
   SchedulesWorkspace,
   type ScheduleDraft,
-  StudioOverviewBand,
   TaskWorkspace,
   WorkspaceToolbar,
   PromptWorkspace,
@@ -235,8 +238,26 @@ function scheduleDraftFromJob(job: ScheduledGenerationJob): ScheduleDraft {
 export function StudioAppController() {
   const runningInTauri = hasTauriRuntime();
   const [activeView, setActiveView] = useState<View>(initialViewFromUrl);
+  const [sidebarManuallySet, setSidebarManuallySet] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    return sidebarCollapsedByDefaultForMode(responsiveModeForWidth(window.innerWidth));
+  });
   const { theme, toggleTheme } = useThemePreference();
   const { locale, dictionary, toggleLocale } = useLocalePreference();
+  useEffect(() => {
+    if (typeof window === "undefined" || sidebarManuallySet) {
+      return;
+    }
+    const syncSidebarForViewport = () => {
+      setSidebarCollapsed(sidebarCollapsedByDefaultForMode(responsiveModeForWidth(window.innerWidth)));
+    };
+    syncSidebarForViewport();
+    window.addEventListener("resize", syncSidebarForViewport);
+    return () => window.removeEventListener("resize", syncSidebarForViewport);
+  }, [sidebarManuallySet]);
   const {
     libraries,
     setLibraries,
@@ -1686,6 +1707,26 @@ export function StudioAppController() {
     (composerInputVersionId === selectedAsset?.currentVersionId ? (selectedAsset.currentVersionName ?? null) : null) ??
     (composerInputVersionId ? shortIdentifier(composerInputVersionId) : null);
   const composerInputSourceName = composerInputVersionName ?? composerInputFileName;
+  const composerReferenceImages =
+    composerInputSourceName || composerInputFile
+      ? [
+          {
+            id: composerInputVersionId ?? composerInputFile,
+            name: composerInputSourceName ?? composerInputFileName ?? shortIdentifier(composerInputFile),
+            imagePath: composerInputFile || selectedAsset?.imagePath || null,
+          },
+        ]
+      : [];
+  async function chooseComposerReferenceImage() {
+    const file = await pickImageFile(dictionary.workflow.chooseReferenceImage, composerInputFile);
+    if (!file) {
+      return;
+    }
+    setComposerInputVersionId(null);
+    setComposerInputFile(file);
+    setComposerInputFileName(file.split(/[\\/]/).pop() ?? file);
+    setRecoverableError(null);
+  }
 
   const commandBarSlot = (
     <CommandBar
@@ -1693,24 +1734,42 @@ export function StudioAppController() {
       locale={locale}
       theme={theme}
       library={library}
+      libraries={libraries}
       status={status}
       assetCount={gallery.length}
       reviewCount={pendingSuggestions.length}
       queueCount={queueCount}
       runningTaskCount={runningTaskCount}
       failedTaskCount={failedTaskCount}
-      onGenerate={() => openComposerForTextGeneration(!composerOpen)}
+      onGenerate={() => openComposerForTextGeneration(true)}
+      onSwitchLibrary={switchLibrary}
       onThemeToggle={toggleTheme}
       onLocaleToggle={toggleLocale}
       onViewChange={changeView}
     />
   );
-  const workspaceSwitcherSlot = (
-    <WorkspaceSwitcher
+  const workspaceSidebarSlot = (
+    <WorkspaceSidebar
       activeView={activeView}
+      collapsed={sidebarCollapsed}
+      counts={{
+        gallery: gallery.length,
+        albums: albums.length,
+        prompts: promptWorkspaceState.prompts.length,
+        schedules: scheduledJobs.length,
+        review: pendingSuggestions.length,
+        queue: queueCount,
+      }}
       dictionary={dictionary}
-      reviewCount={pendingSuggestions.length}
-      queueCount={queueCount}
+      locale={locale}
+      theme={theme}
+      onCollapsedChange={(collapsed) => {
+        setSidebarManuallySet(true);
+        setSidebarCollapsed(collapsed);
+      }}
+      onGenerate={() => openComposerForTextGeneration(true)}
+      onLocaleToggle={toggleLocale}
+      onThemeToggle={toggleTheme}
       onViewChange={changeView}
     />
   );
@@ -1731,34 +1790,11 @@ export function StudioAppController() {
           query={query}
           itemCount={displayedGallery.length}
           status={status}
-          composerOpen={composerOpen}
           availableProviders={availableProviders}
           albums={albums}
           dictionary={dictionary}
-          onComposerOpenChange={openComposerForTextGeneration}
           onQueryChange={setQuery}
         />
-
-        <StudioOverviewBand
-          assetCount={displayedGallery.length}
-          reviewCount={pendingSuggestions.length}
-          queueCount={queueCount}
-          integrityIssueCount={libraryStatus?.integrityIssueCount ?? 0}
-          activeView={activeView}
-          dictionary={dictionary}
-        />
-
-        {composerOpen && (
-          <GenerationComposer
-            prompt={prompt}
-            provider={provider}
-            inputSourceName={composerInputSourceName}
-            submitting={generationSubmitting}
-            onPromptChange={setPrompt}
-            onProviderChange={setProvider}
-            onGenerate={() => void startGeneration(composerInputVersionId, composerInputFile)}
-          />
-        )}
 
         {recoverableError && (
           <div className="inline-error">
@@ -2048,11 +2084,32 @@ export function StudioAppController() {
   return (
     <AppShell
       commandBar={commandBarSlot}
-      workspaceSwitcher={workspaceSwitcherSlot}
+      workspaceSidebar={workspaceSidebarSlot}
       workspace={workspaceSlot}
       contextDrawer={inspectorSlot}
       drawerOpen={inspectorOpen}
+      sidebarCollapsed={sidebarCollapsed}
     >
+      {composerOpen && (
+        <GenerationComposer
+          prompt={prompt}
+          provider={provider}
+          inputSourceName={composerInputSourceName}
+          referenceImages={composerReferenceImages}
+          submitting={generationSubmitting}
+          dictionary={dictionary}
+          onPromptChange={setPrompt}
+          onProviderChange={setProvider}
+          onChooseReferenceImage={() => void chooseComposerReferenceImage()}
+          onClearReferenceImage={() => {
+            setComposerInputVersionId(null);
+            setComposerInputFile("");
+            setComposerInputFileName(null);
+          }}
+          onClose={() => setComposerOpen(false)}
+          onGenerate={() => void startGeneration(composerInputVersionId, composerInputFile)}
+        />
+      )}
       {lightboxImage && (
         <ImageLightbox
           image={lightboxImage}

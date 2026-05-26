@@ -24,3 +24,7 @@ export function drawerPresentationForMode(mode: ResponsiveMode): DrawerPresentat
 export function closeDrawerForWorkspaceChange(open: boolean): boolean {
   return open ? false : open;
 }
+
+export function sidebarCollapsedByDefaultForMode(mode: ResponsiveMode): boolean {
+  return mode !== "wide";
+}

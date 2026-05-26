@@ -64,60 +64,23 @@ import type {
 } from "../../types";
 import type { Dictionary } from "../../i18n/dictionaries";
 
-export function StudioOverviewBand({
-  assetCount,
-  reviewCount,
-  queueCount,
-  integrityIssueCount,
-  activeView,
-  dictionary,
-}: {
-  assetCount: number;
-  reviewCount: number;
-  queueCount: number;
-  integrityIssueCount: number;
-  activeView: View;
-  dictionary: Dictionary;
-}) {
-  const cards = [
-    { label: dictionary.overview.assets, value: assetCount, tone: activeView === "gallery" ? "active" : "" },
-    { label: dictionary.overview.pendingReview, value: reviewCount, tone: reviewCount > 0 ? "warning" : "" },
-    { label: dictionary.overview.activeTasks, value: queueCount, tone: queueCount > 0 ? "active" : "" },
-    { label: dictionary.overview.integrityIssues, value: integrityIssueCount, tone: integrityIssueCount > 0 ? "danger" : "healthy" },
-  ];
-  return (
-    <section className="studio-overview-band" aria-label={dictionary.overview.label}>
-      {cards.map((card) => (
-        <div className={`overview-metric ${card.tone}`} key={card.label}>
-          <span>{card.label}</span>
-          <strong>{card.value}</strong>
-        </div>
-      ))}
-    </section>
-  );
-}
-
 export function WorkspaceToolbar({
   activeView,
   query,
   itemCount,
   status,
-  composerOpen,
   availableProviders,
   albums,
   dictionary,
-  onComposerOpenChange,
   onQueryChange,
 }: {
   activeView: View;
   query: GalleryQueryState;
   itemCount: number;
   status: string;
-  composerOpen: boolean;
   availableProviders: string[];
   albums: AlbumListItem[];
   dictionary: Dictionary;
-  onComposerOpenChange: (open: boolean) => void;
   onQueryChange: (query: GalleryQueryState) => void;
 }) {
   const label = dictionary.views[activeView];
@@ -132,10 +95,6 @@ export function WorkspaceToolbar({
           <h1>{label.title}</h1>
         </div>
         <span className="toolbar-status">{status}</span>
-        <button className="primary-button" onClick={() => onComposerOpenChange(!composerOpen)}>
-          <Icon name="plus" />
-          <span>{dictionary.generate}</span>
-        </button>
       </div>
 
       {showGalleryControls && (

@@ -67,6 +67,7 @@ import {
   setGalleryAlbumFilter,
   setGalleryUnassignedAlbumFilter,
   settingsSections,
+  sidebarCollapsedByDefaultForMode,
   sortedNonEmptyProviders,
   toggleGalleryAlbumFilter,
   toggleGalleryProvider,
@@ -135,6 +136,9 @@ test("responsive shell maps width to drawer presentation", () => {
   assert.equal(drawerPresentationForMode("wide"), "docked");
   assert.equal(drawerPresentationForMode("compact"), "overlay");
   assert.equal(drawerPresentationForMode("narrow"), "bottomSheet");
+  assert.equal(sidebarCollapsedByDefaultForMode("wide"), false);
+  assert.equal(sidebarCollapsedByDefaultForMode("compact"), true);
+  assert.equal(sidebarCollapsedByDefaultForMode("narrow"), true);
   assert.equal(closeDrawerForWorkspaceChange(true), false);
   assert.equal(closeDrawerForWorkspaceChange(false), false);
 });
@@ -160,6 +164,13 @@ test("workflow dictionaries cover shell and workflow entry labels", () => {
     for (const key of [
       "noAssetsMatch",
       "selectionActions",
+      "globalActions",
+      "workspaceNavigation",
+      "collapseSidebar",
+      "expandSidebar",
+      "closeGenerateModal",
+      "referenceImages",
+      "noReferenceImages",
       "albumsTitle",
       "noAlbumsYet",
       "promptLibrary",

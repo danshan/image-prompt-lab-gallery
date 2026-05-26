@@ -16,11 +16,21 @@ const viewIcons: Record<View, IconName> = {
 
 const views: View[] = ["gallery", "albums", "prompts", "schedules", "review", "queue", "settings"];
 
+type SidebarCounts = Partial<Record<View, number>>;
+
+function formatSidebarCount(count: number) {
+  if (count > 999) {
+    return "999+";
+  }
+  return count.toString();
+}
+
 export function CommandBar({
   dictionary,
   locale,
   theme,
   library,
+  libraries,
   status,
   assetCount,
   reviewCount,
@@ -28,6 +38,7 @@ export function CommandBar({
   runningTaskCount,
   failedTaskCount,
   onGenerate,
+  onSwitchLibrary,
   onThemeToggle,
   onLocaleToggle,
   onViewChange,
@@ -36,6 +47,7 @@ export function CommandBar({
   locale: Locale;
   theme: ThemePreference;
   library: Library | null;
+  libraries: Library[];
   status: string;
   assetCount: number;
   reviewCount: number;
@@ -43,39 +55,40 @@ export function CommandBar({
   runningTaskCount: number;
   failedTaskCount: number;
   onGenerate: () => void;
+  onSwitchLibrary: (libraryId: string) => void;
   onThemeToggle: () => void;
   onLocaleToggle: () => void;
   onViewChange: (view: View) => void;
 }) {
   return (
     <header className="command-bar">
-      <div className="command-brand">
-        <span className="app-mark">IP</span>
-        <span className="command-brand-copy">
-          <strong>{dictionary.appName}</strong>
-          <small title={library?.rootPath}>{library?.name ?? dictionary.noLibrary}</small>
-        </span>
-      </div>
+      <label className="command-scope">
+        <span>{dictionary.currentLibrary}</span>
+        <select
+          aria-label={dictionary.currentLibrary}
+          title={library?.rootPath}
+          value={library?.id ?? ""}
+          onChange={(event) => onSwitchLibrary(event.target.value)}
+          disabled={libraries.length === 0}
+        >
+          <option value="">{libraries.length === 0 ? dictionary.workflow.noLibraryRegistered : dictionary.noLibrary}</option>
+          {libraries.map((item) => (
+            <option key={item.id} value={item.id}>{item.name}</option>
+          ))}
+        </select>
+      </label>
       <label className="command-search">
         <Icon name="search" />
         <input aria-label={dictionary.commandSearch} placeholder={dictionary.commandSearch} />
       </label>
       <div className="command-stats" aria-label={dictionary.overview.label}>
         <span><strong>{assetCount}</strong> {dictionary.overview.assets}</span>
-        <span><strong>{reviewCount}</strong> {dictionary.review}</span>
-        <span><strong>{queueCount}</strong> {dictionary.queue}</span>
+        <span><strong>{runningTaskCount}</strong> {dictionary.running}</span>
+        <span className={failedTaskCount > 0 ? "danger" : ""}><strong>{failedTaskCount}</strong> {dictionary.failed}</span>
       </div>
       <div className="command-actions">
         <button className="primary-button command-generate" aria-label={dictionary.generate} title={dictionary.generate} onClick={onGenerate}>
           <Icon name="spark" />
-        </button>
-        <button className="command-indicator" aria-label={dictionary.review} title={dictionary.review} onClick={() => onViewChange("review")}>
-          <Icon name="review" />
-          <strong>{reviewCount}</strong>
-        </button>
-        <button className="command-indicator" aria-label={dictionary.queue} title={dictionary.queue} onClick={() => onViewChange("queue")}>
-          <Icon name="queue" />
-          <strong>{queueCount}</strong>
         </button>
         <button className="icon-button" aria-label={dictionary.themeToggle} title={dictionary.themeToggle} onClick={onThemeToggle}>
           <Icon name={theme === "dark" ? "sun" : "moon"} />
@@ -97,39 +110,106 @@ export function CommandBar({
   );
 }
 
-export function WorkspaceSwitcher({
+export function WorkspaceSidebar({
   activeView,
+  collapsed,
+  counts,
   dictionary,
-  reviewCount,
-  queueCount,
+  locale,
+  theme,
+  onCollapsedChange,
+  onGenerate,
+  onLocaleToggle,
+  onThemeToggle,
   onViewChange,
 }: {
   activeView: View;
+  collapsed: boolean;
+  counts: SidebarCounts;
   dictionary: Dictionary;
-  reviewCount: number;
-  queueCount: number;
+  locale: Locale;
+  theme: ThemePreference;
+  onCollapsedChange: (collapsed: boolean) => void;
+  onGenerate: () => void;
+  onLocaleToggle: () => void;
+  onThemeToggle: () => void;
   onViewChange: (view: View) => void;
 }) {
   return (
-    <nav className="workspace-switcher" aria-label="Workspace">
-      {views.map((view) => {
-        const count = view === "review" ? reviewCount : view === "queue" ? queueCount : 0;
-        return (
-          <button
-            key={view}
-            className={view === activeView ? "workspace-switcher-item active" : "workspace-switcher-item"}
-            title={dictionary.views[view].title}
-            onClick={() => onViewChange(view)}
-          >
-            <span className="workspace-switcher-icon">
-              <Icon name={viewIcons[view]} />
-            </span>
-            <span>{dictionary.views[view].title}</span>
-            {count > 0 && <strong>{count}</strong>}
-          </button>
-        );
-      })}
-    </nav>
+    <aside className="workspace-sidebar" aria-label={dictionary.workflow.workspaceNavigation}>
+      <div className="workspace-sidebar-header">
+        <span className="app-mark sidebar-mark">IP</span>
+        <span className="workspace-sidebar-title">
+          <strong>{dictionary.appName}</strong>
+          <small>{dictionary.workflow.workspaceNavigation}</small>
+        </span>
+        <button
+          className="icon-button sidebar-collapse-button"
+          aria-label={collapsed ? dictionary.workflow.expandSidebar : dictionary.workflow.collapseSidebar}
+          title={collapsed ? dictionary.workflow.expandSidebar : dictionary.workflow.collapseSidebar}
+          onClick={() => onCollapsedChange(!collapsed)}
+          type="button"
+        >
+          <Icon name="menu" />
+        </button>
+      </div>
+      <button
+        className="primary-button sidebar-generate-button"
+        aria-label={dictionary.generate}
+        title={dictionary.generate}
+        type="button"
+        onClick={onGenerate}
+      >
+        <Icon name="spark" />
+        <span>{dictionary.generate}</span>
+      </button>
+      <nav className="workspace-sidebar-nav" aria-label={dictionary.workflow.workspaceNavigation}>
+        {views.map((view) => {
+          const count = counts[view];
+          const countLabel = typeof count === "number" ? formatSidebarCount(count) : null;
+          const title = countLabel ? `${dictionary.views[view].title} ${countLabel}` : dictionary.views[view].title;
+          return (
+            <button
+              key={view}
+              className={view === activeView ? "workspace-sidebar-item active" : "workspace-sidebar-item"}
+              aria-label={title}
+              title={title}
+              onClick={() => onViewChange(view)}
+              type="button"
+            >
+              <span className="workspace-sidebar-icon">
+                <Icon name={viewIcons[view]} />
+              </span>
+              <span className="workspace-sidebar-label">{dictionary.views[view].title}</span>
+              {countLabel && <span className="workspace-sidebar-count-label">{countLabel}</span>}
+            </button>
+          );
+        })}
+      </nav>
+      <div className="sidebar-global-actions" aria-label={dictionary.workflow.globalActions}>
+        <button
+          className="sidebar-global-button"
+          aria-label={dictionary.themeToggle}
+          title={dictionary.themeToggle}
+          type="button"
+          onClick={onThemeToggle}
+        >
+          <Icon name={theme === "dark" ? "sun" : "moon"} />
+          <span>{dictionary.themeToggle}</span>
+        </button>
+        <button
+          className="sidebar-global-button"
+          aria-label={dictionary.localeToggle}
+          title={dictionary.localeToggle}
+          type="button"
+          onClick={onLocaleToggle}
+        >
+          <Icon name="languages" />
+          <span>{dictionary.localeToggle}</span>
+          <small>{locale}</small>
+        </button>
+      </div>
+    </aside>
   );
 }
 

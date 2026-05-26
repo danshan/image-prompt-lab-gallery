@@ -107,6 +107,7 @@ export {
   closeDrawerForWorkspaceChange,
   drawerPresentationForMode,
   responsiveModeForWidth,
+  sidebarCollapsedByDefaultForMode,
 } from "./app/shell/state.js";
 export {
   defaultSettingsSection,

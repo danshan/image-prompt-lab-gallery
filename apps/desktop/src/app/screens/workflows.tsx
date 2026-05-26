@@ -1,4 +1,4 @@
-export { StudioOverviewBand, WorkspaceToolbar } from "./workflows/chrome";
+export { WorkspaceToolbar } from "./workflows/chrome";
 export { GenerationComposer } from "./workflows/composer";
 export { AlbumsWorkspace } from "./workflows/albums";
 export { ReviewWorkspace } from "./workflows/review";

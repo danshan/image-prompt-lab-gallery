@@ -127,7 +127,7 @@ export function SchedulesWorkspace({
           </label>
           <label>
             <span>Prompt mode</span>
-            <select value={draft.promptMode} onChange={(event) => updateDraft({ promptMode: event.target.value as ScheduleDraft["promptMode"] })}>
+            <select className="select-control" value={draft.promptMode} onChange={(event) => updateDraft({ promptMode: event.target.value as ScheduleDraft["promptMode"] })}>
               <option value="fixed">Fixed prompt</option>
               <option value="dynamic">Dynamic prompt</option>
             </select>
@@ -152,6 +152,7 @@ export function SchedulesWorkspace({
           <label>
             <span>Image provider</span>
             <select
+              className="select-control"
               value={draft.imageProvider}
               onChange={(event) => {
                 const nextProvider = event.target.value;
@@ -174,6 +175,7 @@ export function SchedulesWorkspace({
               <label>
                 <span>Prompt expander</span>
                 <select
+                  className="select-control"
                   value={draft.promptExpanderProvider}
                   onChange={(event) => {
                     const nextProvider = event.target.value;
@@ -195,7 +197,7 @@ export function SchedulesWorkspace({
           )}
           <label>
             <span>Schedule</span>
-            <select value={draft.scheduleKind} onChange={(event) => updateDraft({ scheduleKind: event.target.value as ScheduleRule["kind"] })}>
+            <select className="select-control" value={draft.scheduleKind} onChange={(event) => updateDraft({ scheduleKind: event.target.value as ScheduleRule["kind"] })}>
               <option value="interval_minutes">Every N minutes</option>
               <option value="interval_hours">Every N hours</option>
               <option value="daily_time">Daily time</option>
@@ -221,7 +223,7 @@ export function SchedulesWorkspace({
           )}
           <label>
             <span>Album</span>
-            <select value={draft.targetAlbumId} onChange={(event) => updateDraft({ targetAlbumId: event.target.value })}>
+            <select className="select-control" value={draft.targetAlbumId} onChange={(event) => updateDraft({ targetAlbumId: event.target.value })}>
               <option value="">Select album</option>
               {manualAlbums.map((album) => (
                 <option key={album.id} value={album.id}>{album.name}</option>

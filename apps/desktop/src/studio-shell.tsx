@@ -2,23 +2,33 @@ import React from "react";
 
 export function AppShell({
   commandBar,
-  workspaceSwitcher,
+  workspaceSidebar,
   workspace,
   contextDrawer,
   drawerOpen,
+  sidebarCollapsed,
   children,
 }: {
   commandBar: React.ReactNode;
-  workspaceSwitcher: React.ReactNode;
+  workspaceSidebar: React.ReactNode;
   workspace: React.ReactNode;
   contextDrawer: React.ReactNode;
   drawerOpen: boolean;
+  sidebarCollapsed: boolean;
   children?: React.ReactNode;
 }) {
+  const className = [
+    "desktop-app-shell",
+    drawerOpen ? "drawer-open" : "",
+    sidebarCollapsed ? "sidebar-collapsed" : "sidebar-expanded",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <main className={drawerOpen ? "desktop-app-shell drawer-open" : "desktop-app-shell"}>
+    <main className={className}>
       {commandBar}
-      {workspaceSwitcher}
+      {workspaceSidebar}
       <WorkflowSurface>{workspace}</WorkflowSurface>
       {contextDrawer}
       {children}
